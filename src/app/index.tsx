@@ -43,6 +43,12 @@ export default function HomeScreen() {
           get started
         </ThemedText>
 
+        <ThemedView className="mt-2 px-4 py-2 bg-sky-500/10 border border-sky-500/30 rounded-xl items-center">
+          <ThemedText className="text-sky-500 font-semibold text-sm">
+            Tailwind CSS (NativeWind) configured successfully 🚀
+          </ThemedText>
+        </ThemedView>
+
         <ThemedView type="backgroundElement" style={styles.stepContainer}>
           <HintRow
             title="Try editing"
