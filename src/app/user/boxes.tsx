@@ -5,7 +5,6 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
-  Modal,
   ScrollView,
   Text,
   TextInput,
@@ -39,8 +38,6 @@ export default function UserBoxesScreen() {
   const [statusFilter, setStatusFilter] = useState<
     "ALL" | "ACTIVE" | "ISSUE" | "NEEDS_TAG"
   >("ALL");
-  const [selectedBox, setSelectedBox] = useState<BoxPin | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
 
   // Structured Scan History records linking to distribution boxes
   const scanHistoryData: ScanHistoryEntry[] = [
@@ -158,8 +155,10 @@ export default function UserBoxesScreen() {
   });
 
   const handleOpenBoxDetails = (box: BoxPin) => {
-    setSelectedBox(box);
-    setShowDetailModal(true);
+    router.push({
+      pathname: '/user/box-details',
+      params: { code: box.code },
+    });
   };
 
   const getStatusPill = (status: "ACTIVE" | "NEEDS_TAG" | "ISSUE") => {
@@ -673,170 +672,6 @@ export default function UserBoxesScreen() {
           )}
         </ScrollView>
       </View>
-
-      {/* Interactive Box Detail Modal / Sheet */}
-      <Modal
-        visible={showDetailModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDetailModal(false)}
-      >
-        <View className="flex-1 bg-black/60 justify-end">
-          <View className="bg-white rounded-t-3xl max-w-[600px] w-full self-center p-5 max-h-[85%]">
-            {/* Modal Header */}
-            <View className="flex-row items-center justify-between pb-3 border-b border-slate-100">
-              <View className="flex-row items-center flex-1 pr-2">
-                <View className="w-10 h-10 rounded-2xl bg-[#4d6029] items-center justify-center mr-3">
-                  <MaterialCommunityIcons
-                    name="qrcode-scan"
-                    size={20}
-                    color="#ffffff"
-                  />
-                </View>
-                <View>
-                  <Text className="text-base font-poppins-bold text-[#0f172a]">
-                    {selectedBox?.code}
-                  </Text>
-                  <Text className="text-xs font-poppins-medium text-[#64748b]">
-                    {selectedBox?.tier}
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setShowDetailModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
-              >
-                <Ionicons name="close" size={18} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Modal Scrollable Specs */}
-            <ScrollView className="py-4" showsVerticalScrollIndicator={false}>
-              {/* Status & Optical Rating */}
-              <View className="flex-row items-center justify-between mb-4">
-                <View>
-                  <Text className="text-[11px] font-poppins-semibold text-[#64748b] uppercase">
-                    Status Rating
-                  </Text>
-                  <View className="mt-1">
-                    {selectedBox && getStatusPill(selectedBox.status)}
-                  </View>
-                </View>
-                <View className="items-end">
-                  <Text className="text-[11px] font-poppins-semibold text-[#64748b] uppercase">
-                    Optical Level
-                  </Text>
-                  <Text className="text-base font-poppins-bold text-[#4d6029] mt-0.5">
-                    {selectedBox?.opticalLoss}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 4 Technical Metric Cards */}
-              <View className="flex-row flex-wrap justify-between mb-4">
-                <View className="w-[48%] bg-[#f8fafc] p-3 rounded-xl mb-2.5 border border-slate-100">
-                  <Text className="text-[10px] font-poppins-medium text-[#64748b]">
-                    Ports Capacity
-                  </Text>
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mt-0.5">
-                    {selectedBox?.portsUsed} / {selectedBox?.totalPorts} Ports
-                  </Text>
-                </View>
-
-                <View className="w-[48%] bg-[#f8fafc] p-3 rounded-xl mb-2.5 border border-slate-100">
-                  <Text className="text-[10px] font-poppins-medium text-[#64748b]">
-                    Operating Voltage
-                  </Text>
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mt-0.5">
-                    {selectedBox?.voltage || "228.4 V"}
-                  </Text>
-                </View>
-
-                <View className="w-[48%] bg-[#f8fafc] p-3 rounded-xl border border-slate-100">
-                  <Text className="text-[10px] font-poppins-medium text-[#64748b]">
-                    Internal Temperature
-                  </Text>
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mt-0.5">
-                    {selectedBox?.temperature || "31.2 °C"}
-                  </Text>
-                </View>
-
-                <View className="w-[48%] bg-[#f8fafc] p-3 rounded-xl border border-slate-100">
-                  <Text className="text-[10px] font-poppins-medium text-[#64748b]">
-                    Circuit Breaker
-                  </Text>
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mt-0.5">
-                    {selectedBox?.circuitBreaker || "63A 2P MCB"}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Installed Hardware Specs */}
-              <View className="mb-4">
-                <Text className="text-xs font-poppins-bold text-[#0f172a] mb-2 uppercase tracking-wide">
-                  Installed Hardware Components
-                </Text>
-                <View className="bg-[#f8fafc] p-3.5 rounded-xl border border-slate-100">
-                  {selectedBox?.equipmentItems.map((item, idx) => (
-                    <View key={idx} className="flex-row items-center py-1">
-                      <Ionicons
-                        name="checkbox-outline"
-                        size={14}
-                        color="#4d6029"
-                      />
-                      <Text className="text-xs font-poppins-medium text-[#334155] ml-2">
-                        {item}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Quick Actions */}
-              <View className="flex-row gap-3 pt-2">
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowDetailModal(false);
-                    router.replace("/user/map");
-                  }}
-                  className="flex-1 bg-slate-100 py-3 rounded-xl items-center justify-center flex-row"
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="map-outline"
-                    size={16}
-                    color="#0f172a"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                    Locate on Map
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowDetailModal(false);
-                    router.replace("/user/scanner");
-                  }}
-                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row"
-                  activeOpacity={0.85}
-                >
-                  <MaterialCommunityIcons
-                    name="qrcode-scan"
-                    size={16}
-                    color="#ffffff"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text className="text-xs font-poppins-bold text-white">
-                    Scan Box QR
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* Steady Bottom Navigation Bar */}
       <UserBottomNavigation activeRoute="/user/boxes" />

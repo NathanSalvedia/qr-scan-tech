@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,11 +18,48 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isWeb = Platform.OS === "web";
 
+  const showAlert = (title: string, message: string) => {
+    setErrorMsg(message);
+    if (isWeb) {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const handleSignIn = () => {
+    setErrorMsg(null);
     const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Email required
+    if (!cleanEmail) {
+      showAlert("Missing Email", "Please enter your email address to continue.");
+      return;
+    }
+
+    // 2. Email format check (allows standard email format or 'admin' shorthand)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (cleanEmail !== "admin" && !emailRegex.test(cleanEmail)) {
+      showAlert("Invalid Email", "Please enter a valid email address (e.g. user@domain.com).");
+      return;
+    }
+
+    // 3. Password required
+    if (!password) {
+      showAlert("Missing Password", "Please enter your account password.");
+      return;
+    }
+
+    // 4. Password minimum length
+    if (password.length < 6) {
+      showAlert("Invalid Password", "Password must be at least 6 characters long.");
+      return;
+    }
+
     // Route admin account to Admin Console, all technician accounts (including nathansalvedia2002@gmail.com) to Field Technician Dashboard
     if (cleanEmail === 'admin@multifactors.ph' || cleanEmail === 'admin') {
       router.replace('/admin/dashboard' as any);
@@ -74,6 +112,16 @@ export default function SignInScreen() {
 
             {/* Form Fields */}
             <View className="w-full">
+              {/* Error Banner */}
+              {errorMsg && (
+                <View className="mb-4 bg-rose-50 border border-rose-200 rounded-2xl p-3 flex-row items-center">
+                  <Ionicons name="alert-circle" size={18} color="#e11d48" />
+                  <Text className="text-xs font-poppins-medium text-rose-700 ml-2 flex-1">
+                    {errorMsg}
+                  </Text>
+                </View>
+              )}
+
               {/* Email Field */}
               <View className="mb-4">
                 <Text className="text-[#1e293b] text-sm font-poppins-semibold mb-2">

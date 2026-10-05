@@ -20,6 +20,7 @@ export default function OtpVerificationScreen() {
   const mode = params.mode || 'verification';
 
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [resendTimer, setResendTimer] = useState(45);
   const [isVerifying, setIsVerifying] = useState(false);
 
@@ -172,9 +173,10 @@ export default function OtpVerificationScreen() {
                 Enter 6-Digit Code:
               </Text>
 
-              <View className="flex-row justify-between items-center gap-1.5 sm:gap-2">
+              <View className="flex-row justify-center items-center gap-2 sm:gap-2.5">
                 {otp.map((digit, idx) => {
                   const isFilled = !!digit;
+                  const isFocused = focusedIndex === idx;
                   return (
                     <TextInput
                       key={idx}
@@ -184,13 +186,20 @@ export default function OtpVerificationScreen() {
                       value={digit}
                       onChangeText={(val) => handleOtpChange(val, idx)}
                       onKeyPress={(e) => handleKeyPress(e, idx)}
+                      onFocus={() => setFocusedIndex(idx)}
+                      onBlur={() => setFocusedIndex((prev) => (prev === idx ? null : prev))}
                       keyboardType="number-pad"
                       maxLength={1}
                       selectTextOnFocus
-                      className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-mono font-bold rounded-2xl border transition-all ${
-                        isFilled
-                          ? 'bg-emerald-50/70 border-[#4d6029] text-[#4d6029]'
-                          : 'bg-white border-slate-200 text-[#0f172a] shadow-xs'
+                      placeholder="-"
+                      placeholderTextColor="#737373"
+                      textAlign="center"
+                      className={`w-11 h-14 sm:w-12 sm:h-16 text-center text-xl sm:text-2xl font-mono font-bold rounded-[18px] border-[1.5px] bg-white transition-all ${
+                        isFocused
+                          ? 'border-[#4d6029] shadow-sm shadow-[#4d6029]/20 scale-105'
+                          : isFilled
+                          ? 'border-[#4d6029] text-[#4d6029]'
+                          : 'border-neutral-400 text-neutral-800'
                       }`}
                     />
                   );

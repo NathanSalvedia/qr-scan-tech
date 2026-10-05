@@ -23,45 +23,104 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const isWeb = Platform.OS === "web";
+
+  const showAlert = (title: string, message: string) => {
+    setErrorMsg(message);
+    if (isWeb) {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
 
   const handleSignUp = () => {
-    if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert("Required Fields", "Please enter your first and last name.");
+    setErrorMsg(null);
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim().replace(/[\s-]/g, "");
+
+    // 1. Name validation
+    if (!cleanFirstName) {
+      showAlert("Missing First Name", "Please enter your first name.");
       return;
     }
-    if (!email.trim()) {
-      Alert.alert("Required Fields", "Please enter your email address.");
+    if (cleanFirstName.length < 2) {
+      showAlert("Invalid Name", "First name must be at least 2 characters long.");
       return;
     }
-    if (!phone.trim()) {
-      Alert.alert("Required Fields", "Please enter your phone number.");
+    if (!cleanLastName) {
+      showAlert("Missing Last Name", "Please enter your last name.");
       return;
     }
+    if (cleanLastName.length < 2) {
+      showAlert("Invalid Name", "Last name must be at least 2 characters long.");
+      return;
+    }
+
+    // 2. Email validation
+    if (!cleanEmail) {
+      showAlert("Missing Email", "Please enter your email address.");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      showAlert("Invalid Email", "Please enter a valid email address (e.g. name@domain.com).");
+      return;
+    }
+
+    // 3. Phone validation
+    if (!cleanPhone) {
+      showAlert("Missing Phone Number", "Please enter your contact phone number.");
+      return;
+    }
+    const phoneDigits = cleanPhone.replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 13) {
+      showAlert("Invalid Phone Number", "Please enter a valid mobile number (e.g. 09171234567).");
+      return;
+    }
+
+    // 4. Password validation
     if (!password) {
-      Alert.alert("Required Fields", "Please enter a password.");
+      showAlert("Missing Password", "Please create a password for your account.");
       return;
     }
+    if (password.length < 6) {
+      showAlert("Weak Password", "Password must be at least 6 characters long.");
+      return;
+    }
+
+    // 5. Password confirmation match
     if (password !== confirmPassword) {
-      Alert.alert(
-        "Password Mismatch",
-        "Passwords do not match. Please verify.",
-      );
+      showAlert("Password Mismatch", "Passwords do not match. Please verify.");
       return;
     }
-    Alert.alert(
-      "Account Created",
-      `Welcome ${firstName} ${lastName}! A 6-digit verification code has been sent to ${email.trim()}.`,
-      [
-        {
-          text: "Verify Email",
-          onPress: () =>
-            router.push({
-              pathname: "/auth/otp",
-              params: { email: email.trim(), mode: "signup" },
-            }),
-        },
-      ],
-    );
+
+    if (isWeb) {
+      window.alert(`Account Created! Welcome ${cleanFirstName} ${cleanLastName}! A 6-digit verification code has been sent to ${cleanEmail}.`);
+      router.push({
+        pathname: "/auth/otp",
+        params: { email: cleanEmail, mode: "signup" },
+      });
+    } else {
+      Alert.alert(
+        "Account Created",
+        `Welcome ${cleanFirstName} ${cleanLastName}! A 6-digit verification code has been sent to ${cleanEmail}.`,
+        [
+          {
+            text: "Verify Email",
+            onPress: () =>
+              router.push({
+                pathname: "/auth/otp",
+                params: { email: cleanEmail, mode: "signup" },
+              }),
+          },
+        ],
+      );
+    }
   };
 
   return (
@@ -101,6 +160,16 @@ export default function SignUpScreen() {
 
             {/* Form Fields Container */}
             <View className="w-full">
+              {/* Error Banner */}
+              {errorMsg && (
+                <View className="mb-4 bg-rose-50 border border-rose-200 rounded-2xl p-3 flex-row items-center">
+                  <Ionicons name="alert-circle" size={18} color="#e11d48" />
+                  <Text className="text-xs font-poppins-medium text-rose-700 ml-2 flex-1">
+                    {errorMsg}
+                  </Text>
+                </View>
+              )}
+
               {/* First Name & Last Name (Two Columns) */}
               <View className="flex-row gap-3 mb-4">
                 {/* First Name */}

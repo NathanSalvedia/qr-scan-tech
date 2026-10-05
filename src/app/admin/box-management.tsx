@@ -1,7 +1,7 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
 import {
-  STATIC_SUBSCRIBERS_DIRECTORY,
   STANDARD_HARDWARE_CATALOG,
+  STATIC_SUBSCRIBERS_DIRECTORY,
   SubscriberDirectoryRecord,
 } from "@/constants/distribution-boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -760,9 +760,9 @@ export default function BoxManagementScreen() {
       if (c.port === port) {
         return {
           ...c,
-          status: (c.status === "CONNECTED"
-            ? "DISCONNECTED"
-            : "CONNECTED") as "CONNECTED" | "DISCONNECTED",
+          status: (c.status === "CONNECTED" ? "DISCONNECTED" : "CONNECTED") as
+            | "CONNECTED"
+            | "DISCONNECTED",
         };
       }
       return c;
@@ -1959,7 +1959,11 @@ export default function BoxManagementScreen() {
                           className="bg-[#4d6029] px-3 py-2 rounded-xl flex-row items-center shadow-xs"
                           activeOpacity={0.8}
                         >
-                          <Ionicons name="person-add" size={13} color="#ffffff" />
+                          <Ionicons
+                            name="person-add"
+                            size={13}
+                            color="#ffffff"
+                          />
                           <Text className="text-xs font-poppins-bold text-white ml-1.5">
                             + Connect Subscriber
                           </Text>
@@ -2400,7 +2404,7 @@ export default function BoxManagementScreen() {
                 {/* Site Name */}
                 <View>
                   <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
-                    Site / Facility Name:
+                    Site Location / Site Name:
                   </Text>
                   <TextInput
                     placeholder="e.g. Suarez Terminal Secondary Node"
@@ -2414,7 +2418,7 @@ export default function BoxManagementScreen() {
                 {/* Address */}
                 <View>
                   <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
-                    Physical Street Address:
+                    Street Address:
                   </Text>
                   <TextInput
                     placeholder="e.g. National Highway, Suarez, Iligan City"
@@ -2980,7 +2984,8 @@ export default function BoxManagementScreen() {
                       className="text-xs font-poppins text-[#64748b]"
                       numberOfLines={1}
                     >
-                      {selectedBoxForDetails.code} · {selectedBoxForDetails.siteName}
+                      {selectedBoxForDetails.code} ·{" "}
+                      {selectedBoxForDetails.siteName}
                     </Text>
                   </View>
                 </View>
@@ -3014,7 +3019,8 @@ export default function BoxManagementScreen() {
                   </View>
                   <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2.5 py-0.5 rounded-lg">
                     <Text className="text-[10px] font-poppins-bold text-[#78350f]">
-                      {getAvailablePorts(selectedBoxForDetails).length} Ports Available
+                      {getAvailablePorts(selectedBoxForDetails).length} Ports
+                      Available
                     </Text>
                   </View>
                 </View>
@@ -3055,7 +3061,9 @@ export default function BoxManagementScreen() {
                     <View className="mt-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
                       <View className="flex-row items-center justify-between mb-2">
                         <Text className="text-[11px] font-poppins-semibold text-[#64748b]">
-                          Select an available port ({getAvailablePorts(selectedBoxForDetails).length} free):
+                          Select an available port (
+                          {getAvailablePorts(selectedBoxForDetails).length}{" "}
+                          free):
                         </Text>
                       </View>
                       <ScrollView
@@ -3064,30 +3072,32 @@ export default function BoxManagementScreen() {
                         showsVerticalScrollIndicator={true}
                       >
                         <View className="flex-row flex-wrap gap-1.5 pb-1">
-                          {getAvailablePorts(selectedBoxForDetails).map((port) => (
-                            <TouchableOpacity
-                              key={port}
-                              onPress={() => {
-                                setNewClientPort(port);
-                                setIsClientPortDropdownOpen(false);
-                              }}
-                              className={`px-3 py-1.5 rounded-xl border ${
-                                newClientPort === port
-                                  ? "bg-[#4d6029] border-[#4d6029]"
-                                  : "bg-white border-slate-200"
-                              }`}
-                            >
-                              <Text
-                                className={`text-xs font-poppins-semibold ${
+                          {getAvailablePorts(selectedBoxForDetails).map(
+                            (port) => (
+                              <TouchableOpacity
+                                key={port}
+                                onPress={() => {
+                                  setNewClientPort(port);
+                                  setIsClientPortDropdownOpen(false);
+                                }}
+                                className={`px-3 py-1.5 rounded-xl border ${
                                   newClientPort === port
-                                    ? "text-white"
-                                    : "text-[#0f172a]"
+                                    ? "bg-[#4d6029] border-[#4d6029]"
+                                    : "bg-white border-slate-200"
                                 }`}
                               >
-                                {port}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
+                                <Text
+                                  className={`text-xs font-poppins-semibold ${
+                                    newClientPort === port
+                                      ? "text-white"
+                                      : "text-[#0f172a]"
+                                  }`}
+                                >
+                                  {port}
+                                </Text>
+                              </TouchableOpacity>
+                            ),
+                          )}
                         </View>
                       </ScrollView>
                     </View>
@@ -3102,9 +3112,7 @@ export default function BoxManagementScreen() {
                     </Text>
                     <TouchableOpacity
                       onPress={() =>
-                        setIsSubscriberDirectoryOpen(
-                          !isSubscriberDirectoryOpen,
-                        )
+                        setIsSubscriberDirectoryOpen(!isSubscriberDirectoryOpen)
                       }
                       className="flex-row items-center"
                     >
@@ -3154,7 +3162,8 @@ export default function BoxManagementScreen() {
                     <View className="mt-2.5 p-3 bg-slate-50 rounded-2xl border border-slate-200 max-h-56">
                       <View className="flex-row items-center justify-between mb-2">
                         <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
-                          Central Billing Directory ({STATIC_SUBSCRIBERS_DIRECTORY.length} records)
+                          Central Billing Directory (
+                          {STATIC_SUBSCRIBERS_DIRECTORY.length} records)
                         </Text>
                         <Text className="text-[10px] font-poppins text-[#64748b]">
                           Tap to auto-fill
