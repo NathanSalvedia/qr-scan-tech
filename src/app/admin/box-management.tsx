@@ -1,17 +1,22 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
+import {
+  STATIC_SUBSCRIBERS_DIRECTORY,
+  STANDARD_HARDWARE_CATALOG,
+  SubscriberDirectoryRecord,
+} from "@/constants/distribution-boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -38,6 +43,8 @@ export interface DistributionBox {
   parentCode?: string;
   siteName: string;
   address: string;
+  mountingType?: "Utility Pole" | "Wall Mount" | "Cabinet";
+  poleNumber?: string;
   latitude: number;
   longitude: number;
   status: "ACTIVE" | "NEEDS_TAG" | "ISSUE";
@@ -50,6 +57,14 @@ export interface DistributionBox {
   notes?: string;
 }
 
+export const SERVICE_PLANS = [
+  "100 Mbps Fiber Starter",
+  "200 Mbps Fiber Pro",
+  "300 Mbps Business Fiber",
+  "500 Mbps Dedicated Fiber",
+  "1 Gbps Enterprise Link",
+];
+
 const INITIAL_BOXES: DistributionBox[] = [
   {
     id: "1",
@@ -57,6 +72,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     category: "MAIN_BOX",
     siteName: "Iligan City Hall / Aguinaldo Central Hub",
     address: "Aguinaldo St, Poblacion, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-PL-01",
     latitude: 8.2285,
     longitude: 124.2415,
     status: "ACTIVE",
@@ -125,6 +142,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     category: "MAIN_BOX",
     siteName: "Aguinaldo Secondary Distribution Center",
     address: "Roxas Ave cor. Aguinaldo, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-PL-09",
     latitude: 8.2238,
     longitude: 124.2458,
     status: "ACTIVE",
@@ -180,6 +199,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     parentCode: "DB-MN-01",
     siteName: "MSU-IIT Tibanga Campus Node",
     address: "Andres Bonifacio Ave, Tibanga, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-TB-14",
     latitude: 8.2415,
     longitude: 124.244,
     status: "ACTIVE",
@@ -263,6 +284,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     parentCode: "DB-MN-01",
     siteName: "Tubod Commercial Distribution Node",
     address: "Macapagal Highway, Tubod, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-TBD-42",
     latitude: 8.214,
     longitude: 124.236,
     status: "ACTIVE",
@@ -325,6 +348,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     parentCode: "DB-MN-02",
     siteName: "Robinsons Place Iligan - Floor 2 Rack",
     address: "Macapagal Ave, Iligan City",
+    mountingType: "Wall Mount",
+    poleNumber: "Rack #F2-R03 (Mall 2F)",
     latitude: 8.2205,
     longitude: 124.2385,
     status: "NEEDS_TAG",
@@ -381,6 +406,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     parentCode: "DB-MN-01",
     siteName: "Tambo Terminal Distribution Enclosure",
     address: "Hinaplanon-Tambo Highway, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-TMB-88",
     latitude: 8.249,
     longitude: 124.261,
     status: "NEEDS_TAG",
@@ -430,6 +457,8 @@ const INITIAL_BOXES: DistributionBox[] = [
     parentCode: "DB-MN-02",
     siteName: "Del Carmen Secondary Sub-Box",
     address: "Del Carmen, Iligan City",
+    mountingType: "Utility Pole",
+    poleNumber: "Pole #ILG-DLC-21",
     latitude: 8.232,
     longitude: 124.259,
     status: "ISSUE",
@@ -514,8 +543,267 @@ export default function BoxManagementScreen() {
   const [newParentCode, setNewParentCode] = useState("DB-MN-01");
   const [newSiteName, setNewSiteName] = useState("");
   const [newAddress, setNewAddress] = useState("");
+  const [newMountingType, setNewMountingType] = useState<
+    "Utility Pole" | "Wall Mount" | "Cabinet"
+  >("Utility Pole");
+  const [newPoleNumber, setNewPoleNumber] = useState("");
   const [newPorts, setNewPorts] = useState("24");
-  const [newNotes, setNewNotes] = useState("");
+  const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
+  const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([
+    "PLC Optical Splitter",
+    "Fiber Optic Adapters / Couplers",
+    "Splice Tray",
+    "IP65/IP66 Weatherproof Enclosure",
+  ]);
+  const [isEquipmentDropdownOpen, setIsEquipmentDropdownOpen] = useState(false);
+  const [customEquipmentInput, setCustomEquipmentInput] = useState("");
+  const [equipmentCatalogFilter, setEquipmentCatalogFilter] =
+    useState<string>("ALL");
+
+  // Connect New Client Modal State
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [newClientPort, setNewClientPort] = useState("");
+  const [newClientAccount, setNewClientAccount] = useState("");
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPlan, setNewClientPlan] = useState("200 Mbps Fiber Pro");
+  const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
+    useState(false);
+  const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] =
+    useState(false);
+  const [matchedSubscriber, setMatchedSubscriber] =
+    useState<SubscriberDirectoryRecord | null>(null);
+  const [isSubscriberDirectoryOpen, setIsSubscriberDirectoryOpen] =
+    useState(false);
+  const [directorySearchQuery, setDirectorySearchQuery] = useState("");
+
+  const getAvailablePorts = (box: DistributionBox | null) => {
+    if (!box) return [];
+    const occupied = new Set(box.clients.map((c) => c.port));
+    const available: string[] = [];
+    for (let i = 1; i <= box.totalPorts; i++) {
+      const portLabel = `Port ${i < 10 ? "0" + i : i}`;
+      if (!occupied.has(portLabel)) {
+        available.push(portLabel);
+      }
+    }
+    return available;
+  };
+
+  const generateSequentialAccount = (box: DistributionBox | null) => {
+    if (!box) return "ACC-ILG-001";
+    const zonePrefix =
+      box.code.includes("MN01") || box.code.includes("MN-01")
+        ? "ILG"
+        : box.code.includes("SB03") || box.code.includes("SB-03")
+          ? "TBD"
+          : box.code.includes("SB02") || box.code.includes("SB-02")
+            ? "IIT"
+            : box.code.includes("SB05") || box.code.includes("SB-05")
+              ? "TMB"
+              : box.code.includes("SB06") || box.code.includes("SB-06")
+                ? "DLC"
+                : "ILG";
+    const nextSeq = box.clients.length + 1;
+    return `ACC-${zonePrefix}-${
+      nextSeq < 10 ? "00" + nextSeq : nextSeq < 100 ? "0" + nextSeq : nextSeq
+    }`;
+  };
+
+  const handleAccountChange = (acc: string) => {
+    setNewClientAccount(acc);
+    const trimmed = acc.trim().toUpperCase();
+    if (!trimmed) {
+      setMatchedSubscriber(null);
+      return;
+    }
+    const matched = STATIC_SUBSCRIBERS_DIRECTORY.find(
+      (s) => s.accountNumber.toUpperCase() === trimmed,
+    );
+    if (matched) {
+      setNewClientName(matched.name);
+      setNewClientPlan(matched.plan);
+      setMatchedSubscriber(matched);
+    } else {
+      setMatchedSubscriber(null);
+    }
+  };
+
+  const handleSelectFromDirectory = (sub: SubscriberDirectoryRecord) => {
+    setNewClientAccount(sub.accountNumber);
+    setNewClientName(sub.name);
+    setNewClientPlan(sub.plan);
+    setMatchedSubscriber(sub);
+    setIsSubscriberDirectoryOpen(false);
+  };
+
+  const handleOpenAddClientModal = () => {
+    if (!selectedBoxForDetails) return;
+    const available = getAvailablePorts(selectedBoxForDetails);
+    if (available.length === 0) {
+      if (Platform.OS === "web") {
+        window.alert(
+          "Capacity Full: All ports on this distribution box are currently occupied.",
+        );
+      } else {
+        Alert.alert(
+          "Capacity Full",
+          "All ports on this distribution box are currently occupied.",
+        );
+      }
+      return;
+    }
+    const defaultPort = available[0];
+    setNewClientPort(defaultPort);
+
+    // Identify already assigned subscriber accounts across all boxes
+    const assignedAccounts = new Set(
+      boxes.flatMap((b) => b.clients.map((c) => c.accountNumber.toUpperCase())),
+    );
+
+    // Look for first pending/unassigned subscriber in directory matching the zone or overall
+    const unassignedInDirectory = STATIC_SUBSCRIBERS_DIRECTORY.find(
+      (s) =>
+        s.status === "PENDING_PROVISIONING" &&
+        !assignedAccounts.has(s.accountNumber.toUpperCase()),
+    );
+
+    if (unassignedInDirectory) {
+      setNewClientAccount(unassignedInDirectory.accountNumber);
+      setNewClientName(unassignedInDirectory.name);
+      setNewClientPlan(unassignedInDirectory.plan);
+      setMatchedSubscriber(unassignedInDirectory);
+    } else {
+      const fallbackAcc = generateSequentialAccount(selectedBoxForDetails);
+      setNewClientAccount(fallbackAcc);
+      const matched = STATIC_SUBSCRIBERS_DIRECTORY.find(
+        (s) => s.accountNumber.toUpperCase() === fallbackAcc.toUpperCase(),
+      );
+      if (matched) {
+        setNewClientName(matched.name);
+        setNewClientPlan(matched.plan);
+        setMatchedSubscriber(matched);
+      } else {
+        setNewClientName("");
+        setNewClientPlan("200 Mbps Fiber Pro");
+        setMatchedSubscriber(null);
+      }
+    }
+
+    setIsClientPortDropdownOpen(false);
+    setIsClientPlanDropdownOpen(false);
+    setIsSubscriberDirectoryOpen(false);
+    setDirectorySearchQuery("");
+    setIsAddClientModalOpen(true);
+  };
+
+  const handleSaveNewClient = () => {
+    if (!selectedBoxForDetails) return;
+    if (!newClientName.trim()) {
+      if (Platform.OS === "web") {
+        window.alert("Please enter a customer or business name.");
+      } else {
+        Alert.alert(
+          "Validation Error",
+          "Please enter a customer or business name.",
+        );
+      }
+      return;
+    }
+    if (!newClientAccount.trim()) {
+      if (Platform.OS === "web") {
+        window.alert("Please enter a subscriber account number.");
+      } else {
+        Alert.alert(
+          "Validation Error",
+          "Please enter a subscriber account number.",
+        );
+      }
+      return;
+    }
+
+    const newClient: ClientConnection = {
+      port: newClientPort,
+      accountNumber: newClientAccount.trim().toUpperCase(),
+      name: newClientName.trim(),
+      plan: newClientPlan,
+      status: "CONNECTED",
+    };
+
+    const updatedClients = [...selectedBoxForDetails.clients, newClient].sort(
+      (a, b) => {
+        const numA = parseInt(a.port.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.port.replace(/\D/g, ""), 10) || 0;
+        return numA - numB;
+      },
+    );
+
+    const updatedActivePorts = updatedClients.filter(
+      (c) => c.status === "CONNECTED",
+    ).length;
+
+    const updatedBox: DistributionBox = {
+      ...selectedBoxForDetails,
+      clients: updatedClients,
+      activePorts: updatedActivePorts,
+    };
+
+    setSelectedBoxForDetails(updatedBox);
+    setBoxes((prev) =>
+      prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
+    );
+    setIsAddClientModalOpen(false);
+  };
+
+  const handleToggleClientStatus = (port: string) => {
+    if (!selectedBoxForDetails) return;
+    const updatedClients = selectedBoxForDetails.clients.map((c) => {
+      if (c.port === port) {
+        return {
+          ...c,
+          status: (c.status === "CONNECTED"
+            ? "DISCONNECTED"
+            : "CONNECTED") as "CONNECTED" | "DISCONNECTED",
+        };
+      }
+      return c;
+    });
+
+    const updatedActivePorts = updatedClients.filter(
+      (c) => c.status === "CONNECTED",
+    ).length;
+
+    const updatedBox: DistributionBox = {
+      ...selectedBoxForDetails,
+      clients: updatedClients,
+      activePorts: updatedActivePorts,
+    };
+
+    setSelectedBoxForDetails(updatedBox);
+    setBoxes((prev) =>
+      prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
+    );
+  };
+
+  const handleRemoveClient = (port: string) => {
+    if (!selectedBoxForDetails) return;
+    const updatedClients = selectedBoxForDetails.clients.filter(
+      (c) => c.port !== port,
+    );
+    const updatedActivePorts = updatedClients.filter(
+      (c) => c.status === "CONNECTED",
+    ).length;
+
+    const updatedBox: DistributionBox = {
+      ...selectedBoxForDetails,
+      clients: updatedClients,
+      activePorts: updatedActivePorts,
+    };
+
+    setSelectedBoxForDetails(updatedBox);
+    setBoxes((prev) =>
+      prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
+    );
+  };
 
   // Auto-generate next sequential Box Code (e.g. DB-MN-03 or DB-SB-07)
   const getNextBoxCode = (
@@ -539,7 +827,68 @@ export default function BoxManagementScreen() {
     setNewCategory(defaultCat);
     setNewCode(getNextBoxCode(defaultCat, boxes));
     setNewParentCode("DB-MN-01");
+    setNewMountingType("Utility Pole");
+    setNewPoleNumber("");
+    setNewPorts("24");
+    setIsPortsDropdownOpen(false);
+    setNewSelectedEquipment([
+      "PLC Optical Splitter",
+      "Fiber Optic Adapters / Couplers",
+      "Splice Tray",
+      "IP65/IP66 Weatherproof Enclosure",
+    ]);
+    setIsEquipmentDropdownOpen(false);
+    setCustomEquipmentInput("");
+    setEquipmentCatalogFilter("ALL");
     setIsRegisterModalOpen(true);
+  };
+
+  const handleCategoryChange = (cat: "MAIN_BOX" | "SUB_BOX") => {
+    setNewCategory(cat);
+    setNewCode(getNextBoxCode(cat, boxes));
+    setIsPortsDropdownOpen(false);
+    if (cat === "MAIN_BOX") {
+      setNewPorts("48");
+      setNewSelectedEquipment([
+        "Fiber Optic Adapters / Couplers",
+        "Splice Tray",
+        "Mid-span Access Ports / Main Cable Entry",
+        "IP65/IP66 Weatherproof Enclosure",
+      ]);
+    } else {
+      setNewPorts("24");
+      setNewSelectedEquipment([
+        "PLC Optical Splitter",
+        "Fiber Optic Adapters / Couplers",
+        "Splice Tray",
+        "IP65/IP66 Weatherproof Enclosure",
+      ]);
+    }
+  };
+
+  const handleToggleEquipment = (eqName: string) => {
+    if (newSelectedEquipment.includes(eqName)) {
+      setNewSelectedEquipment(
+        newSelectedEquipment.filter((item) => item !== eqName),
+      );
+    } else {
+      setNewSelectedEquipment([...newSelectedEquipment, eqName]);
+    }
+  };
+
+  const handleAddCustomEquipment = () => {
+    const trimmed = customEquipmentInput.trim();
+    if (!trimmed) return;
+    if (!newSelectedEquipment.includes(trimmed)) {
+      setNewSelectedEquipment([...newSelectedEquipment, trimmed]);
+    }
+    setCustomEquipmentInput("");
+  };
+
+  const handleRemoveEquipment = (eqName: string) => {
+    setNewSelectedEquipment(
+      newSelectedEquipment.filter((item) => item !== eqName),
+    );
   };
 
   const isWeb = Platform.OS === "web";
@@ -553,6 +902,8 @@ export default function BoxManagementScreen() {
       box.code.toLowerCase().includes(query) ||
       box.siteName.toLowerCase().includes(query) ||
       box.address.toLowerCase().includes(query) ||
+      (box.poleNumber && box.poleNumber.toLowerCase().includes(query)) ||
+      (box.mountingType && box.mountingType.toLowerCase().includes(query)) ||
       box.equipment.some((eq) => eq.name.toLowerCase().includes(query));
 
     if (!matchesQuery) return false;
@@ -580,9 +931,9 @@ export default function BoxManagementScreen() {
     switch (status) {
       case "ACTIVE":
         return {
-          bg: "bg-emerald-50 border border-emerald-200",
-          dot: "bg-emerald-500",
-          text: "text-emerald-700",
+          bg: "bg-[#AEAC78]/30 border border-[#AEAC78]/80",
+          dot: "bg-[#AEAC78]",
+          text: "text-[#2d3416]",
           label: "Tagged & Active",
         };
       case "NEEDS_TAG":
@@ -617,6 +968,39 @@ export default function BoxManagementScreen() {
       return;
     }
 
+    const constructedEquipment =
+      newSelectedEquipment.length > 0
+        ? newSelectedEquipment.map((eqName, idx) => {
+            const matched = STANDARD_HARDWARE_CATALOG.find(
+              (c) => c.name === eqName,
+            );
+            return {
+              id: `eq-${Date.now()}-${idx}`,
+              name: eqName,
+              type: matched?.type || "Equipment",
+              serial: `SN-${eqName
+                .slice(0, 3)
+                .toUpperCase()
+                .replace(
+                  /[^A-Z]/g,
+                  "EQ",
+                )}-${Math.floor(1000 + Math.random() * 9000)}`,
+              status: "OPERATIONAL" as const,
+            };
+          })
+        : [
+            {
+              id: `eq-${Date.now()}-1`,
+              name:
+                newCategory === "MAIN_BOX"
+                  ? "Fiber Optic Adapters / Couplers"
+                  : "PLC Optical Splitter",
+              type: newCategory === "MAIN_BOX" ? "Adapter" : "Splitter",
+              serial: `SN-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
+              status: "OPERATIONAL" as const,
+            },
+          ];
+
     const newBox: DistributionBox = {
       id: `${Date.now()}`,
       code: newCode.trim().toUpperCase(),
@@ -624,6 +1008,8 @@ export default function BoxManagementScreen() {
       parentCode: newCategory === "SUB_BOX" ? newParentCode : undefined,
       siteName: newSiteName.trim(),
       address: newAddress.trim(),
+      mountingType: newMountingType,
+      poleNumber: newPoleNumber.trim() || undefined,
       latitude: 8.23 + (Math.random() * 0.02 - 0.01),
       longitude: 124.245 + (Math.random() * 0.02 - 0.01),
       status: "NEEDS_TAG",
@@ -632,27 +1018,10 @@ export default function BoxManagementScreen() {
       qrToken: `QRTECH-BOX-ILG-${newCode.trim().toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
       lastScanned: "Never (New Registration)",
       notes:
-        newNotes.trim() ||
-        "Newly created box. QR tag pending physical dispatch.",
-      equipment: [
-        {
-          id: `eq-${Date.now()}`,
-          name:
-            newCategory === "MAIN_BOX"
-              ? "Main Feeder 24-Port"
-              : "1:8 PLC Optical Splitter",
-          type: newCategory === "MAIN_BOX" ? "Patch Panel" : "Splitter",
-          serial: `SN-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
-          status: "OPERATIONAL",
-        },
-        {
-          id: `eq-${Date.now()}-2`,
-          name: "15A Din-Rail Breaker",
-          type: "Breaker",
-          serial: `SN-CB-${Math.floor(100 + Math.random() * 900)}`,
-          status: "OPERATIONAL",
-        },
-      ],
+        newSelectedEquipment.length > 0
+          ? `Installed Hardware: ${newSelectedEquipment.join(", ")}`
+          : "Standard distribution enclosure. QR tag pending physical dispatch.",
+      equipment: constructedEquipment,
       clients: [],
     };
 
@@ -663,7 +1032,13 @@ export default function BoxManagementScreen() {
     setNewCode("");
     setNewSiteName("");
     setNewAddress("");
-    setNewNotes("");
+    setNewMountingType("Utility Pole");
+    setNewPoleNumber("");
+    setNewPorts("24");
+    setIsPortsDropdownOpen(false);
+    setNewSelectedEquipment([]);
+    setIsEquipmentDropdownOpen(false);
+    setCustomEquipmentInput("");
 
     // Open QR print preview for the newly added box immediately
     setSelectedBoxForQR(newBox);
@@ -953,34 +1328,34 @@ export default function BoxManagementScreen() {
                 <View className="w-full flex-1 min-w-[1050px]">
                   {/* Table Column Header */}
                   <View className="flex-row bg-[#f8fafc] border-b border-slate-200/80 px-6 py-3.5 items-center w-full">
-                    <View className="flex-[1.4] min-w-[150px] pr-2">
+                    <View className="flex-[1.4] min-w-[140px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Box Code & Tier
                       </Text>
                     </View>
-                    <View className="flex-[2.2] min-w-[220px] pr-3">
+                    <View className="flex-[2.2] min-w-[210px] pr-3">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Site Location & Address
                       </Text>
                     </View>
-                    <View className="flex-[1.2] min-w-[130px] pr-2">
-                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
+                    <View className="flex-[1.2] min-w-[120px] px-2 items-center justify-center">
+                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider text-center">
                         Status
                       </Text>
                     </View>
-                    <View className="flex-[2] min-w-[190px] pr-3">
-                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
-                        Hardware Equipment
+                    <View className="flex-[1.5] min-w-[150px] px-2 items-center justify-center">
+                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider text-center">
+                        Mounting Type
                       </Text>
                     </View>
-                    <View className="flex-[1.3] min-w-[130px] pr-3">
+                    <View className="flex-[1.2] min-w-[120px] pr-3">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Port Usage
                       </Text>
                     </View>
-                    <View className="flex-[1.6] min-w-[160px] pr-3">
-                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
-                        Last Technician Scan
+                    <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
+                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider text-center">
+                        Pole Tag / Landmark Reference
                       </Text>
                     </View>
                     <View className="w-[110px] min-w-[110px] text-right">
@@ -1066,9 +1441,9 @@ export default function BoxManagementScreen() {
                         </View>
 
                         {/* 3. Status Badge */}
-                        <View className="flex-[1.2] min-w-[130px] pr-2">
+                        <View className="flex-[1.2] min-w-[130px] px-2 items-center justify-center">
                           <View
-                            className={`inline-flex self-start px-2.5 py-1 rounded-lg flex-row items-center ${statusMeta.bg}`}
+                            className={`inline-flex self-center px-2.5 py-1 rounded-lg flex-row items-center ${statusMeta.bg}`}
                           >
                             <View
                               className={`w-1.5 h-1.5 rounded-full mr-1.5 ${statusMeta.dot}`}
@@ -1081,49 +1456,30 @@ export default function BoxManagementScreen() {
                           </View>
                         </View>
 
-                        {/* 4. Hardware Equipment */}
-                        <View className="flex-[2] min-w-[190px] pr-3">
-                          <View className="flex-row flex-wrap gap-1">
-                            {box.equipment.slice(0, 2).map((eq) => (
-                              <View
-                                key={eq.id}
-                                className={`px-2 py-0.5 rounded-md border flex-row items-center ${
-                                  eq.status === "FAULTY"
-                                    ? "bg-rose-50 border-rose-200"
-                                    : "bg-slate-100/70 border-slate-200/60"
-                                }`}
-                              >
-                                <View
-                                  className={`w-1 h-1 rounded-full mr-1 ${
-                                    eq.status === "FAULTY"
-                                      ? "bg-rose-500"
-                                      : "bg-emerald-500"
-                                  }`}
-                                />
-                                <Text
-                                  className={`text-[9.5px] font-poppins-medium ${
-                                    eq.status === "FAULTY"
-                                      ? "text-rose-700 font-bold"
-                                      : "text-[#334155]"
-                                  }`}
-                                  numberOfLines={1}
-                                >
-                                  {eq.name.split("(")[0].trim()}
-                                </Text>
-                              </View>
-                            ))}
-                            {box.equipment.length > 2 && (
-                              <View className="bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200/60">
-                                <Text className="text-[9.5px] font-poppins-bold text-[#64748b]">
-                                  +{box.equipment.length - 2}
-                                </Text>
-                              </View>
-                            )}
+                        {/* 4. Mounting Type */}
+                        <View className="flex-[1.5] min-w-[150px] px-2 items-center justify-center">
+                          <View className="inline-flex self-center bg-slate-100/90 border border-slate-200/80 px-2.5 py-1 rounded-lg flex-row items-center">
+                            <Ionicons
+                              name={
+                                (box.mountingType || "Utility Pole") ===
+                                "Utility Pole"
+                                  ? "git-commit-outline"
+                                  : (box.mountingType || "Utility Pole") ===
+                                      "Wall Mount"
+                                    ? "business-outline"
+                                    : "cube-outline"
+                              }
+                              size={12}
+                              color="#4d6029"
+                            />
+                            <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-1.5">
+                              {box.mountingType || "Utility Pole"}
+                            </Text>
                           </View>
                         </View>
 
                         {/* 5. Port Usage */}
-                        <View className="flex-[1.3] min-w-[130px] pr-3">
+                        <View className="flex-[1.2] min-w-[120px] pr-3">
                           <View className="flex-row items-baseline justify-between mb-1">
                             <Text className="text-xs font-poppins-bold text-[#0f172a]">
                               {box.activePorts}/{box.totalPorts}
@@ -1144,40 +1500,20 @@ export default function BoxManagementScreen() {
                           </View>
                         </View>
 
-                        {/* 6. Last Technician Scan */}
-                        <View className="flex-[1.6] min-w-[160px] pr-3">
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="time-outline"
-                              size={11}
-                              color="#64748b"
-                            />
-                            <Text
-                              className="text-xs font-poppins-bold text-[#0f172a] ml-1"
-                              numberOfLines={1}
-                            >
-                              {box.lastScanned
-                                ? box.lastScanned.split("by")[0].trim()
-                                : "Never"}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center mt-0.5">
-                            <Ionicons
-                              name="person-circle-outline"
-                              size={11}
-                              color="#4d6029"
-                            />
-                            <Text
-                              className="text-[10px] font-poppins-medium text-[#475569] ml-1"
-                              numberOfLines={1}
-                            >
-                              {box.lastScanned?.includes("by")
-                                ? box.lastScanned.split("by")[1].trim()
-                                : box.status === "NEEDS_TAG"
-                                  ? "Pending Initial Tag"
-                                  : "System Created"}
-                            </Text>
-                          </View>
+                        {/* 6. Pole Tag / Landmark Reference */}
+                        <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
+                          <Text
+                            className="text-xs font-poppins-bold text-[#0f172a] text-center"
+                            numberOfLines={1}
+                          >
+                            {box.poleNumber || "Pole #ILG-PL-01"}
+                          </Text>
+                          <Text
+                            className="text-[10px] font-poppins text-[#64748b] mt-0.5 text-center"
+                            numberOfLines={1}
+                          >
+                            {box.siteName.split("/")[0].trim()}
+                          </Text>
                         </View>
 
                         {/* 7. Actions */}
@@ -1430,8 +1766,8 @@ export default function BoxManagementScreen() {
                 </Text>
 
                 {/* Location & GPS Info Bar */}
-                <View className="flex-row flex-wrap items-center gap-y-1 gap-x-3 mt-1.5">
-                  <View className="flex-row items-center flex-1 min-w-[200px]">
+                <View className="flex-row flex-wrap items-center gap-y-1 gap-x-2 mt-1.5">
+                  <View className="flex-row items-center flex-1 min-w-[180px]">
                     <Ionicons name="location" size={13} color="#4d6029" />
                     <Text
                       className="text-xs font-poppins-medium text-[#475569] ml-1"
@@ -1440,6 +1776,28 @@ export default function BoxManagementScreen() {
                       {selectedBoxForDetails.address}
                     </Text>
                   </View>
+
+                  {selectedBoxForDetails.poleNumber && (
+                    <View className="flex-row items-center bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                      <Ionicons
+                        name="pricetag-outline"
+                        size={11}
+                        color="#b45309"
+                      />
+                      <Text className="text-[10px] font-poppins-semibold text-amber-800 ml-1">
+                        {selectedBoxForDetails.poleNumber}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBoxForDetails.mountingType && (
+                    <View className="flex-row items-center bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                      <Ionicons name="cube-outline" size={11} color="#64748b" />
+                      <Text className="text-[10px] font-poppins-medium text-[#475569] ml-1">
+                        {selectedBoxForDetails.mountingType}
+                      </Text>
+                    </View>
+                  )}
 
                   <View className="flex-row items-center bg-white border border-slate-200/80 px-2 py-0.5 rounded-md">
                     <Ionicons
@@ -1473,7 +1831,7 @@ export default function BoxManagementScreen() {
                       <Text className="text-[11px] font-poppins text-[#64748b] ml-1">
                         Network Role:{" "}
                         <Text className="font-poppins-bold text-[#4d6029]">
-                          Primary Backbone Hub
+                          Main Backbone Box
                         </Text>
                       </Text>
                     )}
@@ -1583,18 +1941,31 @@ export default function BoxManagementScreen() {
                 {activeDetailsTab === "CLIENTS" && (
                   <View>
                     {/* Capacity Summary & In-Modal Client Search Bar */}
-                    <View className="mb-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70">
+                    <View className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
                       <View className="flex-row items-center justify-between mb-2">
-                        <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                          Port Allocation: {selectedBoxForDetails.activePorts}{" "}
-                          of {selectedBoxForDetails.totalPorts} Ports Active
-                        </Text>
-                        <Text className="text-xs font-poppins-semibold text-[#4d6029]">
-                          {selectedBoxForDetails.totalPorts -
-                            selectedBoxForDetails.activePorts}{" "}
-                          Available
-                        </Text>
+                        <View>
+                          <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                            Port Allocation: {selectedBoxForDetails.activePorts}{" "}
+                            of {selectedBoxForDetails.totalPorts} Ports Active
+                          </Text>
+                          <Text className="text-[11px] font-poppins text-[#64748b]">
+                            {selectedBoxForDetails.totalPorts -
+                              selectedBoxForDetails.activePorts}{" "}
+                            Ports Available for Drops
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={handleOpenAddClientModal}
+                          className="bg-[#4d6029] px-3 py-2 rounded-xl flex-row items-center shadow-xs"
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="person-add" size={13} color="#ffffff" />
+                          <Text className="text-xs font-poppins-bold text-white ml-1.5">
+                            + Connect Subscriber
+                          </Text>
+                        </TouchableOpacity>
                       </View>
+
                       <View className="w-full h-2 rounded-full bg-slate-200 overflow-hidden mb-3">
                         <View
                           className="h-full rounded-full bg-[#4d6029]"
@@ -1647,15 +2018,25 @@ export default function BoxManagementScreen() {
 
                       if (selectedBoxForDetails.clients.length === 0) {
                         return (
-                          <View className="py-10 items-center justify-center">
+                          <View className="py-10 items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                             <Ionicons
                               name="people-outline"
                               size={36}
                               color="#cbd5e1"
                             />
-                            <Text className="text-xs font-poppins-medium text-[#94a3b8] mt-2">
+                            <Text className="text-xs font-poppins-semibold text-[#64748b] mt-2">
                               No subscribers connected to this box yet.
                             </Text>
+                            <TouchableOpacity
+                              onPress={handleOpenAddClientModal}
+                              className="mt-3 bg-[#4d6029] px-4 py-2 rounded-xl flex-row items-center"
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons name="add" size={15} color="#ffffff" />
+                              <Text className="text-xs font-poppins-bold text-white ml-1">
+                                Connect First Subscriber
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         );
                       }
@@ -1677,40 +2058,107 @@ export default function BoxManagementScreen() {
 
                       return (
                         <View className="space-y-2">
-                          {filteredClients.map((client) => (
-                            <View
-                              key={client.port}
-                              className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 flex-row items-center justify-between mb-2"
-                            >
-                              <View className="flex-row items-center flex-1 mr-2">
-                                <View className="w-16 bg-white border border-slate-200 py-1.5 rounded-xl items-center justify-center mr-3 shadow-xs">
-                                  <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                                    {client.port}
-                                  </Text>
-                                </View>
-                                <View className="flex-1">
-                                  <Text
-                                    className="text-xs font-poppins-bold text-[#0f172a]"
-                                    numberOfLines={1}
+                          {filteredClients.map((client) => {
+                            const isConnected = client.status === "CONNECTED";
+                            return (
+                              <View
+                                key={client.port}
+                                className={`p-3.5 rounded-2xl border flex-row items-center justify-between mb-2 ${
+                                  isConnected
+                                    ? "bg-slate-50 border-slate-200/70"
+                                    : "bg-rose-50/40 border-rose-200/70"
+                                }`}
+                              >
+                                <View className="flex-row items-center flex-1 mr-2">
+                                  <View
+                                    className={`w-16 bg-white border py-1.5 rounded-xl items-center justify-center mr-3 shadow-xs ${
+                                      isConnected
+                                        ? "border-slate-200"
+                                        : "border-rose-200"
+                                    }`}
                                   >
-                                    {client.name}
-                                  </Text>
-                                  <Text
-                                    className="text-[11px] font-poppins text-[#64748b]"
-                                    numberOfLines={1}
-                                  >
-                                    {client.accountNumber} · {client.plan}
-                                  </Text>
+                                    <Text
+                                      className={`text-xs font-poppins-bold ${
+                                        isConnected
+                                          ? "text-[#0f172a]"
+                                          : "text-rose-700"
+                                      }`}
+                                    >
+                                      {client.port}
+                                    </Text>
+                                  </View>
+                                  <View className="flex-1">
+                                    <Text
+                                      className="text-xs font-poppins-bold text-[#0f172a]"
+                                      numberOfLines={1}
+                                    >
+                                      {client.name}
+                                    </Text>
+                                    <Text
+                                      className="text-[11px] font-poppins text-[#64748b]"
+                                      numberOfLines={1}
+                                    >
+                                      <Text className="font-mono text-[#0f172a] font-poppins-semibold">
+                                        {client.accountNumber}
+                                      </Text>{" "}
+                                      · {client.plan}
+                                    </Text>
+                                  </View>
                                 </View>
-                              </View>
 
-                              <View className="bg-emerald-100 px-2.5 py-1 rounded-lg">
-                                <Text className="text-[10px] font-poppins-bold text-emerald-800">
-                                  🟢 Active
-                                </Text>
+                                <View className="flex-row items-center space-x-1.5">
+                                  {/* Toggle Active / Disconnected */}
+                                  <TouchableOpacity
+                                    onPress={() =>
+                                      handleToggleClientStatus(client.port)
+                                    }
+                                    className={`px-2.5 py-1 rounded-lg border mr-1.5 flex-row items-center ${
+                                      isConnected
+                                        ? "bg-[#AEAC78]/35 border-[#AEAC78]/80"
+                                        : "bg-rose-100 border-rose-200"
+                                    }`}
+                                    activeOpacity={0.7}
+                                    accessibilityLabel={`Toggle status for ${client.name}`}
+                                  >
+                                    <View
+                                      className={`w-2 h-2 rounded-full mr-1.5 ${
+                                        isConnected
+                                          ? "bg-[#AEAC78]"
+                                          : "bg-rose-500"
+                                      }`}
+                                    />
+                                    <Text
+                                      className={`text-[10px] font-poppins-bold ${
+                                        isConnected
+                                          ? "text-[#2d3416]"
+                                          : "text-rose-800"
+                                      }`}
+                                    >
+                                      {isConnected
+                                        ? "Connected"
+                                        : "Disconnected"}
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  {/* Unassign / Delete Port Connection */}
+                                  <TouchableOpacity
+                                    onPress={() =>
+                                      handleRemoveClient(client.port)
+                                    }
+                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100"
+                                    activeOpacity={0.7}
+                                    accessibilityLabel={`Remove subscriber ${client.name}`}
+                                  >
+                                    <Ionicons
+                                      name="trash-outline"
+                                      size={14}
+                                      color="#dc2626"
+                                    />
+                                  </TouchableOpacity>
+                                </View>
                               </View>
-                            </View>
-                          ))}
+                            );
+                          })}
                         </View>
                       );
                     })()}
@@ -1729,14 +2177,14 @@ export default function BoxManagementScreen() {
                             className={`w-9 h-9 rounded-xl items-center justify-center mr-3 ${
                               eq.status === "FAULTY"
                                 ? "bg-rose-100"
-                                : "bg-emerald-100"
+                                : "bg-[#4d6029]"
                             }`}
                           >
                             <MaterialCommunityIcons
                               name="cpu-64-bit"
                               size={18}
                               color={
-                                eq.status === "FAULTY" ? "#dc2626" : "#059669"
+                                eq.status === "FAULTY" ? "#dc2626" : "#ffffff"
                               }
                             />
                           </View>
@@ -1751,17 +2199,17 @@ export default function BoxManagementScreen() {
                         </View>
 
                         <View
-                          className={`px-2.5 py-1 rounded-lg ${
+                          className={`px-2.5 py-1 rounded-lg border ${
                             eq.status === "FAULTY"
-                              ? "bg-rose-100"
-                              : "bg-emerald-100"
+                              ? "bg-rose-100 border-rose-200"
+                              : "bg-[#AEAC78]/30 border-[#AEAC78]/80"
                           }`}
                         >
                           <Text
                             className={`text-[10px] font-poppins-bold ${
                               eq.status === "FAULTY"
                                 ? "text-rose-800"
-                                : "text-emerald-800"
+                                : "text-[#2d3416]"
                             }`}
                           >
                             {eq.status}
@@ -1813,32 +2261,13 @@ export default function BoxManagementScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                <View className="flex-row items-center space-x-2">
-                  <TouchableOpacity
-                    onPress={() => {
-                      const box = selectedBoxForDetails;
-                      setSelectedBoxForDetails(null);
-                      setModalClientSearch("");
-                      setSelectedBoxForQR(box);
-                    }}
-                    className="bg-[#4d6029] px-4 py-2.5 rounded-xl flex-row items-center mr-2 shadow-sm"
-                  >
-                    <MaterialCommunityIcons
-                      name="qrcode-scan"
-                      size={15}
-                      color="#ffffff"
-                    />
-                    <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                      Print 50x50mm Sticker
-                    </Text>
-                  </TouchableOpacity>
-
+                <View className="flex-row items-center">
                   <TouchableOpacity
                     onPress={() => {
                       setSelectedBoxForDetails(null);
                       setModalClientSearch("");
                     }}
-                    className="px-4 py-2.5 bg-slate-200 rounded-xl"
+                    className="px-5 py-2.5 bg-slate-200 rounded-xl"
                   >
                     <Text className="text-xs font-poppins-bold text-[#475569]">
                       Close
@@ -1887,10 +2316,7 @@ export default function BoxManagementScreen() {
                   </Text>
                   <View className="flex-row gap-2">
                     <TouchableOpacity
-                      onPress={() => {
-                        setNewCategory("MAIN_BOX");
-                        setNewCode(getNextBoxCode("MAIN_BOX", boxes));
-                      }}
+                      onPress={() => handleCategoryChange("MAIN_BOX")}
                       className={`flex-1 py-2.5 rounded-xl border items-center ${
                         newCategory === "MAIN_BOX"
                           ? "bg-[#4d6029] border-[#4d6029]"
@@ -1909,10 +2335,7 @@ export default function BoxManagementScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      onPress={() => {
-                        setNewCategory("SUB_BOX");
-                        setNewCode(getNextBoxCode("SUB_BOX", boxes));
-                      }}
+                      onPress={() => handleCategoryChange("SUB_BOX")}
                       className={`flex-1 py-2.5 rounded-xl border items-center ${
                         newCategory === "SUB_BOX"
                           ? "bg-[#4d6029] border-[#4d6029]"
@@ -2002,33 +2425,406 @@ export default function BoxManagementScreen() {
                   />
                 </View>
 
-                {/* Port Capacity & Notes */}
-                <View className="flex-row gap-2.5">
-                  <View className="w-1/3">
-                    <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
-                      Total Ports:
-                    </Text>
+                {/* Mounting Type Selector */}
+                <View className="mt-3">
+                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
+                    Mounting Type:
+                  </Text>
+                  <View className="flex-row gap-2">
+                    {[
+                      {
+                        id: "Utility Pole",
+                        label: "Utility Pole",
+                        icon: "git-commit-outline",
+                      },
+                      {
+                        id: "Wall Mount",
+                        label: "Wall Mount",
+                        icon: "business-outline",
+                      },
+                      {
+                        id: "Cabinet",
+                        label: "Cabinet / Ground",
+                        icon: "cube-outline",
+                      },
+                    ].map((m) => {
+                      const isSelected = newMountingType === m.id;
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          onPress={() =>
+                            setNewMountingType(
+                              m.id as "Utility Pole" | "Wall Mount" | "Cabinet",
+                            )
+                          }
+                          className={`flex-1 py-2 rounded-xl border flex-row items-center justify-center ${
+                            isSelected
+                              ? "bg-[#4d6029] border-[#4d6029]"
+                              : "bg-slate-50 border-slate-200"
+                          }`}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={m.icon as any}
+                            size={14}
+                            color={isSelected ? "#ffffff" : "#64748b"}
+                          />
+                          <Text
+                            className={`text-[11px] ml-1.5 ${
+                              isSelected
+                                ? "text-white font-poppins-bold"
+                                : "text-[#475569] font-poppins-medium"
+                            }`}
+                          >
+                            {m.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Pole / Landmark Reference Number */}
+                <View className="mt-3">
+                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1">
+                    Pole Tag / Landmark Reference:
+                  </Text>
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <Ionicons
+                      name="location-outline"
+                      size={16}
+                      color="#94a3b8"
+                    />
                     <TextInput
-                      keyboardType="numeric"
-                      placeholder="24"
+                      placeholder="e.g. Pole #ILG-PL-42 / Near Barangay Hall"
                       placeholderTextColor="#94a3b8"
-                      value={newPorts}
-                      onChangeText={setNewPorts}
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-poppins-medium text-[#0f172a]"
+                      value={newPoleNumber}
+                      onChangeText={setNewPoleNumber}
+                      className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a]"
                     />
                   </View>
+                </View>
 
-                  <View className="flex-1">
-                    <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
-                      Notes / Hardware Specs:
-                    </Text>
-                    <TextInput
-                      placeholder="e.g. Wall mount with 1:8 PLC splitter"
-                      placeholderTextColor="#94a3b8"
-                      value={newNotes}
-                      onChangeText={setNewNotes}
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-poppins-medium text-[#0f172a]"
+                {/* Port Capacity Dropdown */}
+                <View className="mt-3">
+                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
+                    Total Optical / Terminal Ports:
+                  </Text>
+
+                  {/* Dropdown Toggle Trigger Button */}
+                  <TouchableOpacity
+                    onPress={() => setIsPortsDropdownOpen(!isPortsDropdownOpen)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                    activeOpacity={0.8}
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <MaterialCommunityIcons
+                        name="server-network"
+                        size={16}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-2">
+                        {newPorts} Ports
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={isPortsDropdownOpen ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color="#64748b"
                     />
+                  </TouchableOpacity>
+
+                  {/* Expanded Dropdown Options Panel */}
+                  {isPortsDropdownOpen && (
+                    <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                      {["8", "16", "24", "32", "48"].map((port, idx, arr) => {
+                        const isSelected = newPorts === port;
+                        return (
+                          <TouchableOpacity
+                            key={port}
+                            onPress={() => {
+                              setNewPorts(port);
+                              setIsPortsDropdownOpen(false);
+                            }}
+                            className={`flex-row items-center justify-between px-3.5 py-2.5 ${
+                              idx < arr.length - 1
+                                ? "border-b border-slate-100"
+                                : ""
+                            } ${
+                              isSelected
+                                ? "bg-emerald-50/70"
+                                : "bg-white hover:bg-slate-50"
+                            }`}
+                            activeOpacity={0.7}
+                          >
+                            <View className="flex-row items-center flex-1 mr-2">
+                              <View
+                                className={`w-2 h-2 rounded-full mr-2.5 ${
+                                  isSelected ? "bg-[#4d6029]" : "bg-slate-300"
+                                }`}
+                              />
+                              <Text
+                                className={`text-xs ${
+                                  isSelected
+                                    ? "font-poppins-bold text-[#4d6029]"
+                                    : "font-poppins-medium text-[#1e293b]"
+                                }`}
+                              >
+                                {port} Ports
+                              </Text>
+                            </View>
+                            {isSelected ? (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={16}
+                                color="#4d6029"
+                              />
+                            ) : (
+                              <View className="w-4 h-4 rounded-full border border-slate-200" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                {/* Hardware Equipment Multi-Select Dropdown Section */}
+                <View className="mt-3">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-poppins-semibold text-[#475569]">
+                      Hardware Equipment:
+                    </Text>
+                    <View className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                      <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                        {newSelectedEquipment.length} item
+                        {newSelectedEquipment.length === 1 ? "" : "s"} assigned
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Dropdown Toggle Trigger Button */}
+                  <TouchableOpacity
+                    onPress={() =>
+                      setIsEquipmentDropdownOpen(!isEquipmentDropdownOpen)
+                    }
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                    activeOpacity={0.8}
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <MaterialCommunityIcons
+                        name="chip"
+                        size={16}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-medium text-[#0f172a] ml-2">
+                        {isEquipmentDropdownOpen
+                          ? "Hide Equipment Catalog"
+                          : "+ Select / Add Equipment from Catalog"}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={
+                        isEquipmentDropdownOpen ? "chevron-up" : "chevron-down"
+                      }
+                      size={16}
+                      color="#64748b"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Expanded Dropdown Catalog Panel */}
+                  {isEquipmentDropdownOpen && (
+                    <View className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 shadow-xs">
+                      {/* Catalog Category Filter Tabs */}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        className="mb-3"
+                        contentContainerStyle={{
+                          flexDirection: "row",
+                          gap: 6,
+                          alignItems: "center",
+                          paddingLeft: 2,
+                          paddingRight: 20,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        {[
+                          "ALL",
+                          "Optical Equipment",
+                          "Circuit / Internal Management",
+                          "Distribution Hardware",
+                          "Protection Hardware",
+                        ].map((cat) => (
+                          <TouchableOpacity
+                            key={cat}
+                            onPress={() => setEquipmentCatalogFilter(cat)}
+                            className={`px-2.5 py-1 rounded-xl border ${
+                              equipmentCatalogFilter === cat
+                                ? "bg-[#4d6029] border-[#4d6029] shadow-xs"
+                                : "bg-white border-slate-200 shadow-xs"
+                            }`}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              className={`text-[11px] ${
+                                equipmentCatalogFilter === cat
+                                  ? "text-white font-poppins-bold"
+                                  : "text-[#64748b] font-poppins-medium"
+                              }`}
+                            >
+                              {cat === "ALL"
+                                ? "All"
+                                : cat === "Optical Equipment"
+                                  ? "Optical"
+                                  : cat === "Circuit / Internal Management"
+                                    ? "Circuit"
+                                    : cat === "Distribution Hardware"
+                                      ? "Distribution"
+                                      : "Protection"}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+
+                      {/* Equipment Item Checklist */}
+                      <ScrollView
+                        className="max-h-56 space-y-1"
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                      >
+                        {STANDARD_HARDWARE_CATALOG.filter(
+                          (item) =>
+                            equipmentCatalogFilter === "ALL" ||
+                            item.category === equipmentCatalogFilter,
+                        ).map((item) => {
+                          const isSelected = newSelectedEquipment.includes(
+                            item.name,
+                          );
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              onPress={() => handleToggleEquipment(item.name)}
+                              className={`flex-row items-center justify-between p-2 rounded-xl border ${
+                                isSelected
+                                  ? "bg-emerald-50/90 border-emerald-300"
+                                  : "bg-white border-slate-200/80"
+                              }`}
+                              activeOpacity={0.7}
+                            >
+                              <View className="flex-row items-center flex-1 mr-2">
+                                <Ionicons
+                                  name={
+                                    isSelected ? "checkbox" : "square-outline"
+                                  }
+                                  size={17}
+                                  color={isSelected ? "#4d6029" : "#94a3b8"}
+                                />
+                                <Text
+                                  className={`text-xs ml-2 font-poppins-medium ${
+                                    isSelected
+                                      ? "text-[#0f172a] font-poppins-semibold"
+                                      : "text-[#334155]"
+                                  }`}
+                                >
+                                  {item.name}
+                                </Text>
+                              </View>
+                              <View className="bg-slate-100 px-2 py-0.5 rounded">
+                                <Text className="text-[9px] font-poppins text-[#64748b]">
+                                  {item.category === "Optical Equipment"
+                                    ? "Optical"
+                                    : item.category ===
+                                        "Circuit / Internal Management"
+                                      ? "Circuit"
+                                      : item.category ===
+                                          "Distribution Hardware"
+                                        ? "Distribution"
+                                        : "Protection"}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Assigned Hardware Tag Pills */}
+                  <View className="mt-2.5">
+                    <Text className="text-[11px] font-poppins-semibold text-[#64748b] mb-1.5">
+                      Assigned Hardware for this Box:
+                    </Text>
+
+                    {newSelectedEquipment.length === 0 ? (
+                      <View className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl items-center">
+                        <Text className="text-xs font-poppins text-[#94a3b8]">
+                          No hardware assigned yet. Click dropdown above to
+                          select.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View className="flex-row flex-wrap gap-1.5">
+                        {newSelectedEquipment.map((eqName, idx) => (
+                          <View
+                            key={idx}
+                            className="bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5 flex-row items-center shadow-xs"
+                          >
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={13}
+                              color="#4d6029"
+                            />
+                            <Text className="text-xs font-poppins-medium text-[#0f172a] ml-1.5 mr-2">
+                              {eqName}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => handleRemoveEquipment(eqName)}
+                              className="w-4 h-4 rounded-full bg-emerald-200/80 items-center justify-center"
+                              accessibilityLabel={`Remove ${eqName}`}
+                            >
+                              <Ionicons
+                                name="close"
+                                size={10}
+                                color="#166534"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Custom Hardware Write-In Row */}
+                  <View className="mt-2.5">
+                    <Text className="text-[11px] font-poppins-semibold text-[#64748b] mb-1">
+                      + Add Custom / Unlisted Hardware:
+                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      <TextInput
+                        placeholder="e.g. 12V 50W Solar Inverter, Optical Splicer"
+                        placeholderTextColor="#94a3b8"
+                        value={customEquipmentInput}
+                        onChangeText={setCustomEquipmentInput}
+                        onSubmitEditing={handleAddCustomEquipment}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
+                      />
+                      <TouchableOpacity
+                        onPress={handleAddCustomEquipment}
+                        className={`px-3.5 py-2.5 rounded-xl flex-row items-center ${
+                          customEquipmentInput.trim()
+                            ? "bg-[#4d6029]"
+                            : "bg-slate-200"
+                        }`}
+                        disabled={!customEquipmentInput.trim()}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="add" size={14} color="#ffffff" />
+                        <Text className="text-xs font-poppins-bold text-white ml-1">
+                          Add
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </ScrollView>
@@ -2153,6 +2949,409 @@ export default function BoxManagementScreen() {
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">
                     Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {/* MODAL 4: CONNECT NEW SUBSCRIBER */}
+      {isAddClientModalOpen && selectedBoxForDetails && (
+        <Modal
+          visible={isAddClientModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsAddClientModalOpen(false)}
+        >
+          <View className="flex-1 bg-black/60 items-center justify-center p-4">
+            <View className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh]">
+              {/* Modal Header */}
+              <View className="flex-row items-center justify-between pb-3.5 border-b border-slate-100">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-10 h-10 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3">
+                    <Ionicons name="person-add" size={20} color="#4d6029" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-base font-poppins-bold text-[#0f172a]">
+                      Connect Subscriber
+                    </Text>
+                    <Text
+                      className="text-xs font-poppins text-[#64748b]"
+                      numberOfLines={1}
+                    >
+                      {selectedBoxForDetails.code} · {selectedBoxForDetails.siteName}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsAddClientModalOpen(false)}
+                  className="p-2 rounded-full bg-slate-100 hover:bg-slate-200"
+                >
+                  <Ionicons name="close" size={18} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Modal Body */}
+              <ScrollView
+                className="py-4 space-y-4"
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Box Context Card */}
+                <View className="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 mb-3 flex-row items-center justify-between">
+                  <View className="flex-row items-center">
+                    <MaterialCommunityIcons
+                      name="cube-outline"
+                      size={18}
+                      color="#4d6029"
+                    />
+                    <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-1.5">
+                      Target Box:{" "}
+                      <Text className="font-poppins-bold text-[#4d6029]">
+                        {selectedBoxForDetails.code}
+                      </Text>
+                    </Text>
+                  </View>
+                  <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2.5 py-0.5 rounded-lg">
+                    <Text className="text-[10px] font-poppins-bold text-[#78350f]">
+                      {getAvailablePorts(selectedBoxForDetails).length} Ports Available
+                    </Text>
+                  </View>
+                </View>
+
+                {/* 1. Port Selection Dropdown */}
+                <View className="mb-3.5">
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
+                    Assign Optical Port *
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setIsClientPortDropdownOpen(!isClientPortDropdownOpen)
+                    }
+                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5"
+                    activeOpacity={0.75}
+                  >
+                    <View className="flex-row items-center">
+                      <MaterialCommunityIcons
+                        name="ethernet"
+                        size={18}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-bold text-[#0f172a] ml-2">
+                        {newClientPort || "Select an available port..."}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={
+                        isClientPortDropdownOpen ? "chevron-up" : "chevron-down"
+                      }
+                      size={16}
+                      color="#64748b"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Available Port Grid Selector */}
+                  {isClientPortDropdownOpen && (
+                    <View className="mt-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-[11px] font-poppins-semibold text-[#64748b]">
+                          Select an available port ({getAvailablePorts(selectedBoxForDetails).length} free):
+                        </Text>
+                      </View>
+                      <ScrollView
+                        className="max-h-44"
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        <View className="flex-row flex-wrap gap-1.5 pb-1">
+                          {getAvailablePorts(selectedBoxForDetails).map((port) => (
+                            <TouchableOpacity
+                              key={port}
+                              onPress={() => {
+                                setNewClientPort(port);
+                                setIsClientPortDropdownOpen(false);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl border ${
+                                newClientPort === port
+                                  ? "bg-[#4d6029] border-[#4d6029]"
+                                  : "bg-white border-slate-200"
+                              }`}
+                            >
+                              <Text
+                                className={`text-xs font-poppins-semibold ${
+                                  newClientPort === port
+                                    ? "text-white"
+                                    : "text-[#0f172a]"
+                                }`}
+                              >
+                                {port}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* 2. Account Number Input with Auto-Detection & Directory Picker */}
+                <View className="mb-3.5">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                      Subscriber Account Number *
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() =>
+                        setIsSubscriberDirectoryOpen(
+                          !isSubscriberDirectoryOpen,
+                        )
+                      }
+                      className="flex-row items-center"
+                    >
+                      <Ionicons
+                        name="folder-open-outline"
+                        size={13}
+                        color="#4d6029"
+                      />
+                      <Text className="text-[11px] font-poppins-semibold text-[#4d6029] ml-1">
+                        {isSubscriberDirectoryOpen
+                          ? "Close Directory"
+                          : "Browse Directory"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1">
+                    <Ionicons
+                      name="barcode-outline"
+                      size={16}
+                      color="#64748b"
+                    />
+                    <TextInput
+                      value={newClientAccount}
+                      onChangeText={handleAccountChange}
+                      placeholder="e.g. ACC-ILG-015 or ACC-IIT-006"
+                      placeholderTextColor="#94a3b8"
+                      autoCapitalize="characters"
+                      className="flex-1 ml-2 text-xs font-mono font-poppins-semibold text-[#0f172a] py-2"
+                    />
+                    {matchedSubscriber && (
+                      <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2 py-0.5 rounded flex-row items-center">
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={12}
+                          color="#4d6029"
+                        />
+                        <Text className="text-[10px] font-poppins-bold text-[#78350f] ml-1">
+                          Matched
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Expandable Directory Browser */}
+                  {isSubscriberDirectoryOpen && (
+                    <View className="mt-2.5 p-3 bg-slate-50 rounded-2xl border border-slate-200 max-h-56">
+                      <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                          Central Billing Directory ({STATIC_SUBSCRIBERS_DIRECTORY.length} records)
+                        </Text>
+                        <Text className="text-[10px] font-poppins text-[#64748b]">
+                          Tap to auto-fill
+                        </Text>
+                      </View>
+
+                      <View className="flex-row items-center bg-white border border-slate-200 rounded-xl px-2.5 py-1 mb-2">
+                        <Ionicons name="search" size={13} color="#94a3b8" />
+                        <TextInput
+                          value={directorySearchQuery}
+                          onChangeText={setDirectorySearchQuery}
+                          placeholder="Search directory by name, account #, or plan..."
+                          placeholderTextColor="#94a3b8"
+                          className="flex-1 ml-2 text-xs font-poppins text-[#0f172a] py-1"
+                        />
+                        {directorySearchQuery.length > 0 && (
+                          <TouchableOpacity
+                            onPress={() => setDirectorySearchQuery("")}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={14}
+                              color="#94a3b8"
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <ScrollView
+                        className="max-h-36 space-y-1.5"
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                      >
+                        {STATIC_SUBSCRIBERS_DIRECTORY.filter((s) => {
+                          const q = directorySearchQuery.toLowerCase().trim();
+                          return (
+                            q === "" ||
+                            s.name.toLowerCase().includes(q) ||
+                            s.accountNumber.toLowerCase().includes(q) ||
+                            s.plan.toLowerCase().includes(q) ||
+                            s.category.toLowerCase().includes(q)
+                          );
+                        }).map((sub) => {
+                          const isCurrentlySelected =
+                            newClientAccount.toUpperCase() ===
+                            sub.accountNumber.toUpperCase();
+                          return (
+                            <TouchableOpacity
+                              key={sub.accountNumber}
+                              onPress={() => handleSelectFromDirectory(sub)}
+                              className={`p-2 rounded-xl border flex-row items-center justify-between mb-1 ${
+                                isCurrentlySelected
+                                  ? "bg-[#FCF0DA] border-[#edd5a6]"
+                                  : "bg-white border-slate-200/80"
+                              }`}
+                              activeOpacity={0.7}
+                            >
+                              <View className="flex-1 mr-2">
+                                <View className="flex-row items-center">
+                                  <Text className="text-xs font-mono font-poppins-bold text-[#4d6029] mr-2">
+                                    {sub.accountNumber}
+                                  </Text>
+                                  <Text
+                                    className="text-xs font-poppins-bold text-[#0f172a] flex-1"
+                                    numberOfLines={1}
+                                  >
+                                    {sub.name}
+                                  </Text>
+                                </View>
+                                <Text
+                                  className="text-[10px] font-poppins text-[#64748b]"
+                                  numberOfLines={1}
+                                >
+                                  {sub.category} · {sub.plan}
+                                </Text>
+                              </View>
+                              <View className="bg-slate-100 px-2 py-0.5 rounded">
+                                <Text className="text-[9px] font-poppins-semibold text-[#475569]">
+                                  {sub.status === "ACTIVE"
+                                    ? "Active"
+                                    : "Pending"}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* 3. Customer / Entity Name */}
+                <View className="mb-3.5">
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
+                    Subscriber / Entity Name *
+                  </Text>
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1">
+                    <Ionicons name="person-outline" size={16} color="#64748b" />
+                    <TextInput
+                      value={newClientName}
+                      onChangeText={setNewClientName}
+                      placeholder="e.g. Juan Dela Cruz, Iligan Bank Corp."
+                      placeholderTextColor="#94a3b8"
+                      className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a] py-2"
+                    />
+                  </View>
+                </View>
+
+                {/* 4. Service Plan Dropdown / Selector */}
+                <View className="mb-3.5">
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
+                    Service Plan Subscription *
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setIsClientPlanDropdownOpen(!isClientPlanDropdownOpen)
+                    }
+                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5"
+                    activeOpacity={0.75}
+                  >
+                    <View className="flex-row items-center">
+                      <MaterialCommunityIcons
+                        name="speedometer"
+                        size={18}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-bold text-[#0f172a] ml-2">
+                        {newClientPlan}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={
+                        isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
+                      }
+                      size={16}
+                      color="#64748b"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Plan Options List */}
+                  {isClientPlanDropdownOpen && (
+                    <View className="mt-2 p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                      {SERVICE_PLANS.map((plan) => (
+                        <TouchableOpacity
+                          key={plan}
+                          onPress={() => {
+                            setNewClientPlan(plan);
+                            setIsClientPlanDropdownOpen(false);
+                          }}
+                          className={`flex-row items-center justify-between p-2.5 rounded-xl ${
+                            newClientPlan === plan
+                              ? "bg-[#4d6029] text-white"
+                              : "bg-white border border-slate-200/70"
+                          } mb-1`}
+                        >
+                          <Text
+                            className={`text-xs font-poppins-semibold ${
+                              newClientPlan === plan
+                                ? "text-white"
+                                : "text-[#0f172a]"
+                            }`}
+                          >
+                            {plan}
+                          </Text>
+                          {newClientPlan === plan && (
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={16}
+                              color="#ffffff"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+
+              {/* Action Buttons */}
+              <View className="flex-row space-x-2 pt-4 border-t border-slate-100">
+                <TouchableOpacity
+                  onPress={handleSaveNewClient}
+                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-sm mr-2"
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                  <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                    Connect & Activate
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setIsAddClientModalOpen(false)}
+                  className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
+                >
+                  <Text className="text-[#475569] text-xs font-poppins-bold">
+                    Cancel
                   </Text>
                 </TouchableOpacity>
               </View>

@@ -5,14 +5,15 @@ export default function UserLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#f0f3f6' },
+        animation: 'none',
+        contentStyle: { backgroundColor: '#f8fafc' },
       }}
     >
-      <Stack.Screen name="dashboard" />
-      <Stack.Screen name="map" />
-      <Stack.Screen name="scanner" />
-      <Stack.Screen name="boxes" />
-      <Stack.Screen name="profile" />
+      <Stack.Screen name="dashboard" options={{ animation: 'none' }} />
+      <Stack.Screen name="map" options={{ animation: 'none' }} />
+      <Stack.Screen name="scanner" options={{ animation: 'none' }} />
+      <Stack.Screen name="boxes" options={{ animation: 'none' }} />
+      <Stack.Screen name="profile" options={{ animation: 'none' }} />
     </Stack>
   );
 }

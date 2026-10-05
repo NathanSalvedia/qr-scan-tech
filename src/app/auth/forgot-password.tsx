@@ -32,12 +32,16 @@ export default function ForgotPasswordScreen() {
 
     setIsSubmitted(true);
     Alert.alert(
-      "Reset Link Sent",
-      `If an account exists for ${email.trim()}, a password reset link has been sent to your email.`,
+      "Verification Code Sent",
+      `A 6-digit password reset code has been sent to ${email.trim()}.`,
       [
         {
-          text: "Back to Sign In",
-          onPress: () => router.replace("/auth/sign-in"),
+          text: "Enter OTP Code",
+          onPress: () =>
+            router.push({
+              pathname: "/auth/otp",
+              params: { email: email.trim(), mode: "reset" },
+            }),
         },
       ],
     );

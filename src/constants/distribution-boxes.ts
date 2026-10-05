@@ -24,6 +24,38 @@ export interface BoxPin {
   lastScannedAt?: string;
 }
 
+export interface EquipmentCatalogItem {
+  id: string;
+  name: string;
+  category: 'Optical Equipment' | 'Circuit / Internal Management' | 'Distribution Hardware' | 'Protection Hardware';
+  type: string;
+}
+
+export const STANDARD_HARDWARE_CATALOG: EquipmentCatalogItem[] = [
+  // 1. Optical Equipment (For Signal and Data Transmission)
+  { id: 'cat-opt-1', name: 'PLC Optical Splitter', category: 'Optical Equipment', type: 'Splitter' },
+  { id: 'cat-opt-2', name: 'Fiber Optic Adapters / Couplers', category: 'Optical Equipment', type: 'Adapter' },
+  { id: 'cat-opt-3', name: 'Fiber Optic Pigtails', category: 'Optical Equipment', type: 'Pigtail' },
+  { id: 'cat-opt-4', name: 'Fiber Patch Cord', category: 'Optical Equipment', type: 'Patch Cord' },
+
+  // 2. Circuit / Internal Management (For Cable Organization)
+  { id: 'cat-cir-1', name: 'Splice Tray', category: 'Circuit / Internal Management', type: 'Tray' },
+  { id: 'cat-cir-2', name: 'Splice Holder / Fusion Sleeves', category: 'Circuit / Internal Management', type: 'Sleeve' },
+  { id: 'cat-cir-3', name: 'Cable Routing Rings / Mandrels', category: 'Circuit / Internal Management', type: 'Routing Guide' },
+
+  // 3. Distribution Hardware (For Cable Outflow)
+  { id: 'cat-dst-1', name: 'Mid-span Access Ports / Main Cable Entry', category: 'Distribution Hardware', type: 'Entry Port' },
+  { id: 'cat-dst-2', name: 'Drop Cable Outlets', category: 'Distribution Hardware', type: 'Outlet' },
+  { id: 'cat-dst-3', name: 'Cable Glands / Waterproof Seals', category: 'Distribution Hardware', type: 'Seal' },
+  { id: 'cat-dst-4', name: 'Strength Member Clamps', category: 'Distribution Hardware', type: 'Clamp' },
+
+  // 4. Protection Hardware (For Weatherproofing and Security)
+  { id: 'cat-prt-1', name: 'IP65/IP66 Weatherproof Enclosure', category: 'Protection Hardware', type: 'Enclosure' },
+  { id: 'cat-prt-2', name: 'Rubber Gasket / Seal Ring', category: 'Protection Hardware', type: 'Gasket' },
+  { id: 'cat-prt-3', name: 'Key Lock System / Padlock Hasp', category: 'Protection Hardware', type: 'Lock' },
+  { id: 'cat-prt-4', name: 'Pole Mounting Kit / Wall Mount Bracket', category: 'Protection Hardware', type: 'Mount' },
+];
+
 export const BOX_PINS: BoxPin[] = [
   {
     id: '1',
@@ -199,3 +231,278 @@ export const BOX_PINS: BoxPin[] = [
     longitude: 124.2650,
   },
 ];
+
+export interface SubscriberDirectoryRecord {
+  accountNumber: string;
+  name: string;
+  plan: string;
+  category: "Residential" | "Commercial" | "Enterprise" | "Government" | "Academic";
+  address: string;
+  contactNumber: string;
+  status: "ACTIVE" | "PENDING_PROVISIONING";
+}
+
+export const STATIC_SUBSCRIBERS_DIRECTORY: SubscriberDirectoryRecord[] = [
+  {
+    accountNumber: "ACC-ILG-001",
+    name: "City Hall Mayor Office",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Government",
+    address: "Buhanginan Hills, Pala-o, Iligan City",
+    contactNumber: "0917-111-2201",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ILG-010",
+    name: "Roxas Commercial Bank",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Enterprise",
+    address: "Roxas Ave, Poblacion, Iligan City",
+    contactNumber: "0917-222-3301",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ILG-011",
+    name: "Poblacion Medical Clinic",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Aguinaldo St, Poblacion, Iligan City",
+    contactNumber: "0918-333-4402",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ILG-012",
+    name: "Midtown Plaza Office",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Midtown Complex, Iligan City",
+    contactNumber: "0920-444-5503",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ILG-015",
+    name: "Maria Clara Santos",
+    plan: "200 Mbps Fiber Pro",
+    category: "Residential",
+    address: "Pala-o Riverside, Iligan City",
+    contactNumber: "0917-555-6604",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-ILG-016",
+    name: "Iligan Diagnostic Laboratory",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Quezon Ave, Iligan City",
+    contactNumber: "0919-666-7705",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-IIT-001",
+    name: "MSU-IIT Computer Center",
+    plan: "1 Gbps Enterprise Link",
+    category: "Academic",
+    address: "Andres Bonifacio Ave, Tibanga, Iligan City",
+    contactNumber: "0917-777-8806",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-IIT-002",
+    name: "College of Engineering & Tech",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Academic",
+    address: "MSU-IIT Campus, Tibanga",
+    contactNumber: "0918-888-9907",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-IIT-003",
+    name: "Science & Math Complex",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Academic",
+    address: "MSU-IIT Science Bldg, Tibanga",
+    contactNumber: "0918-999-1122",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-IIT-004",
+    name: "University Administration Bldg",
+    plan: "300 Mbps Business Fiber",
+    category: "Academic",
+    address: "MSU-IIT Admin Complex",
+    contactNumber: "0918-777-3344",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-IIT-005",
+    name: "Tibanga Student Dormitory Hub",
+    plan: "200 Mbps Fiber Pro",
+    category: "Residential",
+    address: "Tibanga Highway, Iligan City",
+    contactNumber: "0920-555-6677",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-IIT-006",
+    name: "Tibanga Science Research Lab",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Academic",
+    address: "Science Bldg 3, MSU-IIT",
+    contactNumber: "0921-999-0008",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-IIT-007",
+    name: "Engr. Ronald Macasarte",
+    plan: "200 Mbps Fiber Pro",
+    category: "Residential",
+    address: "Doña Juana Subd, Tibanga",
+    contactNumber: "0917-123-4567",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-TBD-001",
+    name: "Tubod South Terminal Dispatch",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Macapagal Highway, Tubod",
+    contactNumber: "0918-234-5678",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-TBD-004",
+    name: "Tubod Central Pharmacy & Mart",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Tubod Market Rd, Iligan City",
+    contactNumber: "0919-345-6789",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-TBD-005",
+    name: "Grace Villa Residences - Unit 14",
+    plan: "100 Mbps Fiber Starter",
+    category: "Residential",
+    address: "San Roque, Tubod, Iligan City",
+    contactNumber: "0920-456-7890",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-ROB-001",
+    name: "Robinsons Department Store",
+    plan: "1 Gbps Enterprise Link",
+    category: "Enterprise",
+    address: "Robinsons Place Iligan, Tubod",
+    contactNumber: "0917-567-8901",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ROB-002",
+    name: "Robinsons Supermarket POS",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Robinsons Place Iligan Level 1",
+    contactNumber: "0917-678-1234",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ROB-003",
+    name: "Cinema Digital Feed",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Commercial",
+    address: "Robinsons Place Iligan Level 3",
+    contactNumber: "0917-789-2345",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-ROB-004",
+    name: "Starbucks Robinsons Iligan",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Ground Floor, Robinsons Place",
+    contactNumber: "0918-678-9012",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-TMB-001",
+    name: "Tambo Logistics Hub",
+    plan: "300 Mbps Business Fiber",
+    category: "Commercial",
+    address: "Tambo Highway, Iligan City",
+    contactNumber: "0919-789-0123",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-TMB-002",
+    name: "Hinaplanon Fuel Depot",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Tambo North Cross, Iligan City",
+    contactNumber: "0919-890-3456",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-TMB-003",
+    name: "Hinaplanon Community Clinic",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Hinaplanon Proper, Iligan City",
+    contactNumber: "0920-890-1234",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-DLC-001",
+    name: "Del Carmen Barangay Hall",
+    plan: "200 Mbps Fiber Pro",
+    category: "Government",
+    address: "Del Carmen Center, Iligan City",
+    contactNumber: "0917-901-2345",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-DLC-002",
+    name: "Del Carmen Health Center",
+    plan: "100 Mbps Fiber Starter",
+    category: "Government",
+    address: "Del Carmen East, Iligan City",
+    contactNumber: "0917-012-3456",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-DLC-003",
+    name: "Commercial Plaza Hub",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Del Carmen Commercial Strip",
+    contactNumber: "0917-123-7890",
+    status: "ACTIVE",
+  },
+  {
+    accountNumber: "ACC-DLC-004",
+    name: "Del Carmen Multi-Purpose Coop",
+    plan: "200 Mbps Fiber Pro",
+    category: "Commercial",
+    address: "Del Carmen Main Ave, Iligan City",
+    contactNumber: "0918-012-3456",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-GEN-101",
+    name: "Alexander Davies (Home Lab)",
+    plan: "500 Mbps Dedicated Fiber",
+    category: "Residential",
+    address: "Villa Verde, Iligan City",
+    contactNumber: "0919-111-3333",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "ACC-GEN-102",
+    name: "Salvedia Digital Solutions",
+    plan: "1 Gbps Enterprise Link",
+    category: "Enterprise",
+    address: "Pala-o IT Park, Iligan City",
+    contactNumber: "0917-888-7777",
+    status: "PENDING_PROVISIONING",
+  },
+];
+

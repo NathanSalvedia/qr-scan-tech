@@ -18,6 +18,7 @@ export default function SignUpScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +31,10 @@ export default function SignUpScreen() {
     }
     if (!email.trim()) {
       Alert.alert("Required Fields", "Please enter your email address.");
+      return;
+    }
+    if (!phone.trim()) {
+      Alert.alert("Required Fields", "Please enter your phone number.");
       return;
     }
     if (!password) {
@@ -45,11 +50,15 @@ export default function SignUpScreen() {
     }
     Alert.alert(
       "Account Created",
-      `Welcome ${firstName} ${lastName}! Please sign in to continue.`,
+      `Welcome ${firstName} ${lastName}! A 6-digit verification code has been sent to ${email.trim()}.`,
       [
         {
-          text: "OK",
-          onPress: () => router.replace("/auth/sign-in"),
+          text: "Verify Email",
+          onPress: () =>
+            router.push({
+              pathname: "/auth/otp",
+              params: { email: email.trim(), mode: "signup" },
+            }),
         },
       ],
     );
@@ -143,6 +152,24 @@ export default function SignUpScreen() {
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
+                    className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
+                  />
+                </View>
+              </View>
+
+              {/* Phone Number Field */}
+              <View className="mb-4">
+                <Text className="text-[#1e293b] text-sm font-poppins-semibold mb-2">
+                  Phone Number
+                </Text>
+                <View className="flex-row items-center bg-white rounded-2xl px-4 py-2.5 border border-slate-100 shadow-sm shadow-slate-200/50">
+                  <Ionicons name="call-outline" size={20} color="#94a3b8" />
+                  <TextInput
+                    placeholder="Enter your phone number"
+                    placeholderTextColor="#94a3b8"
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
                     className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
                   />
                 </View>
