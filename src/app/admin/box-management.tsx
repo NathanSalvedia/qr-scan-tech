@@ -32,7 +32,7 @@ export interface ClientConnection {
   port: string;
   accountNumber: string;
   name: string;
-  plan: string;
+  plan?: string;
   status: "CONNECTED" | "DISCONNECTED";
 }
 
@@ -79,9 +79,9 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "ACTIVE",
     totalPorts: 48,
     activePorts: 42,
-    qrToken: "QRTECH-BOX-ILG-MN01-8891",
+    qrToken: "QRTECH-BOX-MN01-8891",
     lastScanned: "Today at 09:15 AM by Alex Davies",
-    notes: "Primary optical distribution hub feeding 4 downstream sub-boxes.",
+    notes: "Primary optical distribution box feeding 4 downstream sub-boxes.",
     equipment: [
       {
         id: "eq1",
@@ -149,7 +149,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "ACTIVE",
     totalPorts: 32,
     activePorts: 28,
-    qrToken: "QRTECH-BOX-ILG-MN02-4412",
+    qrToken: "QRTECH-BOX-MN02-4412",
     lastScanned: "Yesterday at 03:40 PM by R. Santos",
     notes: "Sub-hub routing feeder to Robinsons and Del Carmen sub-boxes.",
     equipment: [
@@ -186,8 +186,8 @@ const INITIAL_BOXES: DistributionBox[] = [
       {
         port: "Port 03",
         accountNumber: "ACC-ILG-012",
-        name: "Midtown Plaza Office",
-        plan: "200 Mbps Business",
+        name: "Maria Clara Santos",
+        plan: "200 Mbps Fiber Pro",
         status: "CONNECTED",
       },
     ],
@@ -206,7 +206,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "ACTIVE",
     totalPorts: 32,
     activePorts: 24,
-    qrToken: "QRTECH-BOX-ILG-SB02-9901",
+    qrToken: "QRTECH-BOX-SB02-9901",
     lastScanned: "Sep 29, 2026 by Alex Davies",
     notes: "Campus node with 1:8 splitters supplying academic buildings.",
     equipment: [
@@ -291,7 +291,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "ACTIVE",
     totalPorts: 24,
     activePorts: 18,
-    qrToken: "QRTECH-BOX-ILG-SB03-1204",
+    qrToken: "QRTECH-BOX-SB03-1204",
     lastScanned: "Sep 28, 2026 by R. Santos",
     notes: "South arterial node serving Tubod transport and commercial hub.",
     equipment: [
@@ -355,7 +355,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "NEEDS_TAG",
     totalPorts: 32,
     activePorts: 12,
-    qrToken: "QRTECH-BOX-ILG-SB04-7731",
+    qrToken: "QRTECH-BOX-SB04-7731",
     lastScanned: "Never (New Installation)",
     notes:
       "Newly mounted mall enclosure. Requires physical 50x50mm QR label affixing.",
@@ -413,7 +413,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "NEEDS_TAG",
     totalPorts: 16,
     activePorts: 8,
-    qrToken: "QRTECH-BOX-ILG-SB05-6612",
+    qrToken: "QRTECH-BOX-SB05-6612",
     lastScanned: "Never (New Expansion)",
     notes:
       "North highway feeder box installed last week. QR sticker pending dispatch.",
@@ -464,7 +464,7 @@ const INITIAL_BOXES: DistributionBox[] = [
     status: "ISSUE",
     totalPorts: 24,
     activePorts: 16,
-    qrToken: "QRTECH-BOX-ILG-SB06-3390",
+    qrToken: "QRTECH-BOX-SB06-3390",
     lastScanned: "Yesterday at 04:30 PM (Alarm Triggered)",
     notes:
       "ALARM: High temperature detected on breaker & optical attenuation on Port 3.",
@@ -565,10 +565,7 @@ export default function BoxManagementScreen() {
   const [newClientPort, setNewClientPort] = useState("");
   const [newClientAccount, setNewClientAccount] = useState("");
   const [newClientName, setNewClientName] = useState("");
-  const [newClientPlan, setNewClientPlan] = useState("200 Mbps Fiber Pro");
   const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
-    useState(false);
-  const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] =
     useState(false);
   const [matchedSubscriber, setMatchedSubscriber] =
     useState<SubscriberDirectoryRecord | null>(null);
@@ -621,7 +618,6 @@ export default function BoxManagementScreen() {
     );
     if (matched) {
       setNewClientName(matched.name);
-      setNewClientPlan(matched.plan);
       setMatchedSubscriber(matched);
     } else {
       setMatchedSubscriber(null);
@@ -631,7 +627,6 @@ export default function BoxManagementScreen() {
   const handleSelectFromDirectory = (sub: SubscriberDirectoryRecord) => {
     setNewClientAccount(sub.accountNumber);
     setNewClientName(sub.name);
-    setNewClientPlan(sub.plan);
     setMatchedSubscriber(sub);
     setIsSubscriberDirectoryOpen(false);
   };
@@ -670,7 +665,6 @@ export default function BoxManagementScreen() {
     if (unassignedInDirectory) {
       setNewClientAccount(unassignedInDirectory.accountNumber);
       setNewClientName(unassignedInDirectory.name);
-      setNewClientPlan(unassignedInDirectory.plan);
       setMatchedSubscriber(unassignedInDirectory);
     } else {
       const fallbackAcc = generateSequentialAccount(selectedBoxForDetails);
@@ -680,17 +674,14 @@ export default function BoxManagementScreen() {
       );
       if (matched) {
         setNewClientName(matched.name);
-        setNewClientPlan(matched.plan);
         setMatchedSubscriber(matched);
       } else {
         setNewClientName("");
-        setNewClientPlan("200 Mbps Fiber Pro");
         setMatchedSubscriber(null);
       }
     }
 
     setIsClientPortDropdownOpen(false);
-    setIsClientPlanDropdownOpen(false);
     setIsSubscriberDirectoryOpen(false);
     setDirectorySearchQuery("");
     setIsAddClientModalOpen(true);
@@ -725,7 +716,6 @@ export default function BoxManagementScreen() {
       port: newClientPort,
       accountNumber: newClientAccount.trim().toUpperCase(),
       name: newClientName.trim(),
-      plan: newClientPlan,
       status: "CONNECTED",
     };
 
@@ -1015,7 +1005,7 @@ export default function BoxManagementScreen() {
       status: "NEEDS_TAG",
       totalPorts: parseInt(newPorts, 10) || 24,
       activePorts: 0,
-      qrToken: `QRTECH-BOX-ILG-${newCode.trim().toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      qrToken: `QRTECH-BOX-${newCode.trim().toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
       lastScanned: "Never (New Registration)",
       notes:
         newSelectedEquipment.length > 0
@@ -1061,7 +1051,7 @@ export default function BoxManagementScreen() {
         {/* Main Box Management Canvas */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 40 }}
           >
@@ -1266,7 +1256,7 @@ export default function BoxManagementScreen() {
               <View className="flex-row items-center flex-wrap gap-1.5">
                 {[
                   { id: "ALL", label: `All (${boxes.length})` },
-                  { id: "MAIN_BOX", label: "Main Hubs" },
+                  { id: "MAIN_BOX", label: "Main Boxes" },
                   { id: "SUB_BOX", label: "Sub-Boxes" },
                   { id: "ACTIVE", label: "Active" },
                   { id: "NEEDS_TAG", label: "Needs Tag" },
@@ -1723,8 +1713,8 @@ export default function BoxManagementScreen() {
                         }`}
                       >
                         {selectedBoxForDetails.category === "MAIN_BOX"
-                          ? "🏢 Main Distribution Hub"
-                          : "🔀 Branch Sub-Box"}
+                          ? "🏢 Main Distribution Box"
+                          : "🔀 Sub-Distribution Box"}
                       </Text>
                     </View>
 
@@ -1810,47 +1800,6 @@ export default function BoxManagementScreen() {
                       {selectedBoxForDetails.longitude.toFixed(4)}°E
                     </Text>
                   </View>
-                </View>
-
-                {/* Hierarchy Topology Info */}
-                <View className="mt-2.5 pt-2 border-t border-slate-200/60 flex-row items-center justify-between">
-                  <View className="flex-row items-center flex-1 mr-2">
-                    <MaterialCommunityIcons
-                      name="source-branch"
-                      size={13}
-                      color="#64748b"
-                    />
-                    {selectedBoxForDetails.category === "SUB_BOX" ? (
-                      <Text className="text-[11px] font-poppins text-[#64748b] ml-1">
-                        Upstream Feeder:{" "}
-                        <Text className="font-poppins-bold text-[#0f172a]">
-                          {selectedBoxForDetails.parentCode || "DB-MN-01"}
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text className="text-[11px] font-poppins text-[#64748b] ml-1">
-                        Network Role:{" "}
-                        <Text className="font-poppins-bold text-[#4d6029]">
-                          Main Backbone Box
-                        </Text>
-                      </Text>
-                    )}
-                  </View>
-
-                  <Text className="text-[11px] font-poppins text-[#64748b]">
-                    Port Capacity:{" "}
-                    <Text className="font-poppins-bold text-[#0f172a]">
-                      {selectedBoxForDetails.activePorts}/
-                      {selectedBoxForDetails.totalPorts}
-                    </Text>{" "}
-                    (
-                    {Math.round(
-                      (selectedBoxForDetails.activePorts /
-                        selectedBoxForDetails.totalPorts) *
-                        100,
-                    )}
-                    %)
-                  </Text>
                 </View>
               </View>
 
@@ -2016,8 +1965,7 @@ export default function BoxManagementScreen() {
                             query === "" ||
                             c.name.toLowerCase().includes(query) ||
                             c.accountNumber.toLowerCase().includes(query) ||
-                            c.port.toLowerCase().includes(query) ||
-                            c.plan.toLowerCase().includes(query),
+                            c.port.toLowerCase().includes(query),
                         );
 
                       if (selectedBoxForDetails.clients.length === 0) {
@@ -2099,13 +2047,10 @@ export default function BoxManagementScreen() {
                                       {client.name}
                                     </Text>
                                     <Text
-                                      className="text-[11px] font-poppins text-[#64748b]"
+                                      className="text-[11px] font-mono font-poppins-semibold text-[#64748b]"
                                       numberOfLines={1}
                                     >
-                                      <Text className="font-mono text-[#0f172a] font-poppins-semibold">
-                                        {client.accountNumber}
-                                      </Text>{" "}
-                                      · {client.plan}
+                                      {client.accountNumber}
                                     </Text>
                                   </View>
                                 </View>
@@ -2334,7 +2279,7 @@ export default function BoxManagementScreen() {
                             : "text-[#475569]"
                         }`}
                       >
-                        Main Distribution Hub
+                        Main Distribution Box
                       </Text>
                     </TouchableOpacity>
 
@@ -2353,7 +2298,7 @@ export default function BoxManagementScreen() {
                             : "text-[#475569]"
                         }`}
                       >
-                        Branch Sub-Box
+                        Sub-Distribution Box
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -2556,7 +2501,7 @@ export default function BoxManagementScreen() {
                                 : ""
                             } ${
                               isSelected
-                                ? "bg-emerald-50/70"
+                                ? "bg-[#AEAC78]/25"
                                 : "bg-white hover:bg-slate-50"
                             }`}
                             activeOpacity={0.7}
@@ -2599,8 +2544,8 @@ export default function BoxManagementScreen() {
                     <Text className="text-xs font-poppins-semibold text-[#475569]">
                       Hardware Equipment:
                     </Text>
-                    <View className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                      <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                    <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-md">
+                      <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
                         {newSelectedEquipment.length} item
                         {newSelectedEquipment.length === 1 ? "" : "s"} assigned
                       </Text>
@@ -2693,7 +2638,8 @@ export default function BoxManagementScreen() {
 
                       {/* Equipment Item Checklist */}
                       <ScrollView
-                        className="max-h-56 space-y-1"
+                        className="max-h-56"
+                        contentContainerStyle={{ paddingVertical: 2 }}
                         showsVerticalScrollIndicator={true}
                         nestedScrollEnabled={true}
                       >
@@ -2709,11 +2655,7 @@ export default function BoxManagementScreen() {
                             <TouchableOpacity
                               key={item.id}
                               onPress={() => handleToggleEquipment(item.name)}
-                              className={`flex-row items-center justify-between p-2 rounded-xl border ${
-                                isSelected
-                                  ? "bg-emerald-50/90 border-emerald-300"
-                                  : "bg-white border-slate-200/80"
-                              }`}
+                              className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
                               activeOpacity={0.7}
                             >
                               <View className="flex-row items-center flex-1 mr-2">
@@ -2721,16 +2663,10 @@ export default function BoxManagementScreen() {
                                   name={
                                     isSelected ? "checkbox" : "square-outline"
                                   }
-                                  size={17}
+                                  size={18}
                                   color={isSelected ? "#4d6029" : "#94a3b8"}
                                 />
-                                <Text
-                                  className={`text-xs ml-2 font-poppins-medium ${
-                                    isSelected
-                                      ? "text-[#0f172a] font-poppins-semibold"
-                                      : "text-[#334155]"
-                                  }`}
-                                >
+                                <Text className="text-xs ml-2.5 font-poppins-medium text-[#0f172a]">
                                   {item.name}
                                 </Text>
                               </View>
@@ -2768,31 +2704,35 @@ export default function BoxManagementScreen() {
                         </Text>
                       </View>
                     ) : (
-                      <View className="flex-row flex-wrap gap-1.5">
+                      <View className="flex-row flex-wrap -mx-1">
                         {newSelectedEquipment.map((eqName, idx) => (
-                          <View
-                            key={idx}
-                            className="bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5 flex-row items-center shadow-xs"
-                          >
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={13}
-                              color="#4d6029"
-                            />
-                            <Text className="text-xs font-poppins-medium text-[#0f172a] ml-1.5 mr-2">
-                              {eqName}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => handleRemoveEquipment(eqName)}
-                              className="w-4 h-4 rounded-full bg-emerald-200/80 items-center justify-center"
-                              accessibilityLabel={`Remove ${eqName}`}
-                            >
-                              <Ionicons
-                                name="close"
-                                size={10}
-                                color="#166534"
-                              />
-                            </TouchableOpacity>
+                          <View key={idx} className="w-1/2 px-1 mb-2">
+                            <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 rounded-xl px-2.5 py-2 flex-row items-center justify-between shadow-2xs h-full">
+                              <View className="flex-row items-center flex-1 mr-1.5">
+                                <Ionicons
+                                  name="checkmark-circle"
+                                  size={13}
+                                  color="#4d6029"
+                                />
+                                <Text
+                                  className="text-xs font-poppins-semibold text-[#1e293b] ml-1.5 flex-1"
+                                  numberOfLines={1}
+                                >
+                                  {eqName}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => handleRemoveEquipment(eqName)}
+                                className="w-4 h-4 rounded-full bg-[#AEAC78]/50 hover:bg-[#AEAC78]/80 items-center justify-center shrink-0"
+                                accessibilityLabel={`Remove ${eqName}`}
+                              >
+                                <Ionicons
+                                  name="close"
+                                  size={10}
+                                  color="#2d3416"
+                                />
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         ))}
                       </View>
@@ -2911,8 +2851,8 @@ export default function BoxManagementScreen() {
                 </Text>
                 <Text className="text-xs font-poppins-semibold text-[#4d6029]">
                   {selectedBoxForQR.category === "MAIN_BOX"
-                    ? "MAIN DISTRIBUTION HUB"
-                    : "BRANCH SUB-BOX"}
+                    ? "MAIN DISTRIBUTION BOX"
+                    : "SUB-DISTRIBUTION BOX"}
                 </Text>
                 <Text className="text-[11px] font-poppins text-[#64748b] text-center mt-1">
                   {selectedBoxForQR.siteName}
@@ -3237,7 +3177,7 @@ export default function BoxManagementScreen() {
                                   className="text-[10px] font-poppins text-[#64748b]"
                                   numberOfLines={1}
                                 >
-                                  {sub.category} · {sub.plan}
+                                  {sub.category}
                                 </Text>
                               </View>
                               <View className="bg-slate-100 px-2 py-0.5 rounded">
@@ -3270,75 +3210,6 @@ export default function BoxManagementScreen() {
                       className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a] py-2"
                     />
                   </View>
-                </View>
-
-                {/* 4. Service Plan Dropdown / Selector */}
-                <View className="mb-3.5">
-                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
-                    Service Plan Subscription *
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      setIsClientPlanDropdownOpen(!isClientPlanDropdownOpen)
-                    }
-                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5"
-                    activeOpacity={0.75}
-                  >
-                    <View className="flex-row items-center">
-                      <MaterialCommunityIcons
-                        name="speedometer"
-                        size={18}
-                        color="#4d6029"
-                      />
-                      <Text className="text-xs font-poppins-bold text-[#0f172a] ml-2">
-                        {newClientPlan}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={
-                        isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
-                      }
-                      size={16}
-                      color="#64748b"
-                    />
-                  </TouchableOpacity>
-
-                  {/* Plan Options List */}
-                  {isClientPlanDropdownOpen && (
-                    <View className="mt-2 p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
-                      {SERVICE_PLANS.map((plan) => (
-                        <TouchableOpacity
-                          key={plan}
-                          onPress={() => {
-                            setNewClientPlan(plan);
-                            setIsClientPlanDropdownOpen(false);
-                          }}
-                          className={`flex-row items-center justify-between p-2.5 rounded-xl ${
-                            newClientPlan === plan
-                              ? "bg-[#4d6029] text-white"
-                              : "bg-white border border-slate-200/70"
-                          } mb-1`}
-                        >
-                          <Text
-                            className={`text-xs font-poppins-semibold ${
-                              newClientPlan === plan
-                                ? "text-white"
-                                : "text-[#0f172a]"
-                            }`}
-                          >
-                            {plan}
-                          </Text>
-                          {newClientPlan === plan && (
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={16}
-                              color="#ffffff"
-                            />
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
                 </View>
               </ScrollView>
 

@@ -1,30 +1,30 @@
-import React, { useState } from 'react';
+import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useState } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
   Image,
   Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
-import { SidebarNavigation } from '@/components/sidebar-navigation';
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export interface PrintableBox {
   id: string;
   code: string;
-  category: 'MAIN_BOX' | 'SUB_BOX';
+  category: "MAIN_BOX" | "SUB_BOX";
   parentCode?: string;
   siteName: string;
   address: string;
   zone: string;
   latitude: number;
   longitude: number;
-  status: 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE';
+  status: "ACTIVE" | "NEEDS_TAG" | "ISSUE";
   totalPorts: number;
   activePorts: number;
   qrToken: string;
@@ -32,111 +32,111 @@ export interface PrintableBox {
 
 const STATIC_BOXES_DATA: PrintableBox[] = [
   {
-    id: '5',
-    code: 'DB-SB-04',
-    category: 'SUB_BOX',
-    parentCode: 'DB-MN-02',
-    siteName: 'Robinsons Place Iligan - Floor 2 Rack',
-    address: 'Macapagal Ave, Iligan City',
-    zone: 'Zone 3 - Commercial District',
+    id: "5",
+    code: "DB-SB-04",
+    category: "SUB_BOX",
+    parentCode: "DB-MN-02",
+    siteName: "Robinsons Place Iligan - Floor 2 Rack",
+    address: "Macapagal Ave, Iligan City",
+    zone: "Zone 3 - Commercial District",
     latitude: 8.2205,
     longitude: 124.2385,
-    status: 'NEEDS_TAG',
+    status: "NEEDS_TAG",
     totalPorts: 32,
     activePorts: 12,
-    qrToken: 'QRTECH-BOX-ILG-SB04-7731',
+    qrToken: "QRTECH-BOX-SB04-7731",
   },
   {
-    id: '6',
-    code: 'DB-SB-05',
-    category: 'SUB_BOX',
-    parentCode: 'DB-MN-01',
-    siteName: 'Tambo Terminal Distribution Enclosure',
-    address: 'Hinaplanon-Tambo Highway, Iligan City',
-    zone: 'Zone 4 - North Transport Hub',
-    latitude: 8.2490,
-    longitude: 124.2610,
-    status: 'NEEDS_TAG',
+    id: "6",
+    code: "DB-SB-05",
+    category: "SUB_BOX",
+    parentCode: "DB-MN-01",
+    siteName: "Tambo Terminal Distribution Enclosure",
+    address: "Hinaplanon-Tambo Highway, Iligan City",
+    zone: "Zone 4 - North Transport Hub",
+    latitude: 8.249,
+    longitude: 124.261,
+    status: "NEEDS_TAG",
     totalPorts: 16,
     activePorts: 8,
-    qrToken: 'QRTECH-BOX-ILG-SB05-6612',
+    qrToken: "QRTECH-BOX-SB05-6612",
   },
   {
-    id: '1',
-    code: 'DB-MN-01',
-    category: 'MAIN_BOX',
-    siteName: 'Iligan City Hall / Aguinaldo Central Hub',
-    address: 'Aguinaldo St, Poblacion, Iligan City',
-    zone: 'Zone 1 - Poblacion Civic Center',
+    id: "1",
+    code: "DB-MN-01",
+    category: "MAIN_BOX",
+    siteName: "Iligan City Hall / Aguinaldo Central Hub",
+    address: "Aguinaldo St, Poblacion, Iligan City",
+    zone: "Zone 1 - Poblacion Civic Center",
     latitude: 8.2285,
     longitude: 124.2415,
-    status: 'ACTIVE',
+    status: "ACTIVE",
     totalPorts: 48,
     activePorts: 42,
-    qrToken: 'QRTECH-BOX-ILG-MN01-8891',
+    qrToken: "QRTECH-BOX-MN01-8891",
   },
   {
-    id: '2',
-    code: 'DB-MN-02',
-    category: 'MAIN_BOX',
-    siteName: 'Aguinaldo Secondary Distribution Center',
-    address: 'Roxas Ave cor. Aguinaldo, Iligan City',
-    zone: 'Zone 2 - Roxas Midtown',
+    id: "2",
+    code: "DB-MN-02",
+    category: "MAIN_BOX",
+    siteName: "Aguinaldo Secondary Distribution Center",
+    address: "Roxas Ave cor. Aguinaldo, Iligan City",
+    zone: "Zone 2 - Roxas Midtown",
     latitude: 8.2238,
     longitude: 124.2458,
-    status: 'ACTIVE',
+    status: "ACTIVE",
     totalPorts: 32,
     activePorts: 28,
-    qrToken: 'QRTECH-BOX-ILG-MN02-4412',
+    qrToken: "QRTECH-BOX-MN02-4412",
   },
   {
-    id: '3',
-    code: 'DB-SB-02',
-    category: 'SUB_BOX',
-    parentCode: 'DB-MN-01',
-    siteName: 'MSU-IIT Tibanga Campus Node',
-    address: 'Andres Bonifacio Ave, Tibanga, Iligan City',
-    zone: 'Zone 5 - University District',
+    id: "3",
+    code: "DB-SB-02",
+    category: "SUB_BOX",
+    parentCode: "DB-MN-01",
+    siteName: "MSU-IIT Tibanga Campus Node",
+    address: "Andres Bonifacio Ave, Tibanga, Iligan City",
+    zone: "Zone 5 - University District",
     latitude: 8.2415,
-    longitude: 124.2440,
-    status: 'ACTIVE',
+    longitude: 124.244,
+    status: "ACTIVE",
     totalPorts: 32,
     activePorts: 24,
-    qrToken: 'QRTECH-BOX-ILG-SB02-9901',
+    qrToken: "QRTECH-BOX-SB02-9901",
   },
   {
-    id: '4',
-    code: 'DB-SB-03',
-    category: 'SUB_BOX',
-    parentCode: 'DB-MN-01',
-    siteName: 'Tubod Commercial Distribution Node',
-    address: 'Macapagal Highway, Tubod, Iligan City',
-    zone: 'Zone 6 - Tubod South Corridor',
-    latitude: 8.2140,
-    longitude: 124.2360,
-    status: 'ACTIVE',
+    id: "4",
+    code: "DB-SB-03",
+    category: "SUB_BOX",
+    parentCode: "DB-MN-01",
+    siteName: "Tubod Commercial Distribution Node",
+    address: "Macapagal Highway, Tubod, Iligan City",
+    zone: "Zone 6 - Tubod South Corridor",
+    latitude: 8.214,
+    longitude: 124.236,
+    status: "ACTIVE",
     totalPorts: 24,
     activePorts: 18,
-    qrToken: 'QRTECH-BOX-ILG-SB03-1204',
+    qrToken: "QRTECH-BOX-SB03-1204",
   },
   {
-    id: '7',
-    code: 'DB-SB-06',
-    category: 'SUB_BOX',
-    parentCode: 'DB-MN-02',
-    siteName: 'Del Carmen Secondary Sub-Box',
-    address: 'Del Carmen, Iligan City',
-    zone: 'Zone 7 - Del Carmen Heights',
-    latitude: 8.2320,
-    longitude: 124.2590,
-    status: 'ISSUE',
+    id: "7",
+    code: "DB-SB-06",
+    category: "SUB_BOX",
+    parentCode: "DB-MN-02",
+    siteName: "Del Carmen Secondary Sub-Box",
+    address: "Del Carmen, Iligan City",
+    zone: "Zone 7 - Del Carmen Heights",
+    latitude: 8.232,
+    longitude: 124.259,
+    status: "ISSUE",
     totalPorts: 24,
     activePorts: 16,
-    qrToken: 'QRTECH-BOX-ILG-SB06-3390',
+    qrToken: "QRTECH-BOX-SB06-3390",
   },
 ];
 
-type FilterType = 'ALL' | 'NEEDS_TAG' | 'MAIN_BOX' | 'SUB_BOX';
+type FilterType = "ALL" | "NEEDS_TAG" | "MAIN_BOX" | "SUB_BOX";
 
 /**
  * Standard Placard Component (Reference Design)
@@ -144,7 +144,7 @@ type FilterType = 'ALL' | 'NEEDS_TAG' | 'MAIN_BOX' | 'SUB_BOX';
  * 2. Header with green QR badge + "MULTIFACTORS · ILIGAN"
  * 3. Soft white rounded container with centered crisp QR code
  * 4. Box Code (e.g. DB-MN-01)
- * 5. Classification (e.g. MAIN DISTRIBUTION HUB)
+ * 5. Classification (e.g. MAIN DISTRIBUTION BOX)
  * 6. Site Name / Location
  * 7. Security Token ID
  */
@@ -154,7 +154,11 @@ function PlacardCard({ box }: { box: PrintableBox }) {
       {/* 1. Header: Brand Logo & City Name */}
       <View className="flex-row items-center justify-center mb-2">
         <View className="w-6 h-6 rounded-lg bg-[#4d6029] items-center justify-center mr-2 shadow-xs">
-          <MaterialCommunityIcons name="qrcode-scan" size={13} color="#ffffff" />
+          <MaterialCommunityIcons
+            name="qrcode-scan"
+            size={13}
+            color="#ffffff"
+          />
         </View>
         <Text className="text-xs font-poppins-bold text-[#0f172a] uppercase tracking-wider">
           MULTIFACTORS · ILIGAN
@@ -166,7 +170,7 @@ function PlacardCard({ box }: { box: PrintableBox }) {
         <Image
           source={{
             uri: `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(
-              box.qrToken
+              box.qrToken,
             )}`,
           }}
           className="w-36 h-36"
@@ -183,7 +187,9 @@ function PlacardCard({ box }: { box: PrintableBox }) {
 
         {/* Classification Tier */}
         <Text className="text-xs font-poppins-bold text-[#4d6029] uppercase tracking-wider mt-0.5">
-          {box.category === 'MAIN_BOX' ? 'MAIN DISTRIBUTION HUB' : 'BRANCH SUB-BOX'}
+          {box.category === "MAIN_BOX"
+            ? "MAIN DISTRIBUTION BOX"
+            : "SUB-DISTRIBUTION BOX"}
         </Text>
 
         {/* Site Location Name */}
@@ -205,20 +211,20 @@ function PlacardCard({ box }: { box: PrintableBox }) {
 
 export default function QRPrintScreen() {
   const [boxes] = useState<PrintableBox[]>(STATIC_BOXES_DATA);
-  const [selectedBoxIds, setSelectedBoxIds] = useState<string[]>(['5', '6']); // Default selecting the 2 untagged boxes
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterType>('NEEDS_TAG');
+  const [selectedBoxIds, setSelectedBoxIds] = useState<string[]>(["5", "6"]); // Default selecting the 2 untagged boxes
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("NEEDS_TAG");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [showDuplicateIfSingle, setShowDuplicateIfSingle] = useState(true);
 
-  const isWeb = Platform.OS === 'web';
+  const isWeb = Platform.OS === "web";
 
   // Filter boxes based on filter and search
   const filteredBoxes = boxes.filter((box) => {
     const query = searchQuery.toLowerCase().trim();
     const matchesQuery =
-      query === '' ||
+      query === "" ||
       box.code.toLowerCase().includes(query) ||
       box.siteName.toLowerCase().includes(query) ||
       box.address.toLowerCase().includes(query) ||
@@ -226,9 +232,9 @@ export default function QRPrintScreen() {
 
     if (!matchesQuery) return false;
 
-    if (activeFilter === 'NEEDS_TAG') return box.status === 'NEEDS_TAG';
-    if (activeFilter === 'MAIN_BOX') return box.category === 'MAIN_BOX';
-    if (activeFilter === 'SUB_BOX') return box.category === 'SUB_BOX';
+    if (activeFilter === "NEEDS_TAG") return box.status === "NEEDS_TAG";
+    if (activeFilter === "MAIN_BOX") return box.category === "MAIN_BOX";
+    if (activeFilter === "SUB_BOX") return box.category === "SUB_BOX";
     return true;
   });
 
@@ -243,8 +249,8 @@ export default function QRPrintScreen() {
       i + 1 < selectedBoxes.length
         ? selectedBoxes[i + 1]
         : showDuplicateIfSingle
-        ? top
-        : null;
+          ? top
+          : null;
     a4Sheets.push({ top, bottom });
   }
 
@@ -263,7 +269,9 @@ export default function QRPrintScreen() {
 
   const handleSelectAllFiltered = () => {
     const allFilteredIds = filteredBoxes.map((b) => b.id);
-    const newSelected = Array.from(new Set([...selectedBoxIds, ...allFilteredIds]));
+    const newSelected = Array.from(
+      new Set([...selectedBoxIds, ...allFilteredIds]),
+    );
     setSelectedBoxIds(newSelected);
   };
 
@@ -341,7 +349,7 @@ export default function QRPrintScreen() {
         {/* Main Content Area */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 40 }}
           >
@@ -350,25 +358,34 @@ export default function QRPrintScreen() {
               <View>
                 <View className="flex-row items-center">
                   <View className="w-9 h-9 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3">
-                    <MaterialCommunityIcons name="printer" size={20} color="#4d6029" />
+                    <MaterialCommunityIcons
+                      name="printer"
+                      size={20}
+                      color="#4d6029"
+                    />
                   </View>
                   <Text className="text-2xl font-poppins-bold text-[#0f172a]">
                     Print QR Labels (A4 Bondpaper)
                   </Text>
                 </View>
                 <Text className="text-xs font-poppins text-[#64748b] mt-1 ml-12">
-                  Batch format standard A4 bondpaper sheets with 2 high-resolution QR placards per page.
+                  Batch format standard A4 bondpaper sheets with 2
+                  high-resolution QR placards per page.
                 </Text>
               </View>
 
               {/* Action Buttons */}
               <View className="flex-row items-center space-x-2.5">
                 <TouchableOpacity
-                  onPress={() => router.push('/admin/box-management')}
+                  onPress={() => router.push("/admin/box-management")}
                   className="bg-white border border-slate-200/80 px-4 py-2.5 rounded-2xl flex-row items-center shadow-sm mr-2"
                   activeOpacity={0.8}
                 >
-                  <MaterialCommunityIcons name="server-network" size={16} color="#475569" />
+                  <MaterialCommunityIcons
+                    name="server-network"
+                    size={16}
+                    color="#475569"
+                  />
                   <Text className="text-xs font-poppins-bold text-[#334155] ml-1.5">
                     Box Inventory
                   </Text>
@@ -379,14 +396,20 @@ export default function QRPrintScreen() {
                   disabled={selectedBoxIds.length === 0}
                   className={`px-5 py-2.5 rounded-2xl flex-row items-center shadow-md ${
                     selectedBoxIds.length === 0
-                      ? 'bg-slate-300 shadow-none'
-                      : 'bg-[#4d6029] shadow-[#4d6029]/25'
+                      ? "bg-slate-300 shadow-none"
+                      : "bg-[#4d6029] shadow-[#4d6029]/25"
                   }`}
                   activeOpacity={0.85}
                 >
-                  <MaterialCommunityIcons name="printer" size={18} color="#ffffff" />
+                  <MaterialCommunityIcons
+                    name="printer"
+                    size={18}
+                    color="#ffffff"
+                  />
                   <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                    Print {a4Sheets.length} A4 Sheet{a4Sheets.length > 1 ? 's' : ''} ({selectedBoxIds.length} QR)
+                    Print {a4Sheets.length} A4 Sheet
+                    {a4Sheets.length > 1 ? "s" : ""} ({selectedBoxIds.length}{" "}
+                    QR)
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -397,12 +420,19 @@ export default function QRPrintScreen() {
               <View className="flex-row items-center flex-wrap gap-4">
                 <View className="flex-row items-center">
                   <View className="w-7 h-7 rounded-xl bg-amber-50 items-center justify-center mr-2 border border-amber-200">
-                    <MaterialCommunityIcons name="qrcode-scan" size={15} color="#d97706" />
+                    <MaterialCommunityIcons
+                      name="qrcode-scan"
+                      size={15}
+                      color="#d97706"
+                    />
                   </View>
                   <View>
-                    <Text className="text-[10px] font-poppins text-[#64748b]">Awaiting Physical Tag</Text>
+                    <Text className="text-[10px] font-poppins text-[#64748b]">
+                      Awaiting Physical Tag
+                    </Text>
                     <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                      {boxes.filter((b) => b.status === 'NEEDS_TAG').length} Distribution Boxes
+                      {boxes.filter((b) => b.status === "NEEDS_TAG").length}{" "}
+                      Distribution Boxes
                     </Text>
                   </View>
                 </View>
@@ -411,10 +441,16 @@ export default function QRPrintScreen() {
 
                 <View className="flex-row items-center">
                   <View className="w-7 h-7 rounded-xl bg-emerald-50 items-center justify-center mr-2 border border-emerald-200">
-                    <Ionicons name="document-text-outline" size={15} color="#059669" />
+                    <Ionicons
+                      name="document-text-outline"
+                      size={15}
+                      color="#059669"
+                    />
                   </View>
                   <View>
-                    <Text className="text-[10px] font-poppins text-[#64748b]">Paper Layout Specification</Text>
+                    <Text className="text-[10px] font-poppins text-[#64748b]">
+                      Paper Layout Specification
+                    </Text>
                     <Text className="text-xs font-poppins-bold text-[#0f172a]">
                       A4 (210 x 297mm) · 2 Placards / Sheet
                     </Text>
@@ -425,10 +461,16 @@ export default function QRPrintScreen() {
 
                 <View className="flex-row items-center">
                   <View className="w-7 h-7 rounded-xl bg-slate-100 items-center justify-center mr-2 border border-slate-200">
-                    <Ionicons name="checkbox-outline" size={15} color="#475569" />
+                    <Ionicons
+                      name="checkbox-outline"
+                      size={15}
+                      color="#475569"
+                    />
                   </View>
                   <View>
-                    <Text className="text-[10px] font-poppins text-[#64748b]">Selected for Printing</Text>
+                    <Text className="text-[10px] font-poppins text-[#64748b]">
+                      Selected for Printing
+                    </Text>
                     <Text className="text-xs font-poppins-bold text-[#4d6029]">
                       {selectedBoxIds.length} Boxes ({a4Sheets.length} Sheets)
                     </Text>
@@ -442,9 +484,9 @@ export default function QRPrintScreen() {
                 className="flex-row items-center bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200"
               >
                 <Ionicons
-                  name={showDuplicateIfSingle ? 'checkbox' : 'square-outline'}
+                  name={showDuplicateIfSingle ? "checkbox" : "square-outline"}
                   size={16}
-                  color={showDuplicateIfSingle ? '#4d6029' : '#94a3b8'}
+                  color={showDuplicateIfSingle ? "#4d6029" : "#94a3b8"}
                 />
                 <Text className="text-[11px] font-poppins-medium text-[#475569] ml-1.5">
                   Auto-fill blank half with duplicate backup
@@ -469,8 +511,12 @@ export default function QRPrintScreen() {
                       className="flex-1 ml-2 text-xs font-poppins text-[#0f172a]"
                     />
                     {searchQuery.length > 0 && (
-                      <TouchableOpacity onPress={() => setSearchQuery('')}>
-                        <Ionicons name="close-circle" size={15} color="#94a3b8" />
+                      <TouchableOpacity onPress={() => setSearchQuery("")}>
+                        <Ionicons
+                          name="close-circle"
+                          size={15}
+                          color="#94a3b8"
+                        />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -478,23 +524,25 @@ export default function QRPrintScreen() {
                   {/* Filter Pills */}
                   <View className="flex-row items-center flex-wrap gap-1.5 mb-3">
                     {[
-                      { id: 'NEEDS_TAG', label: 'Needs QR Tag (2)' },
-                      { id: 'ALL', label: `All Boxes (${boxes.length})` },
-                      { id: 'MAIN_BOX', label: 'Main Hubs' },
-                      { id: 'SUB_BOX', label: 'Sub-Boxes' },
+                      { id: "NEEDS_TAG", label: "Needs QR Tag (2)" },
+                      { id: "ALL", label: `All Boxes (${boxes.length})` },
+                      { id: "MAIN_BOX", label: "Main Boxes" },
+                      { id: "SUB_BOX", label: "Sub-Boxes" },
                     ].map((tab) => (
                       <TouchableOpacity
                         key={tab.id}
                         onPress={() => setActiveFilter(tab.id as FilterType)}
                         className={`px-3 py-1.5 rounded-xl border ${
                           activeFilter === tab.id
-                            ? 'bg-[#4d6029] border-[#4d6029]'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                            ? "bg-[#4d6029] border-[#4d6029]"
+                            : "bg-white border-slate-200 hover:bg-slate-50"
                         }`}
                       >
                         <Text
                           className={`text-[11px] font-poppins-bold ${
-                            activeFilter === tab.id ? 'text-white' : 'text-[#475569]'
+                            activeFilter === tab.id
+                              ? "text-white"
+                              : "text-[#475569]"
                           }`}
                         >
                           {tab.label}
@@ -509,7 +557,11 @@ export default function QRPrintScreen() {
                       onPress={handleSelectAllFiltered}
                       className="flex-row items-center"
                     >
-                      <Ionicons name="checkmark-done-outline" size={14} color="#4d6029" />
+                      <Ionicons
+                        name="checkmark-done-outline"
+                        size={14}
+                        color="#4d6029"
+                      />
                       <Text className="text-[11px] font-poppins-bold text-[#4d6029] ml-1">
                         Select All Filtered ({filteredBoxes.length})
                       </Text>
@@ -543,15 +595,17 @@ export default function QRPrintScreen() {
                           onPress={() => handleToggleSelectBox(box.id)}
                           activeOpacity={0.7}
                           className={`p-4 flex-row items-center justify-between transition-colors ${
-                            isSelected ? 'bg-[#4d6029]/5' : 'hover:bg-slate-50'
+                            isSelected ? "bg-[#4d6029]/5" : "hover:bg-slate-50"
                           }`}
                         >
                           <View className="flex-row items-center flex-1 mr-3">
                             <View className="mr-3">
                               <Ionicons
-                                name={isSelected ? 'checkbox' : 'square-outline'}
+                                name={
+                                  isSelected ? "checkbox" : "square-outline"
+                                }
                                 size={20}
-                                color={isSelected ? '#4d6029' : '#cbd5e1'}
+                                color={isSelected ? "#4d6029" : "#cbd5e1"}
                               />
                             </View>
 
@@ -562,23 +616,25 @@ export default function QRPrintScreen() {
                                 </Text>
                                 <View
                                   className={`ml-2 px-2 py-0.5 rounded-md ${
-                                    box.category === 'MAIN_BOX'
-                                      ? 'bg-[#4d6029]/10'
-                                      : 'bg-sky-100'
+                                    box.category === "MAIN_BOX"
+                                      ? "bg-[#4d6029]/10"
+                                      : "bg-sky-100"
                                   }`}
                                 >
                                   <Text
                                     className={`text-[9px] font-poppins-bold uppercase ${
-                                      box.category === 'MAIN_BOX'
-                                        ? 'text-[#4d6029]'
-                                        : 'text-sky-800'
+                                      box.category === "MAIN_BOX"
+                                        ? "text-[#4d6029]"
+                                        : "text-sky-800"
                                     }`}
                                   >
-                                    {box.category === 'MAIN_BOX' ? 'Main Hub' : 'Sub-Box'}
+                                    {box.category === "MAIN_BOX"
+                                      ? "Main Distribution Box"
+                                      : "Sub-Distribution Box"}
                                   </Text>
                                 </View>
 
-                                {box.status === 'NEEDS_TAG' && (
+                                {box.status === "NEEDS_TAG" && (
                                   <View className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 border border-amber-200">
                                     <Text className="text-[8px] font-poppins-bold text-amber-800">
                                       Needs Tag
@@ -637,15 +693,21 @@ export default function QRPrintScreen() {
                   {a4Sheets.length > 1 && (
                     <View className="flex-row items-center space-x-1">
                       <TouchableOpacity
-                        onPress={() => setActiveSheetIndex(Math.max(0, activeSheetIndex - 1))}
+                        onPress={() =>
+                          setActiveSheetIndex(Math.max(0, activeSheetIndex - 1))
+                        }
                         disabled={activeSheetIndex === 0}
                         className={`p-1.5 rounded-lg border ${
                           activeSheetIndex === 0
-                            ? 'bg-slate-50 border-slate-200 opacity-40'
-                            : 'bg-white border-slate-200'
+                            ? "bg-slate-50 border-slate-200 opacity-40"
+                            : "bg-white border-slate-200"
                         }`}
                       >
-                        <Ionicons name="chevron-back" size={14} color="#475569" />
+                        <Ionicons
+                          name="chevron-back"
+                          size={14}
+                          color="#475569"
+                        />
                       </TouchableOpacity>
 
                       {a4Sheets.map((_, idx) => (
@@ -654,13 +716,15 @@ export default function QRPrintScreen() {
                           onPress={() => setActiveSheetIndex(idx)}
                           className={`w-7 h-7 rounded-lg items-center justify-center border mx-0.5 ${
                             activeSheetIndex === idx
-                              ? 'bg-[#4d6029] border-[#4d6029]'
-                              : 'bg-white border-slate-200'
+                              ? "bg-[#4d6029] border-[#4d6029]"
+                              : "bg-white border-slate-200"
                           }`}
                         >
                           <Text
                             className={`text-xs font-poppins-bold ${
-                              activeSheetIndex === idx ? 'text-white' : 'text-[#475569]'
+                              activeSheetIndex === idx
+                                ? "text-white"
+                                : "text-[#475569]"
                             }`}
                           >
                             {idx + 1}
@@ -670,16 +734,22 @@ export default function QRPrintScreen() {
 
                       <TouchableOpacity
                         onPress={() =>
-                          setActiveSheetIndex(Math.min(a4Sheets.length - 1, activeSheetIndex + 1))
+                          setActiveSheetIndex(
+                            Math.min(a4Sheets.length - 1, activeSheetIndex + 1),
+                          )
                         }
                         disabled={activeSheetIndex === a4Sheets.length - 1}
                         className={`p-1.5 rounded-lg border ${
                           activeSheetIndex === a4Sheets.length - 1
-                            ? 'bg-slate-50 border-slate-200 opacity-40'
-                            : 'bg-white border-slate-200'
+                            ? "bg-slate-50 border-slate-200 opacity-40"
+                            : "bg-white border-slate-200"
                         }`}
                       >
-                        <Ionicons name="chevron-forward" size={14} color="#475569" />
+                        <Ionicons
+                          name="chevron-forward"
+                          size={14}
+                          color="#475569"
+                        />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -689,7 +759,7 @@ export default function QRPrintScreen() {
                     onPress={handlePrint}
                     disabled={!currentSheet}
                     className={`px-4 py-2 rounded-xl flex-row items-center ${
-                      !currentSheet ? 'bg-slate-300' : 'bg-[#4d6029]'
+                      !currentSheet ? "bg-slate-300" : "bg-[#4d6029]"
                     }`}
                   >
                     <Ionicons name="print-outline" size={15} color="#ffffff" />
@@ -709,7 +779,11 @@ export default function QRPrintScreen() {
                     <View className="my-2.5 flex-row items-center justify-center no-print">
                       <View className="flex-1 border-b border-dashed border-slate-300" />
                       <View className="flex-row items-center bg-slate-50 px-3 py-1 rounded-full mx-2 border border-slate-200">
-                        <MaterialCommunityIcons name="content-cut" size={12} color="#64748b" />
+                        <MaterialCommunityIcons
+                          name="content-cut"
+                          size={12}
+                          color="#64748b"
+                        />
                         <Text className="text-[9px] font-poppins-medium text-[#64748b] uppercase tracking-wider ml-1">
                           Cut Along Line (A4 Center 148.5mm)
                         </Text>
@@ -723,24 +797,35 @@ export default function QRPrintScreen() {
                     ) : (
                       /* Blank Half State */
                       <View className="w-full max-w-[360px] self-center border-2 border-dashed border-slate-300 rounded-[32px] p-8 bg-slate-50/50 items-center justify-center my-2 min-h-[260px]">
-                        <Ionicons name="document-outline" size={32} color="#94a3b8" />
+                        <Ionicons
+                          name="document-outline"
+                          size={32}
+                          color="#94a3b8"
+                        />
                         <Text className="text-xs font-poppins-bold text-[#64748b] mt-2">
                           Blank Bottom Half (Reserved for 2nd Box)
                         </Text>
                         <Text className="text-[11px] font-poppins text-[#94a3b8] mt-1 text-center">
-                          Select an even number of boxes or check &quot;Auto-fill blank half with duplicate backup&quot; above.
+                          Select an even number of boxes or check
+                          &quot;Auto-fill blank half with duplicate backup&quot;
+                          above.
                         </Text>
                       </View>
                     )}
                   </View>
                 ) : (
                   <View className="bg-white rounded-3xl p-12 border border-slate-200/80 shadow-sm items-center justify-center">
-                    <MaterialCommunityIcons name="printer-alert" size={48} color="#cbd5e1" />
+                    <MaterialCommunityIcons
+                      name="printer-alert"
+                      size={48}
+                      color="#cbd5e1"
+                    />
                     <Text className="text-base font-poppins-bold text-[#0f172a] mt-3">
                       No Boxes Selected for Printing
                     </Text>
                     <Text className="text-xs font-poppins text-[#64748b] mt-1 text-center max-w-sm">
-                      Check one or more distribution boxes on the left to generate your printable A4 bondpaper sheet.
+                      Check one or more distribution boxes on the left to
+                      generate your printable A4 bondpaper sheet.
                     </Text>
                   </View>
                 )}

@@ -454,7 +454,7 @@ export default function TechniciansScreen() {
         {/* Main Technician Canvas */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 40 }}
           >

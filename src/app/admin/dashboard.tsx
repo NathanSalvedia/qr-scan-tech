@@ -270,7 +270,7 @@ export default function AdminDashboardScreen() {
         {/* Main Dashboard Canvas */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 32 }}
           >
@@ -608,7 +608,7 @@ export default function AdminDashboardScreen() {
                             : 'text-sky-700'
                         }`}
                       >
-                        {selectedPin.category === 'MAIN_BOX' ? 'MAIN DISTRIBUTION HUB' : 'BRANCH SUB-BOX'}
+                        {selectedPin.category === 'MAIN_BOX' ? 'MAIN DISTRIBUTION BOX' : 'SUB-DISTRIBUTION BOX'}
                       </Text>
                     </View>
                   </View>
@@ -633,7 +633,7 @@ export default function AdminDashboardScreen() {
                     </Text>
                     {selectedPin.parentCode && (
                       <Text className="text-[11px] font-poppins text-[#4d6029] mt-0.5">
-                        Connected to Parent Hub: {selectedPin.parentCode}
+                        Connected to Parent Box: {selectedPin.parentCode}
                       </Text>
                     )}
                   </View>
@@ -729,7 +729,7 @@ export default function AdminDashboardScreen() {
                   {selectedBoxForQR.code}
                 </Text>
                 <Text className="text-xs font-poppins-semibold text-[#4d6029]">
-                  {selectedBoxForQR.category === 'MAIN_BOX' ? 'MAIN DISTRIBUTION HUB' : 'BRANCH SUB-BOX'}
+                  {selectedBoxForQR.category === 'MAIN_BOX' ? 'MAIN DISTRIBUTION BOX' : 'SUB-DISTRIBUTION BOX'}
                 </Text>
                 <Text className="text-[11px] font-poppins text-[#64748b] text-center mt-1">
                   {selectedBoxForQR.siteName}

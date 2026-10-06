@@ -46,11 +46,8 @@ export default function UserDashboardScreen() {
             <Text className="text-[11px] font-poppins-semibold tracking-wider text-[#64748b] uppercase">
               MultiFactors Sales
             </Text>
-            <Text className="text-2xl font-poppins-bold text-[#0f172a] mt-0.5">
-              Hello, Nathan
-            </Text>
-            <Text className="text-xs font-poppins-medium text-[#64748b] mt-0.5">
-              Field Technician · Today, Oct 5
+            <Text className="text-1xl font-poppins-bold text-[#0f172a] mt-0.5">
+              Good morning, Nathan Salvedia!
             </Text>
           </View>
 

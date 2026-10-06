@@ -57,7 +57,7 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
     metadata: {
       "Signal Quality": "Nominal (-17.4 dBm)",
       "Cabinet Status": "Closed & Padlocked",
-      "QR Token Read": "QRTECH-BOX-ILG-SB05-6612",
+      "QR Token Read": "QRTECH-BOX-SB05-6612",
     },
   },
   {
@@ -78,7 +78,7 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
     metadata: {
       "Active Ports": "28 / 32 Occupied",
       "Optical Feeder": "Main Feeder 24-Port",
-      "QR Token Read": "QRTECH-BOX-ILG-MN02-4412",
+      "QR Token Read": "QRTECH-BOX-MN02-4412",
     },
   },
   {
@@ -119,7 +119,7 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
     metadata: {
       "Enclosure Temp": "26.4°C (Optimal)",
       Subscribers: "3 Enterprise Clients Online",
-      "QR Token Read": "QRTECH-BOX-ILG-SB04-7731",
+      "QR Token Read": "QRTECH-BOX-SB04-7731",
     },
   },
   {
@@ -160,7 +160,7 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
     metadata: {
       "Signal Level": "-17.8 dBm (Pass)",
       "Breaker Temp": "31.2°C (Pass)",
-      "QR Token Read": "QRTECH-BOX-ILG-MN01-8891",
+      "QR Token Read": "QRTECH-BOX-MN01-8891",
     },
   },
   {
@@ -178,9 +178,9 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
       "Registered new 24-port optical sub-box DB-SB-07 under upstream feeder DB-MN-01. Generated unique cryptographic QR security token.",
     deviceOrIp: "Web Console (192.168.1.104)",
     metadata: {
-      "Box Classification": "Branch Sub-Box (24 Ports)",
+      "Box Classification": "Sub-Distribution Box (24 Ports)",
       "Feeder Parent": "DB-MN-01",
-      "Generated Token": "QRTECH-BOX-ILG-SB07-9914",
+      "Generated Token": "QRTECH-BOX-SB07-9914",
     },
   },
   {
@@ -220,7 +220,7 @@ const STATIC_AUDIT_LOGS: AuditLogItem[] = [
     metadata: {
       "Action Taken": "Drop cable re-splice",
       "Power Recovery": "-16.2 dBm",
-      "QR Token Read": "QRTECH-BOX-ILG-SB02-9901",
+      "QR Token Read": "QRTECH-BOX-SB02-9901",
     },
   },
   {
@@ -407,7 +407,7 @@ export default function ActivityLogsScreen() {
         {/* Main Activity Logs Canvas */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 40 }}
           >

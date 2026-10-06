@@ -35,7 +35,7 @@ export default function SettingsScreen() {
   const [placardHeader, setPlacardHeader] = useState('MULTIFACTORS · ILIGAN');
   const [paperFormat, setPaperFormat] = useState('A4 Bondpaper (2 Placards / Sheet)');
   const [autoFillDuplicate, setAutoFillDuplicate] = useState(true);
-  const [tokenPrefix, setTokenPrefix] = useState('QRTECH-BOX-ILG-');
+  const [tokenPrefix, setTokenPrefix] = useState('QRTECH-BOX-');
 
   // Success Feedback
   const [saveSuccessMessage, setSaveSuccessMessage] = useState(false);
@@ -63,7 +63,7 @@ export default function SettingsScreen() {
     setMobileDispatch('+63 917 800 9000');
     setPlacardHeader('MULTIFACTORS · ILIGAN');
     setAutoFillDuplicate(true);
-    setTokenPrefix('QRTECH-BOX-ILG-');
+    setTokenPrefix('QRTECH-BOX-');
   };
 
   return (
@@ -84,7 +84,7 @@ export default function SettingsScreen() {
         {/* Main Settings Canvas */}
         <View className="flex-1 flex-col h-full overflow-hidden">
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             className="flex-1 p-4 md:p-6"
             contentContainerStyle={{ paddingBottom: 60 }}
           >
@@ -434,7 +434,7 @@ export default function SettingsScreen() {
                         <TextInput
                           value={tokenPrefix}
                           onChangeText={setTokenPrefix}
-                          placeholder="QRTECH-BOX-ILG-"
+                          placeholder="QRTECH-BOX-"
                           placeholderTextColor="#94a3b8"
                           className="flex-1 ml-2.5 text-xs font-mono font-bold text-[#4d6029]"
                         />
