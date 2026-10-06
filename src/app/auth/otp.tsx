@@ -8,49 +8,36 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { authService } from "@/services/auth";
+import { authState } from "@/services/auth-state";
 
-interface OtpVerificationScreenProps {
-  route?: {
-    params?: {
-      email?: string;
-      mode?: string;
-    };
-  };
-  email?: string;
-  mode?: string;
-}
+export default function OtpVerificationScreen() {
+  const userEmail = authState.getEmail();
+  const mode = authState.getMode();
 
-export default function OtpVerificationScreen({
-  route,
-  email: propEmail,
-  mode: propMode,
-}: OtpVerificationScreenProps = {}) {
-  const userEmail =
-    propEmail || route?.params?.email || "nathansalvedia2002@gmail.com";
-  const mode = propMode || route?.params?.mode || "verification";
-
-  const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(0);
+  const [code, setCode] = useState("");
+  const [isInputFocused, setIsInputFocused] = useState(true);
   const [resendTimer, setResendTimer] = useState(45);
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
+  const inputRef = useRef<TextInput | null>(null);
   const isResendActive = resendTimer === 0;
-  const inputRefs = useRef<(TextInput | null)[]>([]);
   const isWeb = Platform.OS === "web";
 
-  // Auto focus first input on mount
+  // Auto focus input on mount
   useEffect(() => {
     const timer = setTimeout(() => {
-      inputRefs.current[0]?.focus();
-    }, 300);
+      inputRef.current?.focus();
+    }, 250);
     return () => clearTimeout(timer);
   }, []);
 
@@ -65,91 +52,48 @@ export default function OtpVerificationScreen({
     return () => clearInterval(interval);
   }, [resendTimer]);
 
-  const handleOtpChange = (value: string, index: number) => {
+  const handleCodeChange = (text: string) => {
     setErrorMessage(null);
+    const clean = text.replace(/[^0-9]/g, "").slice(0, 6);
+    setCode(clean);
 
-    // Handle multiple digits pasted (e.g. from SMS auto-fill or clipboard)
-    if (value.length > 1) {
-      const digits = value
-        .replace(/[^0-9]/g, "")
-        .slice(0, 6)
-        .split("");
-      const newOtp = ["", "", "", "", "", ""];
-      digits.forEach((digit, idx) => {
-        if (idx < 6) newOtp[idx] = digit;
-      });
-      setOtp(newOtp);
-
-      const nextFocus = Math.min(digits.length, 5);
-      inputRefs.current[nextFocus]?.focus();
-      setFocusedIndex(nextFocus);
-
-      // If full 6 digits were pasted, trigger verification
-      if (digits.length === 6) {
-        setTimeout(() => {
-          verifyCode(newOtp.join(""));
-        }, 200);
-      }
-      return;
-    }
-
-    const cleanDigit = value.replace(/[^0-9]/g, "");
-    const newOtp = [...otp];
-    newOtp[index] = cleanDigit;
-    setOtp(newOtp);
-
-    // Auto-advance focus
-    if (cleanDigit && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-      setFocusedIndex(index + 1);
-    }
-
-    // Auto-verify if all 6 digits are filled
-    if (cleanDigit && index === 5) {
-      const fullCode = newOtp.join("");
-      if (fullCode.length === 6) {
-        setTimeout(() => {
-          verifyCode(fullCode);
-        }, 150);
-      }
+    // Auto verify as soon as 6 digits are reached
+    if (clean.length === 6) {
+      setTimeout(() => {
+        verifyCode(clean);
+      }, 100);
     }
   };
 
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === "Backspace") {
-      if (!otp[index] && index > 0) {
-        const newOtp = [...otp];
-        newOtp[index - 1] = "";
-        setOtp(newOtp);
-        inputRefs.current[index - 1]?.focus();
-        setFocusedIndex(index - 1);
-      }
-    }
-  };
-
-  const handleResendCode = () => {
+  const handleResendCode = async () => {
     if (!isResendActive) return;
 
-    setOtp(["", "", "", "", "", ""]);
+    setCode("");
     setResendTimer(60);
     setErrorMessage(null);
-    inputRefs.current[0]?.focus();
-    setFocusedIndex(0);
+    inputRef.current?.focus();
 
-    setSuccessToast("A new 6-digit code has been sent.");
-    setTimeout(() => setSuccessToast(null), 3500);
+    try {
+      const res = await authService.resendOtp(userEmail, mode);
+      if (res.success) {
+        setSuccessToast("A new 6-digit code has been sent.");
+        setTimeout(() => setSuccessToast(null), 3500);
 
-    if (isWeb) {
-      // web toast handled
-    } else {
-      Alert.alert(
-        "Code Resent",
-        `A new 6-digit verification code has been sent to ${userEmail}.`,
-      );
+        if (!isWeb) {
+          Alert.alert(
+            "Code Resent",
+            `A new 6-digit verification code has been sent to ${userEmail}.`
+          );
+        }
+      } else {
+        setErrorMessage(res.message || res.error || "Failed to resend code.");
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Could not connect to server.");
     }
   };
 
-  const verifyCode = (codeToVerify: string) => {
+  const verifyCode = async (codeToVerify: string) => {
     if (codeToVerify.length < 6) {
       setErrorMessage("Please enter the complete 6-digit code.");
       return;
@@ -158,58 +102,64 @@ export default function OtpVerificationScreen({
     setIsVerifying(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
-      setIsVerifying(false);
-      const cleanEmail = userEmail.toLowerCase().trim();
-
-      if (cleanEmail === "admin@multifactors.ph" || cleanEmail === "admin") {
-        router.replace("/admin/dashboard");
-      } else {
-        router.replace("/user/dashboard");
-      }
-    }, 700);
-  };
-
-  const handleVerifyButton = () => {
-    const fullCode = otp.join("");
-    verifyCode(fullCode);
-  };
-
-  const handleFillDemoCode = () => {
-    const demoCode = ["1", "2", "3", "4", "5", "6"];
-    setOtp(demoCode);
-    setErrorMessage(null);
-    inputRefs.current[5]?.focus();
-    setFocusedIndex(5);
-  };
-
-  const handleGoBack = () => {
     try {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/auth/sign-in");
+      const res = await authService.verifyOtp(userEmail, codeToVerify, mode);
+
+      if (!res.success) {
+        setErrorMessage(res.message || res.error || "Invalid verification code.");
+        setIsVerifying(false);
+        return;
       }
-    } catch {
-      router.replace("/auth/sign-in");
+
+      setIsVerifying(false);
+
+      if (mode === "reset") {
+        router.replace("/auth/reset-password");
+      } else {
+        const userRole = res.user?.role?.toLowerCase();
+        if (userRole === "admin") {
+          router.replace("/admin/dashboard");
+        } else {
+          router.replace("/user/dashboard");
+        }
+      }
+    } catch (err: any) {
+      setIsVerifying(false);
+      setErrorMessage(err.message || "An unexpected error occurred.");
     }
   };
 
-  const isComplete = otp.every((digit) => digit.length === 1);
+  const handleVerifyButton = () => {
+    verifyCode(code);
+  };
+
+  const handleFillDemoCode = () => {
+    setCode("123456");
+    setErrorMessage(null);
+    setTimeout(() => {
+      verifyCode("123456");
+    }, 100);
+  };
+
+  const handleGoBack = () => {
+    router.replace("/auth/sign-in");
+  };
+
+  const isComplete = code.length === 6;
 
   return (
-    <SafeAreaView edges={["top", "bottom"]} className="flex-1 bg-[#f0f3f6]">
+    <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <StatusBar style="dark" />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
+        style={styles.keyboardContainer}
       >
         {/* Top Navigation Bar */}
-        <View className="px-5 pt-3 pb-2 flex-row items-center justify-between">
+        <View style={styles.topNav}>
           <TouchableOpacity
             onPress={handleGoBack}
-            className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 items-center justify-center shadow-xs active:bg-slate-100"
+            style={styles.backButton}
             accessibilityLabel="Go back"
             activeOpacity={0.7}
           >
@@ -219,12 +169,10 @@ export default function OtpVerificationScreen({
 
         {/* Floating Toast Notification */}
         {successToast && (
-          <View className="mx-5 mt-2 bg-[#4d6029] border border-[#3e4e20] px-4 py-3 rounded-2xl flex-row items-center justify-between shadow-lg z-50">
-            <View className="flex-row items-center flex-1 mr-2">
+          <View style={styles.toastContainer}>
+            <View style={styles.toastContent}>
               <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
-              <Text className="text-xs font-poppins-bold text-white ml-2 flex-1">
-                {successToast}
-              </Text>
+              <Text style={styles.toastText}>{successToast}</Text>
             </View>
             <TouchableOpacity onPress={() => setSuccessToast(null)}>
               <Ionicons name="close" size={16} color="#ffffff" />
@@ -233,22 +181,17 @@ export default function OtpVerificationScreen({
         )}
 
         <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: "center",
-            paddingHorizontal: 24,
-            paddingVertical: 20,
-          }}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View className="w-full max-w-sm self-center">
+          <View style={styles.cardWrapper}>
             {/* Header Hero Section */}
-            <View className="items-center mb-7">
+            <View style={styles.headerSection}>
               {/* Modern Layered Icon Badge */}
-              <View className="relative items-center justify-center mb-4">
-                <View className="w-20 h-20 rounded-3xl bg-[#AEAC78]/20 border border-[#AEAC78]/50 items-center justify-center">
-                  <View className="w-14 h-14 rounded-2xl bg-[#4d6029] items-center justify-center shadow-md shadow-[#4d6029]/30">
+              <View style={styles.iconBadgeOuter}>
+                <View style={styles.iconBadgeRing}>
+                  <View style={styles.iconBadgeInner}>
                     <MaterialCommunityIcons
                       name={
                         mode === "reset" ? "lock-reset" : "email-check-outline"
@@ -259,129 +202,127 @@ export default function OtpVerificationScreen({
                   </View>
                 </View>
                 {/* Small decorative security badge */}
-                <View className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-xs border border-slate-100">
-                  <View className="w-5 h-5 rounded-full bg-[#AEAC78] items-center justify-center">
+                <View style={styles.badgeSmall}>
+                  <View style={styles.badgeSmallInner}>
                     <Ionicons name="checkmark" size={12} color="#2d3416" />
                   </View>
                 </View>
               </View>
 
               {/* Main Titles */}
-              <Text className="text-2xl font-poppins-bold text-[#0f172a] tracking-tight text-center">
+              <Text style={styles.titleText}>
                 {mode === "reset" ? "Reset Password" : "Verify Your Email"}
               </Text>
 
-              <Text className="text-[#64748b] text-xs sm:text-sm mt-1.5 font-poppins text-center leading-5 px-2">
+              <Text style={styles.subtitleText}>
                 Enter the 6-digit verification code sent to
               </Text>
 
               {/* Email Address Pill Badge */}
-              <View className="bg-[#AEAC78]/15 border border-[#AEAC78]/60 px-3.5 py-1.5 rounded-2xl mt-2.5 flex-row items-center">
+              <View style={styles.emailPill}>
                 <Ionicons name="mail" size={13} color="#4d6029" />
-                <Text className="text-xs font-poppins-semibold text-[#2d3416] ml-2">
-                  {userEmail}
-                </Text>
+                <Text style={styles.emailPillText}>{userEmail}</Text>
               </View>
             </View>
 
-            {/* 6-Digit OTP Boxes */}
-            <View className="w-full mb-5">
-              <View className="flex-row items-center justify-between mb-3 px-1">
-                <Text className="text-[#334155] text-xs font-poppins-semibold">
-                  Verification Code
-                </Text>
+            {/* 6-Digit OTP Section */}
+            <View style={styles.otpSection}>
+              <View style={styles.otpLabelRow}>
+                <Text style={styles.otpLabel}>Verification Code</Text>
                 {/* Quick test code auto-filler button */}
                 <TouchableOpacity
                   onPress={handleFillDemoCode}
                   activeOpacity={0.7}
-                  className="flex-row items-center bg-slate-100 px-2 py-0.5 rounded-md"
+                  style={styles.autoFillBtn}
                 >
                   <Feather name="zap" size={11} color="#64748b" />
-                  <Text className="text-[10px] font-poppins-medium text-[#64748b] ml-1">
-                    Auto-fill: 123456
-                  </Text>
+                  <Text style={styles.autoFillText}>Auto-fill: 123456</Text>
                 </TouchableOpacity>
               </View>
 
-              <View className="flex-row justify-between items-center gap-1.5 sm:gap-2.5">
-                {otp.map((digit, idx) => {
+              {/* Seamless Tap Area for OTP Boxes */}
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => inputRef.current?.focus()}
+                style={styles.otpBoxesRow}
+              >
+                {Array.from({ length: 6 }).map((_, idx) => {
+                  const digit = code[idx] || "";
                   const isFilled = !!digit;
-                  const isFocused = focusedIndex === idx;
+                  const isCurrent =
+                    isInputFocused &&
+                    (idx === code.length || (idx === 5 && code.length === 6));
 
                   return (
                     <View
                       key={idx}
-                      className={`flex-1 h-14 sm:h-16 rounded-2xl border-2 items-center justify-center transition-all ${
-                        isFocused
-                          ? "border-[#4d6029] bg-white shadow-sm shadow-[#4d6029]/25"
-                          : isFilled
-                            ? "border-[#AEAC78] bg-[#AEAC78]/15"
-                            : "border-slate-300 bg-white"
-                      }`}
+                      style={[
+                        styles.otpBox,
+                        isFilled && styles.otpBoxFilled,
+                        isCurrent && styles.otpBoxFocused,
+                      ]}
                     >
-                      <TextInput
-                        ref={(ref) => {
-                          inputRefs.current[idx] = ref;
-                        }}
-                        value={digit}
-                        onChangeText={(val) => handleOtpChange(val, idx)}
-                        onKeyPress={(e) => handleKeyPress(e, idx)}
-                        onFocus={() => setFocusedIndex(idx)}
-                        onBlur={() =>
-                          setFocusedIndex((prev) =>
-                            prev === idx ? null : prev,
-                          )
-                        }
-                        keyboardType="number-pad"
-                        textContentType="oneTimeCode"
-                        autoComplete="one-time-code"
-                        maxLength={1}
-                        selectTextOnFocus
-                        textAlign="center"
-                        className="w-full h-full text-center text-xl sm:text-2xl font-poppins-bold text-[#0f172a]"
-                        placeholder={isFocused ? "" : "•"}
-                        placeholderTextColor="#cbd5e1"
-                      />
+                      <Text
+                        style={[
+                          styles.otpDigitText,
+                          isFilled && styles.otpDigitTextFilled,
+                          !isFilled && !isCurrent && styles.otpPlaceholderText,
+                        ]}
+                      >
+                        {digit ? digit : isCurrent ? "" : "•"}
+                      </Text>
+                      {isCurrent && !digit && <View style={styles.cursorBar} />}
                     </View>
                   );
                 })}
-              </View>
+              </TouchableOpacity>
+
+              {/* Single Native Underlying TextInput */}
+              <TextInput
+                ref={inputRef}
+                value={code}
+                onChangeText={handleCodeChange}
+                maxLength={6}
+                keyboardType="number-pad"
+                textContentType="oneTimeCode"
+                autoComplete="one-time-code"
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                style={styles.hiddenInput}
+                caretHidden
+              />
 
               {/* Error Message Feedback */}
               {errorMessage && (
-                <View className="flex-row items-center justify-center mt-3 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl">
+                <View style={styles.errorBox}>
                   <Ionicons name="alert-circle" size={14} color="#e11d48" />
-                  <Text className="text-xs font-poppins-medium text-rose-600 ml-1.5">
-                    {errorMessage}
-                  </Text>
+                  <Text style={styles.errorText}>{errorMessage}</Text>
                 </View>
               )}
             </View>
 
             {/* Resend Countdown Action */}
-            <View className="items-center mb-6 pt-1">
+            <View style={styles.resendSection}>
               {isResendActive ? (
-                <View className="flex-row items-center">
-                  <Text className="text-xs font-poppins text-[#64748b]">
+                <View style={styles.resendRow}>
+                  <Text style={styles.resendPrompt}>
                     Didn&apos;t receive code?{" "}
                   </Text>
                   <TouchableOpacity
                     onPress={handleResendCode}
                     activeOpacity={0.7}
-                    className="flex-row items-center py-1 px-2 rounded-lg bg-[#AEAC78]/20"
+                    style={styles.resendButton}
                   >
                     <Ionicons name="refresh" size={13} color="#4d6029" />
-                    <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1">
-                      Resend Code
-                    </Text>
+                    <Text style={styles.resendButtonText}>Resend Code</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View className="bg-slate-100/90 border border-slate-200/70 px-3.5 py-1.5 rounded-xl flex-row items-center">
+                <View style={styles.timerPill}>
                   <Ionicons name="time-outline" size={14} color="#64748b" />
-                  <Text className="text-xs font-poppins text-[#64748b] ml-1.5">
+                  <Text style={styles.timerText}>
                     Resend code in{" "}
-                    <Text className="font-poppins-bold text-[#4d6029]">
+                    <Text style={styles.timerHighlight}>
                       00:{resendTimer < 10 ? `0${resendTimer}` : resendTimer}
                     </Text>
                   </Text>
@@ -394,17 +335,17 @@ export default function OtpVerificationScreen({
               onPress={handleVerifyButton}
               disabled={isVerifying}
               activeOpacity={0.85}
-              className={`py-4 rounded-2xl items-center justify-center shadow-md flex-row mb-4 ${
-                isComplete
-                  ? "bg-[#4d6029] shadow-[#4d6029]/30"
-                  : "bg-[#4d6029]/80 shadow-slate-300/40"
-              } ${isVerifying ? "opacity-80" : ""}`}
+              style={[
+                styles.verifyButton,
+                isComplete ? styles.verifyButtonActive : styles.verifyButtonInactive,
+                isVerifying && styles.verifyButtonDisabled,
+              ]}
             >
               {isVerifying ? (
                 <ActivityIndicator
                   size="small"
                   color="#ffffff"
-                  className="mr-2"
+                  style={{ marginRight: 8 }}
                 />
               ) : (
                 <Ionicons
@@ -414,7 +355,7 @@ export default function OtpVerificationScreen({
                   style={{ marginRight: 6 }}
                 />
               )}
-              <Text className="text-white font-poppins-bold text-base">
+              <Text style={styles.verifyButtonText}>
                 {isVerifying ? "Verifying Code..." : "Verify & Continue"}
               </Text>
             </TouchableOpacity>
@@ -424,3 +365,319 @@ export default function OtpVerificationScreen({
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#f0f3f6",
+  },
+  keyboardContainer: {
+    flex: 1,
+  },
+  topNav: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 16,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toastContainer: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    backgroundColor: "#4d6029",
+    borderWidth: 1,
+    borderColor: "#3e4e20",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    elevation: 4,
+    zIndex: 50,
+  },
+  toastContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 8,
+  },
+  toastText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginLeft: 8,
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+  cardWrapper: {
+    width: "100%",
+    maxWidth: 380,
+    alignSelf: "center",
+  },
+  headerSection: {
+    alignItems: "center",
+    marginBottom: 28,
+  },
+  iconBadgeOuter: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  iconBadgeRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: "rgba(174, 172, 120, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(174, 172, 120, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconBadgeInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: "#4d6029",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+  },
+  badgeSmall: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: "#ffffff",
+    padding: 3,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+  },
+  badgeSmallInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#AEAC78",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  titleText: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#0f172a",
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  subtitleText: {
+    color: "#64748b",
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  },
+  emailPill: {
+    backgroundColor: "rgba(174, 172, 120, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(174, 172, 120, 0.6)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  emailPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#2d3416",
+    marginLeft: 8,
+  },
+  otpSection: {
+    width: "100%",
+    marginBottom: 20,
+    position: "relative",
+  },
+  otpLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  otpLabel: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  autoFillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  autoFillText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#64748b",
+    marginLeft: 4,
+  },
+  otpBoxesRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  otpBox: {
+    flex: 1,
+    height: 58,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  otpBoxFilled: {
+    borderColor: "#AEAC78",
+    backgroundColor: "rgba(174, 172, 120, 0.18)",
+  },
+  otpBoxFocused: {
+    borderColor: "#4d6029",
+    backgroundColor: "#ffffff",
+    elevation: 2,
+  },
+  otpDigitText: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#0f172a",
+    textAlign: "center",
+  },
+  otpDigitTextFilled: {
+    color: "#0f172a",
+  },
+  otpPlaceholderText: {
+    color: "#cbd5e1",
+    fontSize: 20,
+  },
+  cursorBar: {
+    width: 2,
+    height: 24,
+    backgroundColor: "#4d6029",
+    borderRadius: 1,
+  },
+  hiddenInput: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0.01,
+    left: -100,
+  },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    backgroundColor: "#fff1f2",
+    borderWidth: 1,
+    borderColor: "#fecdd3",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#e11d48",
+    marginLeft: 6,
+  },
+  resendSection: {
+    alignItems: "center",
+    marginBottom: 24,
+    paddingTop: 4,
+  },
+  resendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  resendPrompt: {
+    fontSize: 12,
+    color: "#64748b",
+  },
+  resendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(174, 172, 120, 0.25)",
+  },
+  resendButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4d6029",
+    marginLeft: 4,
+  },
+  timerPill: {
+    backgroundColor: "rgba(241, 245, 249, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.7)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  timerText: {
+    fontSize: 12,
+    color: "#64748b",
+    marginLeft: 6,
+  },
+  timerHighlight: {
+    fontWeight: "700",
+    color: "#4d6029",
+  },
+  verifyButton: {
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    marginBottom: 16,
+    elevation: 3,
+  },
+  verifyButtonActive: {
+    backgroundColor: "#4d6029",
+  },
+  verifyButtonInactive: {
+    backgroundColor: "rgba(77, 96, 41, 0.8)",
+  },
+  verifyButtonDisabled: {
+    opacity: 0.8,
+  },
+  verifyButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+});

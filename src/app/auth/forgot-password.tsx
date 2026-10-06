@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -13,38 +14,61 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { authService } from "@/services/auth";
+import { authState } from "@/services/auth-state";
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleResetPassword = () => {
-    if (!email.trim()) {
+  const handleResetPassword = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
       Alert.alert("Required Field", "Please enter your email address.");
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
+    if (!emailRegex.test(cleanEmail)) {
       Alert.alert("Invalid Email", "Please enter a valid email address.");
       return;
     }
 
-    setIsSubmitted(true);
-    Alert.alert(
-      "Verification Code Sent",
-      `A 6-digit password reset code has been sent to ${email.trim()}.`,
-      [
-        {
-          text: "Enter OTP Code",
-          onPress: () =>
-            router.push({
-              pathname: "/auth/otp",
-              params: { email: email.trim(), mode: "reset" },
-            }),
-        },
-      ],
-    );
+    try {
+      setIsLoading(true);
+      const res = await authService.forgotPassword(cleanEmail);
+
+      if (!res.success) {
+        Alert.alert("Request Failed", res.message || res.error || "No account found with this email.");
+        return;
+      }
+
+      setIsSubmitted(true);
+      authState.setAuthTarget(cleanEmail, "reset");
+      if (Platform.OS === "web") {
+        window.alert(`A 6-digit password reset code has been sent to ${cleanEmail}.`);
+        router.push("/auth/otp");
+      } else {
+        Alert.alert(
+          "Verification Code Sent",
+          `A 6-digit password reset code has been sent to ${cleanEmail}.`,
+          [
+            {
+              text: "Enter Verification Code",
+              onPress: () => {
+                router.push("/auth/otp");
+              },
+            },
+          ],
+        );
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -109,12 +133,24 @@ export default function ForgotPasswordScreen() {
               {/* Reset Password Button */}
               <TouchableOpacity
                 onPress={handleResetPassword}
-                className="bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md shadow-[#4d6029]/30 mb-6"
+                disabled={isLoading}
+                className={`bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md mb-6 ${
+                  isLoading ? "opacity-75" : ""
+                }`}
                 activeOpacity={0.85}
               >
-                <Text className="text-white font-poppins-bold text-base">
-                  Send Reset Link
-                </Text>
+                {isLoading ? (
+                  <View className="flex-row items-center">
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text className="text-white font-poppins-bold text-base ml-2">
+                      Sending Code...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text className="text-white font-poppins-bold text-base">
+                    Send Reset Link
+                  </Text>
+                )}
               </TouchableOpacity>
 
               {/* Back to Sign In Link */}

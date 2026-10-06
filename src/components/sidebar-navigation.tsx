@@ -3,6 +3,8 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
 
+import { authService } from "@/services/auth";
+
 interface SidebarNavigationProps {
   activeRoute?: string;
   onNavigate?: (route: string) => void;
@@ -92,6 +94,7 @@ export function SidebarNavigation({
   };
 
   const handleSignOut = () => {
+    authService.logout();
     router.replace("/auth/sign-in");
   };
 

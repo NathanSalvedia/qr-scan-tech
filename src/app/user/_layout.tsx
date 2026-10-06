@@ -1,6 +1,25 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, router } from 'expo-router';
+import { View, ActivityIndicator } from 'react-native';
+import { useAuth } from '@/services/auth-state';
 
 export default function UserLayout() {
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/auth/sign-in');
+    }
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) {
+    return (
+      <View className="flex-1 bg-[#f8fafc] items-center justify-center">
+        <ActivityIndicator size="small" color="#4d6029" />
+      </View>
+    );
+  }
+
   return (
     <Stack
       screenOptions={{

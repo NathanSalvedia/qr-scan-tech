@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -13,12 +14,14 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { authService } from "@/services/auth";
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const isWeb = Platform.OS === "web";
 
@@ -31,7 +34,7 @@ export default function SignInScreen() {
     }
   };
 
-  const handleSignIn = () => {
+  const handleSignIn = async () => {
     setErrorMsg(null);
     const cleanEmail = email.trim().toLowerCase();
 
@@ -60,11 +63,26 @@ export default function SignInScreen() {
       return;
     }
 
-    // Route admin account to Admin Console, all technician accounts (including nathansalvedia2002@gmail.com) to Field Technician Dashboard
-    if (cleanEmail === 'admin@multifactors.ph' || cleanEmail === 'admin') {
-      router.replace('/admin/dashboard' as any);
-    } else {
-      router.replace('/user/dashboard' as any);
+    try {
+      setIsLoading(true);
+      const res = await authService.login(cleanEmail, password);
+
+      if (!res.success) {
+        showAlert("Login Failed", res.message || res.error || "Invalid email or password.");
+        return;
+      }
+
+      const userRole = res.user?.role?.toLowerCase();
+
+      if (userRole === "admin") {
+        router.replace("/admin/dashboard");
+      } else {
+        router.replace("/user/dashboard");
+      }
+    } catch (err: any) {
+      showAlert("Error", err.message || "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -200,12 +218,24 @@ export default function SignInScreen() {
               {/* Sign In Button */}
               <TouchableOpacity
                 onPress={handleSignIn}
-                className="bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md shadow-[#4d6029]/30 mb-4"
+                disabled={isLoading}
+                className={`bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md mb-4 ${
+                  isLoading ? "opacity-75" : ""
+                }`}
                 activeOpacity={0.85}
               >
-                <Text className="text-white font-poppins-bold text-base">
-                  Sign In
-                </Text>
+                {isLoading ? (
+                  <View className="flex-row items-center">
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text className="text-white font-poppins-bold text-base ml-2">
+                      Signing In...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text className="text-white font-poppins-bold text-base">
+                    Sign In
+                  </Text>
+                )}
               </TouchableOpacity>
 
               {/* Sign Up Link: Mobile Only */}

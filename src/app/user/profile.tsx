@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { authService } from "@/services/auth";
 
 export default function UserProfileScreen() {
   const router = useRouter();
@@ -76,6 +77,7 @@ export default function UserProfileScreen() {
 
   const handleConfirmLogout = () => {
     setShowLogoutModal(false);
+    authService.logout();
     router.replace("/auth/sign-in" as any);
   };
 

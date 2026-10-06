@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { authService } from "@/services/auth";
+import { authState } from "@/services/auth-state";
+
 export default function SignUpScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -24,6 +28,7 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const isWeb = Platform.OS === "web";
 
@@ -36,7 +41,7 @@ export default function SignUpScreen() {
     }
   };
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
     setErrorMsg(null);
     const cleanFirstName = firstName.trim();
     const cleanLastName = lastName.trim();
@@ -99,27 +104,44 @@ export default function SignUpScreen() {
       return;
     }
 
-    if (isWeb) {
-      window.alert(`Account Created! Welcome ${cleanFirstName} ${cleanLastName}! A 6-digit verification code has been sent to ${cleanEmail}.`);
-      router.push({
-        pathname: "/auth/otp",
-        params: { email: cleanEmail, mode: "signup" },
+    try {
+      setIsLoading(true);
+      const res = await authService.register({
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        password,
       });
-    } else {
-      Alert.alert(
-        "Account Created",
-        `Welcome ${cleanFirstName} ${cleanLastName}! A 6-digit verification code has been sent to ${cleanEmail}.`,
-        [
-          {
-            text: "Verify Email",
-            onPress: () =>
-              router.push({
-                pathname: "/auth/otp",
-                params: { email: cleanEmail, mode: "signup" },
-              }),
-          },
-        ],
-      );
+
+      if (!res.success) {
+        showAlert("Registration Failed", res.message || res.error || "Could not complete registration.");
+        return;
+      }
+
+      if (isWeb) {
+        window.alert(`Account Created! A 6-digit verification code has been sent to ${cleanEmail}.`);
+        authState.setAuthTarget(cleanEmail, "verification");
+        router.push("/auth/otp");
+      } else {
+        Alert.alert(
+          "Account Created",
+          `Welcome ${cleanFirstName}! A 6-digit verification code has been sent to ${cleanEmail}.`,
+          [
+            {
+              text: "Enter OTP",
+              onPress: () => {
+                authState.setAuthTarget(cleanEmail, "verification");
+                router.push("/auth/otp");
+              },
+            },
+          ],
+        );
+      }
+    } catch (err: any) {
+      showAlert("Error", err.message || "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -313,12 +335,24 @@ export default function SignUpScreen() {
               {/* Sign Up Button */}
               <TouchableOpacity
                 onPress={handleSignUp}
-                className="bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md shadow-[#4d6029]/30 mb-6"
+                disabled={isLoading}
+                className={`bg-[#4d6029] active:opacity-90 py-4 rounded-2xl items-center justify-center shadow-md mb-6 ${
+                  isLoading ? "opacity-75" : ""
+                }`}
                 activeOpacity={0.85}
               >
-                <Text className="text-white font-poppins-bold text-base">
-                  Sign Up
-                </Text>
+                {isLoading ? (
+                  <View className="flex-row items-center">
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text className="text-white font-poppins-bold text-base ml-2">
+                      Creating Account...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text className="text-white font-poppins-bold text-base">
+                    Sign Up
+                  </Text>
+                )}
               </TouchableOpacity>
 
               {/* Already have an account? Sign In Link */}
