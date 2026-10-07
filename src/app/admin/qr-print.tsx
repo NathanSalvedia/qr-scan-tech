@@ -1,9 +1,11 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { boxService } from "@/services/boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   ScrollView,
@@ -29,112 +31,6 @@ export interface PrintableBox {
   activePorts: number;
   qrToken: string;
 }
-
-const STATIC_BOXES_DATA: PrintableBox[] = [
-  {
-    id: "5",
-    code: "DB-SB-04",
-    category: "SUB_BOX",
-    parentCode: "DB-MN-02",
-    siteName: "Robinsons Place Iligan - Floor 2 Rack",
-    address: "Macapagal Ave, Iligan City",
-    zone: "Zone 3 - Commercial District",
-    latitude: 8.2205,
-    longitude: 124.2385,
-    status: "NEEDS_TAG",
-    totalPorts: 32,
-    activePorts: 12,
-    qrToken: "QRTECH-BOX-SB04-7731",
-  },
-  {
-    id: "6",
-    code: "DB-SB-05",
-    category: "SUB_BOX",
-    parentCode: "DB-MN-01",
-    siteName: "Tambo Terminal Distribution Enclosure",
-    address: "Hinaplanon-Tambo Highway, Iligan City",
-    zone: "Zone 4 - North Transport Hub",
-    latitude: 8.249,
-    longitude: 124.261,
-    status: "NEEDS_TAG",
-    totalPorts: 16,
-    activePorts: 8,
-    qrToken: "QRTECH-BOX-SB05-6612",
-  },
-  {
-    id: "1",
-    code: "DB-MN-01",
-    category: "MAIN_BOX",
-    siteName: "Iligan City Hall / Aguinaldo Central Hub",
-    address: "Aguinaldo St, Poblacion, Iligan City",
-    zone: "Zone 1 - Poblacion Civic Center",
-    latitude: 8.2285,
-    longitude: 124.2415,
-    status: "ACTIVE",
-    totalPorts: 48,
-    activePorts: 42,
-    qrToken: "QRTECH-BOX-MN01-8891",
-  },
-  {
-    id: "2",
-    code: "DB-MN-02",
-    category: "MAIN_BOX",
-    siteName: "Aguinaldo Secondary Distribution Center",
-    address: "Roxas Ave cor. Aguinaldo, Iligan City",
-    zone: "Zone 2 - Roxas Midtown",
-    latitude: 8.2238,
-    longitude: 124.2458,
-    status: "ACTIVE",
-    totalPorts: 32,
-    activePorts: 28,
-    qrToken: "QRTECH-BOX-MN02-4412",
-  },
-  {
-    id: "3",
-    code: "DB-SB-02",
-    category: "SUB_BOX",
-    parentCode: "DB-MN-01",
-    siteName: "MSU-IIT Tibanga Campus Node",
-    address: "Andres Bonifacio Ave, Tibanga, Iligan City",
-    zone: "Zone 5 - University District",
-    latitude: 8.2415,
-    longitude: 124.244,
-    status: "ACTIVE",
-    totalPorts: 32,
-    activePorts: 24,
-    qrToken: "QRTECH-BOX-SB02-9901",
-  },
-  {
-    id: "4",
-    code: "DB-SB-03",
-    category: "SUB_BOX",
-    parentCode: "DB-MN-01",
-    siteName: "Tubod Commercial Distribution Node",
-    address: "Macapagal Highway, Tubod, Iligan City",
-    zone: "Zone 6 - Tubod South Corridor",
-    latitude: 8.214,
-    longitude: 124.236,
-    status: "ACTIVE",
-    totalPorts: 24,
-    activePorts: 18,
-    qrToken: "QRTECH-BOX-SB03-1204",
-  },
-  {
-    id: "7",
-    code: "DB-SB-06",
-    category: "SUB_BOX",
-    parentCode: "DB-MN-02",
-    siteName: "Del Carmen Secondary Sub-Box",
-    address: "Del Carmen, Iligan City",
-    zone: "Zone 7 - Del Carmen Heights",
-    latitude: 8.232,
-    longitude: 124.259,
-    status: "ISSUE",
-    totalPorts: 24,
-    activePorts: 16,
-    qrToken: "QRTECH-BOX-SB06-3390",
-  },
-];
 
 type FilterType = "ALL" | "NEEDS_TAG" | "MAIN_BOX" | "SUB_BOX";
 
@@ -210,13 +106,64 @@ function PlacardCard({ box }: { box: PrintableBox }) {
 }
 
 export default function QRPrintScreen() {
-  const [boxes] = useState<PrintableBox[]>(STATIC_BOXES_DATA);
-  const [selectedBoxIds, setSelectedBoxIds] = useState<string[]>(["5", "6"]); // Default selecting the 2 untagged boxes
+  const [boxes, setBoxes] = useState<PrintableBox[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBoxIds, setSelectedBoxIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("NEEDS_TAG");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [showDuplicateIfSingle, setShowDuplicateIfSingle] = useState(true);
+
+  // Load real boxes from API
+  useEffect(() => {
+    let isMounted = true;
+    async function loadBoxes() {
+      try {
+        setLoading(true);
+        const res = await boxService.getAll();
+        if (!isMounted) return;
+        if (res.success && Array.isArray(res.boxes)) {
+          const mapped: PrintableBox[] = res.boxes.map((b: any) => ({
+            id: b.id,
+            code: b.code,
+            category: b.category,
+            parentCode: b.parentCode || b.parentBoxId,
+            siteName: b.siteName || b.site_name,
+            address: b.address,
+            zone: b.zone || (b.poleNumber ? `Pole ${b.poleNumber}` : "Iligan City"),
+            latitude: Number(b.latitude) || 8.232,
+            longitude: Number(b.longitude) || 124.248,
+            status: b.status || "NEEDS_TAG",
+            totalPorts: Number(b.totalPorts || b.total_ports) || 24,
+            activePorts: Number(b.activePorts) || 0,
+            qrToken: b.qrToken || b.qr_token || `QRTECH-BOX-${b.code}`,
+          }));
+          setBoxes(mapped);
+
+          // By default, select boxes that need tags, or the first box if none
+          const needsTag = mapped.filter((b) => b.status === "NEEDS_TAG");
+          if (needsTag.length > 0) {
+            setSelectedBoxIds(needsTag.map((b) => b.id));
+          } else if (mapped.length > 0) {
+            setSelectedBoxIds([mapped[0].id]);
+          }
+        } else {
+          setBoxes([]);
+        }
+      } catch (err) {
+        console.error("Failed to load boxes for QR print:", err);
+        setBoxes([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadBoxes();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const isWeb = Platform.OS === "web";
 
@@ -280,7 +227,14 @@ export default function QRPrintScreen() {
     setActiveSheetIndex(0);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (selectedBoxIds.length > 0) {
+      try {
+        await boxService.recordBatchDispatch(selectedBoxIds);
+      } catch (err) {
+        console.warn("Failed to log batch qr_dispatch:", err);
+      }
+    }
     if (isWeb) {
       window.print();
     }
@@ -524,10 +478,19 @@ export default function QRPrintScreen() {
                   {/* Filter Pills */}
                   <View className="flex-row items-center flex-wrap gap-1.5 mb-3">
                     {[
-                      { id: "NEEDS_TAG", label: "Needs QR Tag (2)" },
+                      {
+                        id: "NEEDS_TAG",
+                        label: `Needs QR Tag (${boxes.filter((b) => b.status === "NEEDS_TAG").length})`,
+                      },
                       { id: "ALL", label: `All Boxes (${boxes.length})` },
-                      { id: "MAIN_BOX", label: "Main Boxes" },
-                      { id: "SUB_BOX", label: "Sub-Boxes" },
+                      {
+                        id: "MAIN_BOX",
+                        label: `Main Boxes (${boxes.filter((b) => b.category === "MAIN_BOX").length})`,
+                      },
+                      {
+                        id: "SUB_BOX",
+                        label: `Sub-Boxes (${boxes.filter((b) => b.category === "SUB_BOX").length})`,
+                      },
                     ].map((tab) => (
                       <TouchableOpacity
                         key={tab.id}
@@ -587,86 +550,104 @@ export default function QRPrintScreen() {
                   </View>
 
                   <View className="divide-y divide-slate-100 max-h-[580px] overflow-y-auto">
-                    {filteredBoxes.map((box) => {
-                      const isSelected = selectedBoxIds.includes(box.id);
-                      return (
-                        <TouchableOpacity
-                          key={box.id}
-                          onPress={() => handleToggleSelectBox(box.id)}
-                          activeOpacity={0.7}
-                          className={`p-4 flex-row items-center justify-between transition-colors ${
-                            isSelected ? "bg-[#4d6029]/5" : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <View className="flex-row items-center flex-1 mr-3">
-                            <View className="mr-3">
-                              <Ionicons
-                                name={
-                                  isSelected ? "checkbox" : "square-outline"
-                                }
-                                size={20}
-                                color={isSelected ? "#4d6029" : "#cbd5e1"}
-                              />
-                            </View>
-
-                            <View className="flex-1">
-                              <View className="flex-row items-center">
-                                <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                                  {box.code}
-                                </Text>
-                                <View
-                                  className={`ml-2 px-2 py-0.5 rounded-md ${
-                                    box.category === "MAIN_BOX"
-                                      ? "bg-[#4d6029]/10"
-                                      : "bg-sky-100"
-                                  }`}
-                                >
-                                  <Text
-                                    className={`text-[9px] font-poppins-bold uppercase ${
-                                      box.category === "MAIN_BOX"
-                                        ? "text-[#4d6029]"
-                                        : "text-sky-800"
-                                    }`}
-                                  >
-                                    {box.category === "MAIN_BOX"
-                                      ? "Main Distribution Box"
-                                      : "Sub-Distribution Box"}
-                                  </Text>
-                                </View>
-
-                                {box.status === "NEEDS_TAG" && (
-                                  <View className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 border border-amber-200">
-                                    <Text className="text-[8px] font-poppins-bold text-amber-800">
-                                      Needs Tag
-                                    </Text>
-                                  </View>
-                                )}
+                    {loading ? (
+                      <View className="py-12 items-center justify-center">
+                        <ActivityIndicator size="small" color="#4d6029" />
+                        <Text className="text-xs font-poppins-medium text-[#64748b] mt-2">
+                          Loading distribution boxes from database...
+                        </Text>
+                      </View>
+                    ) : filteredBoxes.length === 0 ? (
+                      <View className="py-12 px-4 items-center justify-center">
+                        <Ionicons name="search-outline" size={28} color="#cbd5e1" />
+                        <Text className="text-xs font-poppins-medium text-[#94a3b8] mt-2 text-center">
+                          {boxes.length === 0
+                            ? "No distribution boxes found in database."
+                            : `No boxes match "${searchQuery || activeFilter}".`}
+                        </Text>
+                      </View>
+                    ) : (
+                      filteredBoxes.map((box) => {
+                        const isSelected = selectedBoxIds.includes(box.id);
+                        return (
+                          <TouchableOpacity
+                            key={box.id}
+                            onPress={() => handleToggleSelectBox(box.id)}
+                            activeOpacity={0.7}
+                            className={`p-4 flex-row items-center justify-between transition-colors ${
+                              isSelected ? "bg-[#4d6029]/5" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <View className="flex-row items-center flex-1 mr-3">
+                              <View className="mr-3">
+                                <Ionicons
+                                  name={
+                                    isSelected ? "checkbox" : "square-outline"
+                                  }
+                                  size={20}
+                                  color={isSelected ? "#4d6029" : "#cbd5e1"}
+                                />
                               </View>
 
-                              <Text
-                                className="text-xs font-poppins-medium text-[#334155] mt-0.5"
-                                numberOfLines={1}
-                              >
-                                {box.siteName}
-                              </Text>
+                              <View className="flex-1">
+                                <View className="flex-row items-center">
+                                  <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                                    {box.code}
+                                  </Text>
+                                  <View
+                                    className={`ml-2 px-2 py-0.5 rounded-md ${
+                                      box.category === "MAIN_BOX"
+                                        ? "bg-[#4d6029]/10"
+                                        : "bg-sky-100"
+                                    }`}
+                                  >
+                                    <Text
+                                      className={`text-[9px] font-poppins-bold uppercase ${
+                                        box.category === "MAIN_BOX"
+                                          ? "text-[#4d6029]"
+                                          : "text-sky-800"
+                                      }`}
+                                    >
+                                      {box.category === "MAIN_BOX"
+                                        ? "Main Distribution Box"
+                                        : "Sub-Distribution Box"}
+                                    </Text>
+                                  </View>
 
-                              <Text
-                                className="text-[10px] font-poppins text-[#64748b]"
-                                numberOfLines={1}
-                              >
-                                {box.address} · {box.zone}
+                                  {box.status === "NEEDS_TAG" && (
+                                    <View className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 border border-amber-200">
+                                      <Text className="text-[8px] font-poppins-bold text-amber-800">
+                                        Needs Tag
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+
+                                <Text
+                                  className="text-xs font-poppins-medium text-[#334155] mt-0.5"
+                                  numberOfLines={1}
+                                >
+                                  {box.siteName}
+                                </Text>
+
+                                <Text
+                                  className="text-[10px] font-poppins text-[#64748b]"
+                                  numberOfLines={1}
+                                >
+                                  {box.address} · {box.zone}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View className="items-end">
+                              <Text className="text-[10px] font-mono text-[#64748b]">
+                                {box.totalPorts} Ports
                               </Text>
                             </View>
-                          </View>
-
-                          <View className="items-end">
-                            <Text className="text-[10px] font-mono text-[#64748b]">
-                              {box.totalPorts} Ports
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
                   </View>
                 </View>
               </View>

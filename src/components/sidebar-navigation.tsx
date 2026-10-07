@@ -1,16 +1,28 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useState } from "react";
 import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
 
 import { authService } from "@/services/auth";
+import { AuthUser, useAuth } from "@/services/auth-state";
 
-interface SidebarNavigationProps {
+export interface SidebarBadgeCounts {
+  boxes?: number | string;
+  newQr?: number | string;
+  technicians?: number | string;
+  logs?: number | string;
+  [key: string]: number | string | undefined;
+}
+
+export interface SidebarNavigationProps {
   activeRoute?: string;
   onNavigate?: (route: string) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   className?: string;
+  locationLabel?: string;
+  badgeCounts?: SidebarBadgeCounts;
+  user?: AuthUser | null;
 }
 
 interface MenuItem {
@@ -22,13 +34,82 @@ interface MenuItem {
   badgeType?: "default" | "amber" | "green";
 }
 
+/**
+ * Helper to compute user initials (e.g., "AD", "SA")
+ */
+function getUserInitials(user: AuthUser | null): string {
+  if (!user) return "AD";
+
+  const first = user.firstName?.trim();
+  const last = user.lastName?.trim();
+
+  if (first && last) {
+    return `${first[0]}${last[0]}`.toUpperCase();
+  }
+  if (first) {
+    return first.slice(0, 2).toUpperCase();
+  }
+  if (user.name?.trim()) {
+    const parts = user.name.trim().split(" ").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return user.name.trim().slice(0, 2).toUpperCase();
+  }
+  if (user.email) {
+    return user.email.slice(0, 2).toUpperCase();
+  }
+  return "AD";
+}
+
+/**
+ * Helper to get clean display name
+ */
+function getUserDisplayName(user: AuthUser | null): string {
+  if (!user) return "Administrator";
+
+  const first = user.firstName?.trim();
+  const last = user.lastName?.trim();
+
+  if (first && last) {
+    return `${first} ${last}`;
+  }
+  if (first) return first;
+  if (user.name?.trim()) return user.name.trim();
+  if (user.email) return user.email.split("@")[0];
+  return "Administrator";
+}
+
+/**
+ * Helper to get formatted user role
+ */
+function getUserDisplayRole(user: AuthUser | null): string {
+  if (!user?.role) return "System Admin";
+
+  const roleLower = user.role.toLowerCase();
+  if (roleLower === "admin") return "System Admin";
+  if (roleLower === "technician" || roleLower === "user") return "Field Technician";
+  return user.role.charAt(0).toUpperCase() + user.role.slice(1);
+}
+
 export function SidebarNavigation({
-  activeRoute = "/admin/dashboard",
+  activeRoute: explicitActiveRoute,
   onNavigate,
   collapsed: externalCollapsed,
   onToggleCollapse,
   className = "",
+  locationLabel = "Admin Portal · Iligan",
+  badgeCounts,
+  user: propUser,
 }: SidebarNavigationProps) {
+  // Reactive Auth state
+  const { user: contextUser } = useAuth();
+  const currentUser = propUser !== undefined ? propUser : contextUser;
+
+  // Active route: falls back to current router pathname if activeRoute is omitted
+  const currentPath = usePathname();
+  const activeRoute = explicitActiveRoute || currentPath || "/admin/dashboard";
+
   // Support both controlled and internal state for collapse
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed =
@@ -42,6 +123,13 @@ export function SidebarNavigation({
     }
   };
 
+  // Dynamic box counts calculation - strictly from passed dynamic props
+  const totalBoxesCount =
+    badgeCounts?.boxes !== undefined ? String(badgeCounts.boxes) : undefined;
+
+  const needsTagCount =
+    badgeCounts?.newQr !== undefined ? String(badgeCounts.newQr) : undefined;
+
   const menuItems: MenuItem[] = [
     {
       title: "Dashboard",
@@ -54,7 +142,7 @@ export function SidebarNavigation({
       route: "/admin/box-management",
       icon: "server-network",
       iconType: "material",
-      badge: "48",
+      badge: totalBoxesCount,
       badgeType: "default",
     },
     {
@@ -62,7 +150,7 @@ export function SidebarNavigation({
       route: "/admin/qr-print",
       icon: "printer",
       iconType: "material",
-      badge: "4 New",
+      badge: needsTagCount,
       badgeType: "amber",
     },
     {
@@ -70,12 +158,16 @@ export function SidebarNavigation({
       route: "/admin/technicians",
       icon: "people-outline",
       iconType: "ionicons",
+      badge: badgeCounts?.technicians ? String(badgeCounts.technicians) : undefined,
+      badgeType: "default",
     },
     {
       title: "Activity Logs",
       route: "/admin/activity-logs",
       icon: "shield-checkmark-outline",
       iconType: "ionicons",
+      badge: badgeCounts?.logs ? String(badgeCounts.logs) : undefined,
+      badgeType: "default",
     },
     {
       title: "Settings",
@@ -97,6 +189,10 @@ export function SidebarNavigation({
     authService.logout();
     router.replace("/auth/sign-in");
   };
+
+  const initials = getUserInitials(currentUser);
+  const displayName = getUserDisplayName(currentUser);
+  const displayRole = getUserDisplayRole(currentUser);
 
   return (
     <View
@@ -132,7 +228,7 @@ export function SidebarNavigation({
               <View className="flex-row items-center mt-1">
                 <View className="w-2 h-2 rounded-full bg-[#4d6029] mr-1.5" />
                 <Text className="text-[11px] font-poppins-medium text-[#4d6029]">
-                  Admin Portal · Iligan
+                  {locationLabel}
                 </Text>
               </View>
             </View>
@@ -251,7 +347,9 @@ export function SidebarNavigation({
             accessibilityLabel="Sign Out"
             className="w-12 h-12 rounded-2xl bg-[#e2e9d8] border border-[#4d6029]/20 items-center justify-center self-center"
           >
-            <Text className="text-xs font-poppins-bold text-[#4d6029]">AD</Text>
+            <Text className="text-xs font-poppins-bold text-[#4d6029]">
+              {initials}
+            </Text>
           </TouchableOpacity>
         ) : (
           /* Expanded User Card matching exact mockup */
@@ -259,7 +357,7 @@ export function SidebarNavigation({
             <View className="flex-row items-center flex-1 mr-2">
               <View className="w-10 h-10 rounded-xl bg-[#e2e9d8] border border-[#4d6029]/20 items-center justify-center mr-3">
                 <Text className="text-xs font-poppins-bold text-[#4d6029]">
-                  AD
+                  {initials}
                 </Text>
               </View>
               <View className="flex-1">
@@ -267,13 +365,13 @@ export function SidebarNavigation({
                   numberOfLines={1}
                   className="text-sm font-poppins-bold text-[#0f172a]"
                 >
-                  Alex Davies
+                  {displayName}
                 </Text>
                 <Text
                   numberOfLines={1}
                   className="text-xs font-poppins text-[#8a99ad]"
                 >
-                  System Admin
+                  {displayRole}
                 </Text>
               </View>
             </View>

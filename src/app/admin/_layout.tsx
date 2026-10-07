@@ -5,7 +5,7 @@ import { useAuth } from '@/services/auth-state';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function AdminLayout() {
-  const { user, isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   useEffect(() => {
     // 1. If not authenticated at all -> redirect to sign in

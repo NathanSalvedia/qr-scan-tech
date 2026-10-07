@@ -2,362 +2,86 @@ import { SidebarNavigation } from "@/components/sidebar-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  technicianService,
+  type Technician,
+  type ScanLogEntry,
+  type MaintenanceAction,
+} from "@/services/technicians";
 
-export interface ScanLogEntry {
-  id: string;
-  boxCode: string;
-  siteName: string;
-  timestamp: string;
-  status: "NORMAL" | "ALARM" | "MAINTENANCE_DONE";
-  notes: string;
-}
-
-export interface MaintenanceAction {
-  id: string;
-  boxCode: string;
-  action: string;
-  date: string;
-  status: "RESOLVED" | "PENDING";
-}
-
-export interface Technician {
-  id: string;
-  employeeId: string;
-  name: string;
-  role: string;
-  avatarBg: string;
-  phone: string;
-  email: string;
-  dutyStatus: "ON_DUTY" | "ON_BREAK" | "OFF_DUTY";
-  lastBoxCode: string;
-  lastBoxName: string;
-  lastScanTime: string;
-  todayScansCount: number;
-  totalScansThisMonth: number;
-  activeAlarmsCount: number;
-  appVersion: string;
-  deviceModel: string;
-  lastBatteryLevel: string;
-  scanHistory: ScanLogEntry[];
-  maintenanceActions: MaintenanceAction[];
-}
-
-const STATIC_TECHNICIANS: Technician[] = [
-  {
-    id: "1",
-    employeeId: "TECH-ILG-01",
-    name: "Alex Davies",
-    role: "Lead Optical Fiber Splicer",
-    avatarBg: "bg-[#4d6029]",
-    phone: "+63 917 882 1091",
-    email: "alex.davies@multifactors.ph",
-    dutyStatus: "ON_DUTY",
-    lastBoxCode: "DB-MN-01",
-    lastBoxName: "Iligan City Hall / Aguinaldo Central Hub",
-    lastScanTime: "Today at 09:15 AM",
-    todayScansCount: 8,
-    totalScansThisMonth: 142,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Samsung Galaxy A54 5G",
-    lastBatteryLevel: "88%",
-    scanHistory: [
-      {
-        id: "s1",
-        boxCode: "DB-MN-01",
-        siteName: "Iligan City Hall / Aguinaldo Central Hub",
-        timestamp: "Today at 09:15 AM",
-        status: "NORMAL",
-        notes:
-          "Routine morning inspection. Optical power on Feeder 1 tested nominal at -17.8 dBm.",
-      },
-      {
-        id: "s2",
-        boxCode: "DB-SB-03",
-        siteName: "Tubod Commercial Distribution Node",
-        timestamp: "Today at 08:30 AM",
-        status: "NORMAL",
-        notes:
-          "Cleaned dust from splitter cassette. All 18 subscriber ports operating nominally.",
-      },
-      {
-        id: "s3",
-        boxCode: "DB-SB-02",
-        siteName: "MSU-IIT Tibanga Campus Node",
-        timestamp: "Yesterday at 04:10 PM",
-        status: "MAINTENANCE_DONE",
-        notes:
-          "Re-spliced port 5 drop cable for university dorm hub. Power recovered to -16.2 dBm.",
-      },
-    ],
-    maintenanceActions: [
-      {
-        id: "m1",
-        boxCode: "DB-SB-02",
-        action: "Re-spliced Port 05 drop cable connector",
-        date: "Sep 30, 2026",
-        status: "RESOLVED",
-      },
-      {
-        id: "m2",
-        boxCode: "DB-MN-01",
-        action: "Annual optical patch panel laser calibration",
-        date: "Sep 24, 2026",
-        status: "RESOLVED",
-      },
-    ],
-  },
-  {
-    id: "2",
-    employeeId: "TECH-ILG-02",
-    name: "Roberto Santos",
-    role: "Senior Maintenance Lineman",
-    avatarBg: "bg-sky-700",
-    phone: "+63 928 441 2099",
-    email: "roberto.santos@multifactors.ph",
-    dutyStatus: "ON_DUTY",
-    lastBoxCode: "DB-SB-04",
-    lastBoxName: "Robinsons Place Iligan - Floor 2 Rack",
-    lastScanTime: "Today at 10:40 AM",
-    todayScansCount: 6,
-    totalScansThisMonth: 118,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Xiaomi Redmi Note 13 Pro",
-    lastBatteryLevel: "74%",
-    scanHistory: [
-      {
-        id: "s4",
-        boxCode: "DB-SB-04",
-        siteName: "Robinsons Place Iligan - Floor 2 Rack",
-        timestamp: "Today at 10:40 AM",
-        status: "NORMAL",
-        notes:
-          "Checked rack cabinet seals and breaker temperature. Verified POS ports.",
-      },
-      {
-        id: "s5",
-        boxCode: "DB-MN-02",
-        siteName: "Aguinaldo Secondary Distribution Center",
-        timestamp: "Today at 09:00 AM",
-        status: "NORMAL",
-        notes: "Secondary hub morning telemetry verified. 28/32 ports active.",
-      },
-    ],
-    maintenanceActions: [
-      {
-        id: "m3",
-        boxCode: "DB-SB-04",
-        action: "Installed 20A DIN-rail breaker backup",
-        date: "Sep 28, 2026",
-        status: "RESOLVED",
-      },
-    ],
-  },
-  {
-    id: "3",
-    employeeId: "TECH-ILG-03",
-    name: "Maria Gonzales",
-    role: "Field Network Specialist",
-    avatarBg: "bg-emerald-700",
-    phone: "+63 919 332 9011",
-    email: "maria.gonzales@multifactors.ph",
-    dutyStatus: "ON_BREAK",
-    lastBoxCode: "DB-SB-02",
-    lastBoxName: "MSU-IIT Tibanga Campus Node",
-    lastScanTime: "1 hour ago",
-    todayScansCount: 5,
-    totalScansThisMonth: 96,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Samsung Galaxy S22",
-    lastBatteryLevel: "62%",
-    scanHistory: [
-      {
-        id: "s6",
-        boxCode: "DB-SB-02",
-        siteName: "MSU-IIT Tibanga Campus Node",
-        timestamp: "1 hour ago",
-        status: "NORMAL",
-        notes:
-          "Midday fiber attenuation scan on Slot B. Clean signal across academic links.",
-      },
-    ],
-    maintenanceActions: [],
-  },
-  {
-    id: "4",
-    employeeId: "TECH-ILG-04",
-    name: "Juan Dela Cruz",
-    role: "Emergency Dispatch Lineman",
-    avatarBg: "bg-rose-700",
-    phone: "+63 915 771 4022",
-    email: "juan.delacruz@multifactors.ph",
-    dutyStatus: "OFF_DUTY",
-    lastBoxCode: "DB-SB-06",
-    lastBoxName: "Del Carmen Secondary Sub-Box",
-    lastScanTime: "Yesterday at 04:30 PM",
-    todayScansCount: 0,
-    totalScansThisMonth: 84,
-    activeAlarmsCount: 1,
-    appVersion: "v2.3.8 (Build 55)",
-    deviceModel: "Realme 11 Pro",
-    lastBatteryLevel: "45%",
-    scanHistory: [
-      {
-        id: "s7",
-        boxCode: "DB-SB-06",
-        siteName: "Del Carmen Secondary Sub-Box",
-        timestamp: "Yesterday at 04:30 PM",
-        status: "ALARM",
-        notes:
-          "ALARM TRIGGERED: Detected elevated temperature (58°C) on primary 20A breaker.",
-      },
-    ],
-    maintenanceActions: [
-      {
-        id: "m4",
-        boxCode: "DB-SB-06",
-        action: "Investigate and replace degraded 1:8 PLC splitter slot",
-        date: "Oct 01, 2026",
-        status: "PENDING",
-      },
-    ],
-  },
-  {
-    id: "5",
-    employeeId: "TECH-ILG-05",
-    name: "Carlo Mendoza",
-    role: "Optical Fiber Splicer",
-    avatarBg: "bg-indigo-700",
-    phone: "+63 930 114 8871",
-    email: "carlo.mendoza@multifactors.ph",
-    dutyStatus: "ON_DUTY",
-    lastBoxCode: "DB-MN-02",
-    lastBoxName: "Aguinaldo Secondary Distribution Center",
-    lastScanTime: "Today at 11:20 AM",
-    todayScansCount: 4,
-    totalScansThisMonth: 104,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Oppo Reno 10",
-    lastBatteryLevel: "81%",
-    scanHistory: [
-      {
-        id: "s8",
-        boxCode: "DB-MN-02",
-        siteName: "Aguinaldo Secondary Distribution Center",
-        timestamp: "Today at 11:20 AM",
-        status: "NORMAL",
-        notes:
-          "Midday link inspection. All commercial fiber lines functioning properly.",
-      },
-    ],
-    maintenanceActions: [],
-  },
-  {
-    id: "6",
-    employeeId: "TECH-ILG-06",
-    name: "Dennis Villanueva",
-    role: "Optical Network Specialist",
-    avatarBg: "bg-teal-700",
-    phone: "+63 947 552 1104",
-    email: "dennis.v@multifactors.ph",
-    dutyStatus: "ON_DUTY",
-    lastBoxCode: "DB-SB-03",
-    lastBoxName: "Tubod Commercial Distribution Node",
-    lastScanTime: "Today at 08:50 AM",
-    todayScansCount: 7,
-    totalScansThisMonth: 130,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Samsung Galaxy A34",
-    lastBatteryLevel: "92%",
-    scanHistory: [
-      {
-        id: "s9",
-        boxCode: "DB-SB-03",
-        siteName: "Tubod Commercial Distribution Node",
-        timestamp: "Today at 08:50 AM",
-        status: "NORMAL",
-        notes:
-          "Morning circuit breaker inspection and terminal block continuity test.",
-      },
-    ],
-    maintenanceActions: [],
-  },
-  {
-    id: "7",
-    employeeId: "TECH-ILG-07",
-    name: "Grace Alcantara",
-    role: "Field QA & Compliance Officer",
-    avatarBg: "bg-amber-700",
-    phone: "+63 918 663 8812",
-    email: "grace.alcantara@multifactors.ph",
-    dutyStatus: "ON_DUTY",
-    lastBoxCode: "DB-SB-05",
-    lastBoxName: "Tambo Terminal Distribution Enclosure",
-    lastScanTime: "Today at 11:45 AM",
-    todayScansCount: 5,
-    totalScansThisMonth: 112,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "iPhone 14",
-    lastBatteryLevel: "85%",
-    scanHistory: [
-      {
-        id: "s10",
-        boxCode: "DB-SB-05",
-        siteName: "Tambo Terminal Distribution Enclosure",
-        timestamp: "Today at 11:45 AM",
-        status: "NORMAL",
-        notes:
-          "Conducted pre-affix inspection for pending 50x50mm QR door sticker.",
-      },
-    ],
-    maintenanceActions: [],
-  },
-  {
-    id: "8",
-    employeeId: "TECH-ILG-08",
-    name: "Mark Anthony Ramos",
-    role: "Field Lineman Apprentice",
-    avatarBg: "bg-slate-700",
-    phone: "+63 922 990 4431",
-    email: "mark.ramos@multifactors.ph",
-    dutyStatus: "OFF_DUTY",
-    lastBoxCode: "DB-MN-01",
-    lastBoxName: "Iligan City Hall / Aguinaldo Central Hub",
-    lastScanTime: "Yesterday at 05:10 PM",
-    todayScansCount: 0,
-    totalScansThisMonth: 62,
-    activeAlarmsCount: 0,
-    appVersion: "v2.4.0 (Build 58)",
-    deviceModel: "Vivo V29",
-    lastBatteryLevel: "50%",
-    scanHistory: [],
-    maintenanceActions: [],
-  },
-];
+export type { Technician, ScanLogEntry, MaintenanceAction };
 
 type DutyFilter = "ALL" | "ON_DUTY" | "ON_BREAK" | "OFF_DUTY" | "HAS_ALARM";
 
 export default function TechniciansScreen() {
-  const [technicians] = useState<Technician[]>(STATIC_TECHNICIANS);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<DutyFilter>("ALL");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTechnicians() {
+      try {
+        const res = await technicianService.getAll();
+        if (!isMounted) return;
+
+        if (res.success && res.technicians) {
+          setTechnicians(res.technicians);
+        } else {
+          setError(res.message || "Failed to load technicians");
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        setError(err.message || "Failed to connect to technician service");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadTechnicians();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      const res = await technicianService.getAll();
+      if (res.success && res.technicians) {
+        setTechnicians(res.technicians);
+      } else {
+        setError(res.message || "Failed to load technicians");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to connect to technician service");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   // Inspector Modal State
   const [selectedTechForDetails, setSelectedTechForDetails] =
@@ -427,6 +151,15 @@ export default function TechniciansScreen() {
   const onDutyCount = technicians.filter(
     (t) => t.dutyStatus === "ON_DUTY",
   ).length;
+  const onBreakCount = technicians.filter(
+    (t) => t.dutyStatus === "ON_BREAK",
+  ).length;
+  const offDutyCount = technicians.filter(
+    (t) => t.dutyStatus === "OFF_DUTY",
+  ).length;
+  const hasAlarmCount = technicians.filter(
+    (t) => t.activeAlarmsCount > 0,
+  ).length;
   const totalScansToday = technicians.reduce(
     (acc, t) => acc + t.todayScansCount,
     0,
@@ -478,8 +211,25 @@ export default function TechniciansScreen() {
               {/* Action Buttons */}
               <View className="flex-row items-center space-x-2.5">
                 <TouchableOpacity
+                  onPress={handleRefresh}
+                  disabled={refreshing}
+                  className="bg-white border border-slate-200/80 px-3.5 py-2.5 rounded-2xl flex-row items-center shadow-sm mr-2"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="refresh"
+                    size={15}
+                    color="#475569"
+                    style={refreshing ? { transform: [{ rotate: "45deg" }] } : undefined}
+                  />
+                  <Text className="text-xs font-poppins-bold text-[#334155] ml-1.5">
+                    {refreshing ? "Refreshing..." : "Refresh"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => router.push("/admin/dashboard")}
-                  className="bg-white border border-slate-200/80 px-4 py-2.5 rounded-2xl flex-row items-center shadow-sm mr-2"
+                  className="bg-white border border-slate-200/80 px-4 py-2.5 rounded-2xl flex-row items-center shadow-sm"
                   activeOpacity={0.8}
                 >
                   <Ionicons name="map-outline" size={16} color="#475569" />
@@ -489,6 +239,24 @@ export default function TechniciansScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Error Banner */}
+            {error && (
+              <View className="bg-rose-50 border border-rose-200 p-4 rounded-2xl mb-5 flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1 mr-3">
+                  <Ionicons name="alert-circle" size={18} color="#e11d48" />
+                  <Text className="text-xs font-poppins-medium text-rose-800 ml-2">
+                    {error}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={handleRefresh}
+                  className="bg-rose-600 px-3 py-1.5 rounded-xl"
+                >
+                  <Text className="text-xs font-poppins-bold text-white">Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* 1. TOP ROW OF 4 SUMMARY METRIC CARDS */}
             <View className="flex-row flex-wrap -mx-2 mb-5">
@@ -509,13 +277,15 @@ export default function TechniciansScreen() {
                     </Text>
                     <View className="bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       <Text className="text-[10px] font-poppins-bold text-emerald-700">
-                        {Math.round((onDutyCount / technicians.length) * 100)}%
-                        On-Duty
+                        {technicians.length > 0
+                          ? Math.round((onDutyCount / technicians.length) * 100)
+                          : 0}
+                        % On-Duty
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    6 Technicians Active in Field
+                    {onDutyCount} Technicians Active in Field
                   </Text>
                 </View>
               </View>
@@ -541,7 +311,7 @@ export default function TechniciansScreen() {
                     </Text>
                     <View className="bg-[#4d6029]/10 px-2 py-0.5 rounded-full">
                       <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
-                        +18% Today
+                        Live Scans
                       </Text>
                     </View>
                   </View>
@@ -568,26 +338,28 @@ export default function TechniciansScreen() {
                     </Text>
                     <View className="bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
                       <Text className="text-[10px] font-poppins-bold text-rose-700">
-                        Urgent Action
+                        {totalAlarmsCount > 0 ? "Urgent Action" : "Nominal"}
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    Assigned to DB-SB-06 (Del Carmen)
+                    {totalAlarmsCount > 0
+                      ? `${totalAlarmsCount} Nodes Require Attention`
+                      : "All Inspected Nodes Normal"}
                   </Text>
                 </View>
               </View>
 
-              {/* Card 4: Average Response Time */}
+              {/* Card 4: Total Technicians */}
               <View className="w-full sm:w-1/2 lg:w-1/4 px-2 mb-3">
                 <View className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm justify-between h-32">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-xs font-poppins-medium text-[#64748b]">
-                      Average Response Time
+                      Registered Field Crew
                     </Text>
                     <View className="w-8 h-8 rounded-xl bg-sky-50 items-center justify-center border border-sky-100">
                       <Ionicons
-                        name="speedometer-outline"
+                        name="people-outline"
                         size={16}
                         color="#0284c7"
                       />
@@ -595,16 +367,16 @@ export default function TechniciansScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      18m
+                      {technicians.length}
                     </Text>
                     <View className="bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
                       <Text className="text-[10px] font-poppins-bold text-sky-700">
-                        Fast SLA
+                        Technicians
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    From Alert to Physical QR Scan
+                    Registered Field Personnel (Excl. Admin)
                   </Text>
                 </View>
               </View>
@@ -642,9 +414,9 @@ export default function TechniciansScreen() {
                 {[
                   { id: "ALL", label: `All (${technicians.length})` },
                   { id: "ON_DUTY", label: `🟢 On-Duty (${onDutyCount})` },
-                  { id: "ON_BREAK", label: "🟡 On Break (1)" },
-                  { id: "OFF_DUTY", label: "🔴 Off-Duty (2)" },
-                  { id: "HAS_ALARM", label: "⚠️ Alarms (1)" },
+                  { id: "ON_BREAK", label: `🟡 On Break (${onBreakCount})` },
+                  { id: "OFF_DUTY", label: `🔴 Off-Duty (${offDutyCount})` },
+                  { id: "HAS_ALARM", label: `⚠️ Alarms (${hasAlarmCount})` },
                 ].map((filter) => (
                   <TouchableOpacity
                     key={filter.id}
@@ -735,158 +507,179 @@ export default function TechniciansScreen() {
                   </View>
 
                   {/* Table Body Rows */}
-                  {paginatedTechs.map((tech, index) => {
-                    const dutyMeta = getDutyBadge(tech.dutyStatus);
+                  {loading ? (
+                    <View className="py-20 items-center justify-center w-full">
+                      <ActivityIndicator size="large" color="#4d6029" />
+                      <Text className="text-xs font-poppins-medium text-[#64748b] mt-3">
+                        Loading field personnel data...
+                      </Text>
+                    </View>
+                  ) : paginatedTechs.length === 0 ? (
+                    <View className="py-20 items-center justify-center w-full">
+                      <Ionicons name="people-outline" size={38} color="#94a3b8" />
+                      <Text className="text-sm font-poppins-bold text-[#0f172a] mt-2">
+                        No Technicians Found
+                      </Text>
+                      <Text className="text-xs font-poppins text-[#64748b] mt-1 text-center">
+                        {searchQuery
+                          ? "No technicians match your search query."
+                          : "No registered field technicians found in database."}
+                      </Text>
+                    </View>
+                  ) : (
+                    paginatedTechs.map((tech, index) => {
+                      const dutyMeta = getDutyBadge(tech.dutyStatus);
 
-                    return (
-                      <View
-                        key={tech.id}
-                        className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
-                          index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
-                        }`}
-                      >
-                        {/* 1. Technician & Role */}
-                        <View className="flex-[2] min-w-[220px] pr-2 flex-row items-center">
-                          <View
-                            className={`w-10 h-10 rounded-2xl ${tech.avatarBg} items-center justify-center mr-3 shadow-xs`}
-                          >
-                            <Text className="text-sm font-poppins-bold text-white">
-                              {tech.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </Text>
-                          </View>
-                          <View className="flex-1">
-                            <Text
-                              className="text-xs font-poppins-bold text-[#0f172a]"
-                              numberOfLines={1}
+                      return (
+                        <View
+                          key={tech.id}
+                          className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
+                            index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
+                          }`}
+                        >
+                          {/* 1. Technician & Role */}
+                          <View className="flex-[2] min-w-[220px] pr-2 flex-row items-center">
+                            <View
+                              className={`w-10 h-10 rounded-2xl ${tech.avatarBg} items-center justify-center mr-3 shadow-xs`}
                             >
-                              {tech.name}
-                            </Text>
-                            <View className="flex-row items-center mt-0.5">
-                              <Text className="text-[10px] font-mono font-semibold text-[#4d6029] mr-1.5">
-                                {tech.employeeId}
+                              <Text className="text-sm font-poppins-bold text-white">
+                                {tech.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
                               </Text>
+                            </View>
+                            <View className="flex-1">
                               <Text
-                                className="text-[10px] font-poppins text-[#64748b]"
+                                className="text-xs font-poppins-bold text-[#0f172a]"
                                 numberOfLines={1}
                               >
-                                · {tech.role}
+                                {tech.name}
+                              </Text>
+                              <View className="flex-row items-center mt-0.5">
+                                <Text className="text-[10px] font-mono font-semibold text-[#4d6029] mr-1.5">
+                                  {tech.employeeId}
+                                </Text>
+                                <Text
+                                  className="text-[10px] font-poppins text-[#64748b]"
+                                  numberOfLines={1}
+                                >
+                                  · {tech.role}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+
+                          {/* 2. Contact Info */}
+                          <View className="flex-[1.8] min-w-[180px] pr-2">
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="call-outline"
+                                size={11}
+                                color="#4d6029"
+                              />
+                              <Text
+                                className="text-xs font-poppins-medium text-[#0f172a] ml-1.5"
+                                numberOfLines={1}
+                              >
+                                {tech.phone}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center mt-0.5">
+                              <Ionicons
+                                name="mail-outline"
+                                size={11}
+                                color="#64748b"
+                              />
+                              <Text
+                                className="text-[10px] font-poppins text-[#64748b] ml-1.5"
+                                numberOfLines={1}
+                              >
+                                {tech.email}
                               </Text>
                             </View>
                           </View>
-                        </View>
 
-                        {/* 2. Contact Info */}
-                        <View className="flex-[1.8] min-w-[180px] pr-2">
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="call-outline"
-                              size={11}
-                              color="#4d6029"
-                            />
-                            <Text
-                              className="text-xs font-poppins-medium text-[#0f172a] ml-1.5"
-                              numberOfLines={1}
-                            >
-                              {tech.phone}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center mt-0.5">
-                            <Ionicons
-                              name="mail-outline"
-                              size={11}
-                              color="#64748b"
-                            />
-                            <Text
-                              className="text-[10px] font-poppins text-[#64748b] ml-1.5"
-                              numberOfLines={1}
-                            >
-                              {tech.email}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* 3. Duty Status */}
-                        <View className="flex-[1.3] min-w-[140px] pr-2">
-                          <View
-                            className={`inline-flex self-start px-2.5 py-1 rounded-lg flex-row items-center ${dutyMeta.bg}`}
-                          >
+                          {/* 3. Duty Status */}
+                          <View className="flex-[1.3] min-w-[140px] pr-2">
                             <View
-                              className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dutyMeta.dot}`}
-                            />
-                            <Text
-                              className={`text-[10px] font-poppins-bold ${dutyMeta.text}`}
+                              className={`inline-flex self-start px-2.5 py-1 rounded-lg flex-row items-center ${dutyMeta.bg}`}
                             >
-                              {dutyMeta.label}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* 4. Last Box Scanned */}
-                        <View className="flex-[2.2] min-w-[220px] pr-3">
-                          <View className="flex-row items-center">
-                            <View className="bg-[#0f172a] px-2 py-0.5 rounded-md mr-1.5">
-                              <Text className="text-[10px] font-poppins-bold text-white">
-                                {tech.lastBoxCode}
+                              <View
+                                className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dutyMeta.dot}`}
+                              />
+                              <Text
+                                className={`text-[10px] font-poppins-bold ${dutyMeta.text}`}
+                              >
+                                {dutyMeta.label}
                               </Text>
                             </View>
-                            <Text
-                              className="text-xs font-poppins-bold text-[#0f172a] flex-1"
-                              numberOfLines={1}
-                            >
-                              {tech.lastBoxName}
-                            </Text>
                           </View>
-                          <View className="flex-row items-center mt-1">
-                            <Ionicons
-                              name="time-outline"
-                              size={11}
-                              color="#64748b"
-                            />
-                            <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
-                              {tech.lastScanTime}
-                            </Text>
-                          </View>
-                        </View>
 
-                        {/* 5. Today's Activity */}
-                        <View className="flex-[1.2] min-w-[120px] pr-2">
-                          <View className="flex-row items-center">
-                            <View className="w-6 h-6 rounded-full bg-slate-100 items-center justify-center mr-1.5 border border-slate-200">
-                              <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
-                                {tech.todayScansCount}
+                          {/* 4. Last Box Scanned */}
+                          <View className="flex-[2.2] min-w-[220px] pr-3">
+                            <View className="flex-row items-center">
+                              <View className="bg-[#0f172a] px-2 py-0.5 rounded-md mr-1.5">
+                                <Text className="text-[10px] font-poppins-bold text-white">
+                                  {tech.lastBoxCode}
+                                </Text>
+                              </View>
+                              <Text
+                                className="text-xs font-poppins-bold text-[#0f172a] flex-1"
+                                numberOfLines={1}
+                              >
+                                {tech.lastBoxName}
                               </Text>
                             </View>
-                            <Text className="text-[10px] font-poppins text-[#64748b]">
-                              Scans Today
-                            </Text>
+                            <View className="flex-row items-center mt-1">
+                              <Ionicons
+                                name="time-outline"
+                                size={11}
+                                color="#64748b"
+                              />
+                              <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
+                                {tech.lastScanTime}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* 5. Today's Activity */}
+                          <View className="flex-[1.2] min-w-[120px] pr-2">
+                            <View className="flex-row items-center">
+                              <View className="w-6 h-6 rounded-full bg-slate-100 items-center justify-center mr-1.5 border border-slate-200">
+                                <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                                  {tech.todayScansCount}
+                                </Text>
+                              </View>
+                              <Text className="text-[10px] font-poppins text-[#64748b]">
+                                Scans Today
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* 6. Actions */}
+                          <View className="w-[100px] min-w-[100px] flex-row items-center justify-end">
+                            <TouchableOpacity
+                              onPress={() => {
+                                setSelectedTechForDetails(tech);
+                                setActiveDetailsTab("LOGS");
+                              }}
+                              className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-lg flex-row items-center shadow-xs"
+                            >
+                              <Ionicons
+                                name="folder-open-outline"
+                                size={12}
+                                color="#ffffff"
+                              />
+                              <Text className="text-[10px] font-poppins-bold text-white ml-1">
+                                Inspect
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-
-                        {/* 6. Actions */}
-                        <View className="w-[100px] min-w-[100px] flex-row items-center justify-end">
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedTechForDetails(tech);
-                              setActiveDetailsTab("LOGS");
-                            }}
-                            className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-lg flex-row items-center shadow-xs"
-                          >
-                            <Ionicons
-                              name="folder-open-outline"
-                              size={12}
-                              color="#ffffff"
-                            />
-                            <Text className="text-[10px] font-poppins-bold text-white ml-1">
-                              Inspect
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </View>
               </ScrollView>
 

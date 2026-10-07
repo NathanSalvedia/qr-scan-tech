@@ -13,21 +13,23 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SidebarNavigation } from '@/components/sidebar-navigation';
 
-import { BOX_PINS, BoxPin } from '@/constants/distribution-boxes';
-export type { BoxPin };
+import { useDashboardData } from '@/hooks/useDashboardData';
+import type { BoxData } from '@/services/dashboard';
 
 type FilterType = 'ALL' | 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE';
 
 export default function AdminDashboardScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
-  const [selectedPin, setSelectedPin] = useState<BoxPin | null>(null);
-  const [selectedBoxForQR, setSelectedBoxForQR] = useState<BoxPin | null>(null);
+  const [selectedPin, setSelectedPin] = useState<BoxData | null>(null);
+  const [selectedBoxForQR, setSelectedBoxForQR] = useState<BoxData | null>(null);
   const [mapMode, setMapMode] = useState<'STREET_PINS' | 'SATELLITE'>('STREET_PINS');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const isWeb = Platform.OS === 'web';
 
-  const filteredPins = BOX_PINS.filter((pin) => {
+  const { stats, boxes, loading, refresh } = useDashboardData();
+
+  const filteredPins = boxes.filter((pin) => {
     if (activeFilter === 'ACTIVE') return pin.status === 'ACTIVE';
     if (activeFilter === 'NEEDS_TAG') return pin.status === 'NEEDS_TAG';
     if (activeFilter === 'ISSUE') return pin.status === 'ISSUE';
@@ -39,7 +41,7 @@ export default function AdminDashboardScreen() {
     if (isWeb && typeof window !== 'undefined') {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'SELECT_PIN') {
-          const found = BOX_PINS.find((p) => p.id === event.data.pinId);
+          const found = boxes.find((p) => p.id === event.data.pinId);
           if (found) {
             setSelectedPin(found);
           }
@@ -48,9 +50,9 @@ export default function AdminDashboardScreen() {
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
     }
-  }, [isWeb]);
+  }, [isWeb, boxes]);
 
-  const getStatusColor = (status: BoxPin['status']) => {
+  const getStatusColor = (status: BoxData['status']) => {
     switch (status) {
       case 'ACTIVE':
         return {
@@ -264,6 +266,11 @@ export default function AdminDashboardScreen() {
             collapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             className="hidden md:flex"
+            badgeCounts={{
+              boxes: stats.totalBoxes > 0 ? stats.totalBoxes : boxes.length > 0 ? boxes.length : undefined,
+              newQr: stats.needsTagCount > 0 ? `${stats.needsTagCount} New` : undefined,
+              logs: stats.issuesCount > 0 ? String(stats.issuesCount) : undefined,
+            }}
           />
         )}
 
@@ -289,11 +296,11 @@ export default function AdminDashboardScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      48
+                      {stats?.totalBoxes ?? boxes.length}
                     </Text>
                     <View className="bg-slate-100 px-2 py-0.5 rounded-full">
                       <Text className="text-[10px] font-poppins-bold text-[#475569]">
-                        6 Main · 42 Sub
+                        {stats?.mainBoxes ?? 0} Main · {stats?.subBoxes ?? 0} Sub
                       </Text>
                     </View>
                   </View>
@@ -316,11 +323,11 @@ export default function AdminDashboardScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      42
+                      {stats?.activeCount ?? 0}
                     </Text>
                     <View className="bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       <Text className="text-[10px] font-poppins-bold text-emerald-700">
-                        87.5% Verified
+                        {stats?.verifiedPercentage ?? '0'}% Verified
                       </Text>
                     </View>
                   </View>
@@ -343,7 +350,7 @@ export default function AdminDashboardScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      4
+                      {stats?.needsTagCount ?? 0}
                     </Text>
                     <View className="bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                       <Text className="text-[10px] font-poppins-bold text-amber-700">
@@ -370,16 +377,16 @@ export default function AdminDashboardScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      2
+                      {stats?.issuesCount ?? 0}
                     </Text>
                     <View className="bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
                       <Text className="text-[10px] font-poppins-bold text-rose-700">
-                        1 High Temp
+                        {stats?.highTempAlerts ?? 0} High Temp
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]" numberOfLines={1}>
-                    1 Fan stall & 1 Port degraded
+                    {stats?.portDegraded ?? 0} Port degraded
                   </Text>
                 </View>
               </View>
@@ -419,7 +426,7 @@ export default function AdminDashboardScreen() {
                         activeFilter === 'ALL' ? 'text-white' : 'text-[#475569]'
                       }`}
                     >
-                      All Boxes ({BOX_PINS.length})
+                      All Boxes ({boxes.length})
                     </Text>
                   </TouchableOpacity>
 
@@ -437,7 +444,7 @@ export default function AdminDashboardScreen() {
                         activeFilter === 'ACTIVE' ? 'text-white' : 'text-[#475569]'
                       }`}
                     >
-                      Active (4)
+                      Active ({boxes.filter(b => b.status === 'ACTIVE').length})
                     </Text>
                   </TouchableOpacity>
 
@@ -455,7 +462,7 @@ export default function AdminDashboardScreen() {
                         activeFilter === 'NEEDS_TAG' ? 'text-white' : 'text-[#475569]'
                       }`}
                     >
-                      Needs Tag (2)
+                      Needs Tag ({boxes.filter(b => b.status === 'NEEDS_TAG').length})
                     </Text>
                   </TouchableOpacity>
 
@@ -473,7 +480,7 @@ export default function AdminDashboardScreen() {
                         activeFilter === 'ISSUE' ? 'text-white' : 'text-[#475569]'
                       }`}
                     >
-                      Issues (1)
+                      Issues ({boxes.filter(b => b.status === 'ISSUE').length})
                     </Text>
                   </TouchableOpacity>
 
@@ -502,6 +509,21 @@ export default function AdminDashboardScreen() {
                       {mapMode === 'SATELLITE' ? 'Street Pins' : 'Google Satellite'}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Refresh Button */}
+                  <TouchableOpacity
+                    onPress={refresh}
+                    disabled={loading}
+                    className="ml-1 px-2.5 py-1.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 flex-row items-center"
+                    activeOpacity={0.8}
+                    accessibilityLabel="Refresh Data"
+                  >
+                    <Ionicons
+                      name="refresh-outline"
+                      size={13}
+                      color={loading ? "#94a3b8" : "#475569"}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -529,7 +551,7 @@ export default function AdminDashboardScreen() {
                       Iligan City Distribution Box Network
                     </Text>
                     <Text className="text-xs font-poppins text-[#64748b] text-center mt-1">
-                      7 Nodes active across Poblacion, Tibanga, and Tubod
+                      {boxes.length} Nodes across distribution network
                     </Text>
                   </View>
                 )}
@@ -544,7 +566,12 @@ export default function AdminDashboardScreen() {
                   </Text>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
-                  {BOX_PINS.map((pin) => (
+                  {boxes.length === 0 ? (
+                    <Text className="text-xs font-poppins text-slate-400 py-1">
+                      No distribution boxes found
+                    </Text>
+                  ) : (
+                    boxes.map((pin) => (
                     <TouchableOpacity
                       key={pin.id}
                       onPress={() => setSelectedPin(pin)}
@@ -572,7 +599,7 @@ export default function AdminDashboardScreen() {
                         {pin.code}
                       </Text>
                     </TouchableOpacity>
-                  ))}
+                  )))}
                 </ScrollView>
               </View>
             </View>
