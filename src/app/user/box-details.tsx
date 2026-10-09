@@ -1,12 +1,13 @@
-import { BOX_PINS } from "@/constants/distribution-boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -15,481 +16,187 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-interface SubscriberItem {
-  port: number;
-  name: string;
-  plan: string;
-  signal: string;
-  status: "Active" | "Offline";
-}
+import { boxService } from "@/services/boxes";
+import { logsService } from "@/services/logs";
 
 export interface HardwareEquipmentItem {
   id: string;
   name: string;
   type: string;
-  category:
-    | "Optical Equipment"
-    | "Circuit / Internal Management"
-    | "Distribution Hardware"
-    | "Protection Hardware";
+  category?: string;
   serial?: string;
-  status: "Operational" | "Faulty" | "Needs Check";
+  status: string;
 }
 
-interface BoxDetailData {
+export interface ClientConnectionItem {
+  id?: string;
+  port: string;
+  portNumber?: number;
+  accountNumber: string;
+  name: string;
+  clientType?: string;
+  plan?: string;
+  status: string;
+  signalDbm?: string;
+}
+
+export interface BoxDetailData {
+  id: string;
   code: string;
-  category: "MAIN_BOX" | "SUB_BOX";
-  parentCode?: string;
-  downstreamBranches?: number;
-  tier: string;
-  status: "Operational" | "Warning" | "Overloaded";
-  location: string;
-  zone: string;
-  gps: string;
-  splitterType: string;
-  portsUsed: number;
+  category: "MAIN_BOX" | "SUB_BOX" | string;
+  parentCode?: string | null;
+  parentBoxId?: string | null;
+  siteName: string;
+  address: string;
+  zone?: string;
+  latitude: number;
+  longitude: number;
+  mountingType?: string;
+  poleNumber?: string | null;
   totalPorts: number;
-  opticalLoss: string;
-  temperature: string;
-  lockStatus: "Secured" | "Unlatched" | "Damaged";
-  equipment: HardwareEquipmentItem[];
-  subscribers: SubscriberItem[];
+  portsUsed?: number;
+  activePorts?: number;
+  status: "ACTIVE" | "NEEDS_TAG" | "ISSUE" | string;
+  qrToken?: string;
+  opticalLoss?: string;
+  temperature?: string;
+  circuitBreaker?: string;
+  voltage?: string;
+  lastScannedBy?: string;
+  lastScannedAt?: string;
+  equipment?: HardwareEquipmentItem[];
+  equipmentItems?: string[];
+  clients?: ClientConnectionItem[];
+  clientsCount?: number;
+  notes?: string | null;
+  tier?: string | null;
+  subscriberType?: string | null;
+  clientType?: string | null;
 }
 
 export default function BoxDetailsScreen() {
-  const params = useLocalSearchParams<{ code?: string }>();
-  const boxCodeParam = (params.code || "DB-MN-01").toUpperCase().trim();
+  const params = useLocalSearchParams<{ code?: string; id?: string }>();
+  const boxIdentifier = (params.id || params.code || "DB-MN-01").trim();
 
-  // Audit modal state
+  // Dynamic box state
+  const [box, setBox] = useState<BoxDetailData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Field audit modal state
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isSubmittingAudit, setIsSubmittingAudit] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
   const [padlockVerified, setPadlockVerified] = useState(true);
+  const [auditLoss, setAuditLoss] = useState("-18.5 dBm");
+  const [auditTemp, setAuditTemp] = useState("31.2 °C");
+  const [auditStatus, setAuditStatus] = useState<string>("ACTIVE");
+
+  // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"success" | "error">("success");
 
   const isWeb = Platform.OS === "web";
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToastMessage(msg);
+    setToastType(type);
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
   };
 
-  const getBoxData = (code: string): BoxDetailData => {
-    const upper = code.toUpperCase().trim();
-    if (
-      upper === "DB-SB-03" ||
-      upper.includes("SB03") ||
-      upper.includes("SB-03")
-    ) {
-      return {
-        code: "DB-SB-03",
-        category: "SUB_BOX",
-        parentCode: "DB-MN-01 (Aguinaldo Central Hub)",
-        tier: "Tier 2 · Sub-Distribution",
-        status: "Warning",
-        location: "Tibanga Highway near MSU-IIT Gate",
-        zone: "Tibanga",
-        gps: "8.2412, 124.2440",
-        splitterType: "1:16 PLC Cassette Splitter",
-        portsUsed: 14,
-        totalPorts: 16,
-        opticalLoss: "-25.4 dBm (Loss Warning)",
-        temperature: "38.4°C",
-        lockStatus: "Secured",
-        equipment: [
-          {
-            id: "eq1",
-            name: "1:16 PLC Cassette Splitter",
-            type: "Optical Splitter",
-            category: "Optical Equipment",
-            serial: "SPL-16-092",
-            status: "Operational",
-          },
-          {
-            id: "eq2",
-            name: "SC/UPC Fiber Adapters (16 Ports)",
-            type: "Coupler Panel",
-            category: "Optical Equipment",
-            serial: "ADP-SC-1601",
-            status: "Operational",
-          },
-          {
-            id: "eq3",
-            name: "15A DIN-Rail Circuit Breaker",
-            type: "Breaker",
-            category: "Circuit / Internal Management",
-            serial: "CB-15A-88",
-            status: "Operational",
-          },
-          {
-            id: "eq4",
-            name: "Fiber Splice Protection Sleeves",
-            type: "Splice Tray",
-            category: "Protection Hardware",
-            serial: "SPT-24-04",
-            status: "Operational",
-          },
-        ],
-        subscribers: [
-          {
-            port: 1,
-            name: "MSU-IIT Faculty Annex",
-            plan: "Fiber Biz 200M",
-            signal: "-25.1 dBm",
-            status: "Active",
-          },
-          {
-            port: 2,
-            name: "Campus Tech Hub",
-            plan: "Fiber Biz 500M",
-            signal: "-25.4 dBm",
-            status: "Active",
-          },
-          {
-            port: 3,
-            name: "Student Dorm Block C",
-            plan: "Fiber Home 100M",
-            signal: "-25.6 dBm",
-            status: "Active",
-          },
-          {
-            port: 4,
-            name: "Tibanga Net Cafe",
-            plan: "Fiber Biz 300M",
-            signal: "-25.0 dBm",
-            status: "Active",
-          },
-          {
-            port: 5,
-            name: "Elena Gomez",
-            plan: "Fiber Home 50M",
-            signal: "-24.8 dBm",
-            status: "Active",
-          },
-          {
-            port: 6,
-            name: "Mark Ramos",
-            plan: "Fiber Home 100M",
-            signal: "-25.2 dBm",
-            status: "Active",
-          },
-          {
-            port: 7,
-            name: "MSU-IIT Science Laboratory",
-            plan: "Fiber Enterprise 1G",
-            signal: "-25.5 dBm",
-            status: "Active",
-          },
-          {
-            port: 8,
-            name: "Dormitory Dining Hall",
-            plan: "Fiber Biz 100M",
-            signal: "-25.3 dBm",
-            status: "Active",
-          },
-        ],
-      };
-    } else if (
-      upper === "DB-SB-06" ||
-      upper.includes("SB06") ||
-      upper === "DB-MN-05"
-    ) {
-      return {
-        code: "DB-SB-06",
-        category: "SUB_BOX",
-        parentCode: "DB-MN-02 (Roxas Sub-Hub)",
-        tier: "Tier 2 · Sub-Distribution",
-        status: "Overloaded",
-        location: "Tubod National Highway / Del Carmen",
-        zone: "Tubod",
-        gps: "8.2120, 124.2380",
-        splitterType: "1:16 PLC Modular Tray",
-        portsUsed: 16,
-        totalPorts: 16,
-        opticalLoss: "-20.1 dBm (Normal)",
-        temperature: "41.2°C",
-        lockStatus: "Secured",
-        equipment: [
-          {
-            id: "eq5",
-            name: "1:16 PLC Modular Splitter Tray",
-            type: "Optical Splitter",
-            category: "Optical Equipment",
-            serial: "SPL-16-104",
-            status: "Operational",
-          },
-          {
-            id: "eq6",
-            name: "SC/APC Quad Couplers (16 Ports)",
-            type: "Adapter Plate",
-            category: "Optical Equipment",
-            serial: "ADP-APC-1602",
-            status: "Operational",
-          },
-          {
-            id: "eq7",
-            name: "20A Miniature Breaker",
-            type: "Breaker",
-            category: "Circuit / Internal Management",
-            serial: "CB-20A-41",
-            status: "Operational",
-          },
-          {
-            id: "eq8",
-            name: "Weather-Sealed Grommets & Gaskets",
-            type: "Enclosure Seal",
-            category: "Protection Hardware",
-            serial: "WSG-IP68-01",
-            status: "Operational",
-          },
-        ],
-        subscribers: [
-          {
-            port: 1,
-            name: "Tubod Commercial Mart",
-            plan: "Fiber Biz 500M",
-            signal: "-19.4 dBm",
-            status: "Active",
-          },
-          {
-            port: 2,
-            name: "Barangay Health Center",
-            plan: "Fiber Biz 100M",
-            signal: "-20.1 dBm",
-            status: "Active",
-          },
-          {
-            port: 3,
-            name: "Carlos Mendoza",
-            plan: "Fiber Home 100M",
-            signal: "-19.8 dBm",
-            status: "Active",
-          },
-          {
-            port: 4,
-            name: "Lourdes Santos",
-            plan: "Fiber Home 50M",
-            signal: "-20.4 dBm",
-            status: "Active",
-          },
-          {
-            port: 5,
-            name: "Tubod Bakery & Cafe",
-            plan: "Fiber Biz 200M",
-            signal: "-20.2 dBm",
-            status: "Active",
-          },
-          {
-            port: 6,
-            name: "Del Carmen Hardware",
-            plan: "Fiber Biz 300M",
-            signal: "-19.9 dBm",
-            status: "Active",
-          },
-        ],
-      };
-    } else if (upper === "DB-MN-02" || upper.includes("MN02")) {
-      return {
-        code: "DB-MN-02",
-        category: "MAIN_BOX",
-        downstreamBranches: 4,
-        tier: "Tier 1 · Main Distribution Box",
-        status: "Operational",
-        location: "Roxas Ave cor. Aguinaldo, Iligan City",
-        zone: "Poblacion",
-        gps: "8.2240, 124.2420",
-        splitterType: "Main Optical Feeder 24-Port",
-        portsUsed: 21,
-        totalPorts: 24,
-        opticalLoss: "-18.5 dBm (Optimal)",
-        temperature: "33.0°C",
-        lockStatus: "Secured",
-        equipment: [
-          {
-            id: "eq9",
-            name: "Main Optical Feeder 24-Port Panel",
-            type: "Feeder Panel",
-            category: "Optical Equipment",
-            serial: "OFP-2402",
-            status: "Operational",
-          },
-          {
-            id: "eq10",
-            name: "SC/APC Duplex Adapters (24 Ports)",
-            type: "Adapters",
-            category: "Optical Equipment",
-            serial: "ADP-DUP-24",
-            status: "Operational",
-          },
-          {
-            id: "eq11",
-            name: "Primary Circuit Breaker 40A",
-            type: "Breaker",
-            category: "Circuit / Internal Management",
-            serial: "CB-40A-02",
-            status: "Operational",
-          },
-          {
-            id: "eq12",
-            name: "Grounding Rod & Lightning Arrestor",
-            type: "Surge Protection",
-            category: "Protection Hardware",
-            serial: "GND-LA-02",
-            status: "Operational",
-          },
-        ],
-        subscribers: [
-          {
-            port: 1,
-            name: "Roxas Commercial Bank",
-            plan: "500 Mbps Dedicated",
-            signal: "-18.2 dBm",
-            status: "Active",
-          },
-          {
-            port: 2,
-            name: "Poblacion Medical Clinic",
-            plan: "300 Mbps Fiber",
-            signal: "-18.5 dBm",
-            status: "Active",
-          },
-          {
-            port: 3,
-            name: "Midtown Plaza Office",
-            plan: "200 Mbps Business",
-            signal: "-18.7 dBm",
-            status: "Active",
-          },
-        ],
-      };
-    } else {
-      // Default: DB-MN-01
-      const foundBox = BOX_PINS.find((b) => b.code === upper);
-      const isSubBox = foundBox
-        ? foundBox.category === "SUB_BOX"
-        : upper.startsWith("DB-SB");
-      return {
-        code: foundBox ? foundBox.code : "DB-MN-01",
-        category: isSubBox ? "SUB_BOX" : "MAIN_BOX",
-        parentCode: isSubBox
-          ? foundBox?.parentCode || "DB-MN-01 (Aguinaldo Central Hub)"
-          : undefined,
-        downstreamBranches: isSubBox ? undefined : 6,
-        tier: foundBox ? foundBox.tier : "Tier 1 · Main Backbone Box",
-        status: "Operational",
-        location: foundBox
-          ? foundBox.address
-          : "Aguinaldo St, Poblacion Commercial Hub",
-        zone: foundBox ? foundBox.zone : "Poblacion",
-        gps: foundBox
-          ? `${foundBox.latitude.toFixed(4)}, ${foundBox.longitude.toFixed(4)}`
-          : "8.2285, 124.2415",
-        splitterType: "1:16 PLC Cassette Splitter",
-        portsUsed: foundBox ? Math.min(foundBox.portsUsed, 14) : 14,
-        totalPorts: 16,
-        opticalLoss: foundBox
-          ? `${foundBox.opticalLoss} (Optimal)`
-          : "-18.2 dBm (Optimal)",
-        temperature: foundBox ? foundBox.temperature : "34.6°C",
-        lockStatus: "Secured",
-        equipment: [
-          {
-            id: "eq13",
-            name: "1:16 PLC Cassette Optical Splitter",
-            type: "Optical Splitter",
-            category: "Optical Equipment",
-            serial: "SPL-16-001",
-            status: "Operational",
-          },
-          {
-            id: "eq14",
-            name: "Fiber Optic Adapters (16-Port SC/APC)",
-            type: "Coupler Plate",
-            category: "Optical Equipment",
-            serial: "ADP-APC-1601",
-            status: "Operational",
-          },
-          {
-            id: "eq15",
-            name: "Primary Circuit Breaker 30A",
-            type: "Breaker",
-            category: "Circuit / Internal Management",
-            serial: "CB-30A-01",
-            status: "Operational",
-          },
-          {
-            id: "eq16",
-            name: "24-Core Splice Tray & Pigtails",
-            type: "Splice & Tray",
-            category: "Distribution Hardware",
-            serial: "SPT-24-01",
-            status: "Operational",
-          },
-        ],
-        subscribers: [
-          {
-            port: 1,
-            name: "Iligan City Public Library",
-            plan: "Fiber Enterprise 1G",
-            signal: "-17.8 dBm",
-            status: "Active",
-          },
-          {
-            port: 2,
-            name: "Poblacion Pharmacy",
-            plan: "Fiber Biz 300M",
-            signal: "-18.1 dBm",
-            status: "Active",
-          },
-          {
-            port: 3,
-            name: "Aguinaldo Law Offices",
-            plan: "Fiber Biz 200M",
-            signal: "-18.4 dBm",
-            status: "Active",
-          },
-          {
-            port: 4,
-            name: "Metro Finance Iligan",
-            plan: "Fiber Biz 500M",
-            signal: "-17.9 dBm",
-            status: "Active",
-          },
-          {
-            port: 5,
-            name: "Roberto Tan Residence",
-            plan: "Fiber Home 100M",
-            signal: "-18.5 dBm",
-            status: "Active",
-          },
-          {
-            port: 6,
-            name: "Green Cafe Poblacion",
-            plan: "Fiber Biz 150M",
-            signal: "-18.2 dBm",
-            status: "Active",
-          },
-          {
-            port: 7,
-            name: "City Dental Clinic",
-            plan: "Fiber Biz 200M",
-            signal: "-18.0 dBm",
-            status: "Active",
-          },
-          {
-            port: 8,
-            name: "Aguinaldo Convenience Store",
-            plan: "Fiber Home 100M",
-            signal: "-18.3 dBm",
-            status: "Active",
-          },
-        ],
-      };
-    }
-  };
+  // Load box details from backend API
+  const fetchBoxDetails = useCallback(
+    async (isRefresh = false) => {
+      try {
+        if (isRefresh) setRefreshing(true);
+        setError(null);
 
-  const box = getBoxData(boxCodeParam);
+        const res = await boxService.getById(boxIdentifier);
+        if (res.success && res.box) {
+          setBox(res.box);
+        } else {
+          // Fallback: search all boxes if direct getById didn't resolve
+          const allRes = await boxService.getAll();
+          if (allRes.success && Array.isArray(allRes.boxes)) {
+            const match = allRes.boxes.find(
+              (b) =>
+                b.id === boxIdentifier ||
+                b.code?.toUpperCase() === boxIdentifier.toUpperCase() ||
+                b.qrToken === boxIdentifier,
+            );
+            if (match) {
+              setBox(match);
+            } else {
+              setError(
+                res.message || `Distribution box "${boxIdentifier}" not found.`,
+              );
+            }
+          } else {
+            setError(
+              res.message || `Distribution box "${boxIdentifier}" not found.`,
+            );
+          }
+        }
+      } catch (err: any) {
+        console.error("Failed to load box details:", err);
+        setError(err.message || "Failed to connect to box database.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [boxIdentifier],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    async function init() {
+      try {
+        const res = await boxService.getById(boxIdentifier);
+        if (!isMounted) return;
+        if (res.success && res.box) {
+          setBox(res.box);
+        } else {
+          const allRes = await boxService.getAll();
+          if (!isMounted) return;
+          if (allRes.success && Array.isArray(allRes.boxes)) {
+            const match = allRes.boxes.find(
+              (b) =>
+                b.id === boxIdentifier ||
+                b.code?.toUpperCase() === boxIdentifier.toUpperCase() ||
+                b.qrToken === boxIdentifier,
+            );
+            if (match) {
+              setBox(match);
+            } else {
+              setError(
+                res.message || `Distribution box "${boxIdentifier}" not found.`,
+              );
+            }
+          } else {
+            setError(
+              res.message || `Distribution box "${boxIdentifier}" not found.`,
+            );
+          }
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        console.error("Failed to load box details:", err);
+        setError(err.message || "Failed to connect to box database.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+    init();
+    return () => {
+      isMounted = false;
+    };
+  }, [boxIdentifier]);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -499,11 +206,257 @@ export default function BoxDetailsScreen() {
     }
   };
 
-  const handleSubmitAudit = () => {
-    setIsAuditModalOpen(false);
+  const handleOpenAuditModal = () => {
+    if (!box) return;
+    setAuditLoss(box.opticalLoss || "-18.5 dBm");
+    setAuditTemp(box.temperature || "31.2 °C");
+    setAuditStatus(box.status || "ACTIVE");
+    setPadlockVerified(true);
     setAuditNotes("");
-    showToast(`Audit for ${box.code} successfully recorded and synced.`);
+    setIsAuditModalOpen(true);
   };
+
+  const handleSubmitAudit = async () => {
+    if (!box) return;
+    try {
+      setIsSubmittingAudit(true);
+      const res = await logsService.recordScan({
+        boxId: box.id,
+        boxCode: box.code,
+        scanType: "MANUAL_AUDIT",
+        padlockVerified,
+        measuredSignal: auditLoss,
+        measuredTemp: auditTemp,
+        auditNotes:
+          auditNotes.trim() || `Field audit inspection of ${box.code}`,
+        boxStatusAtScan: auditStatus,
+      });
+
+      if (res.success) {
+        if (auditStatus !== box.status) {
+          await boxService.update(box.id, { status: auditStatus });
+        }
+        setIsAuditModalOpen(false);
+        showToast(`Audit for ${box.code} recorded successfully!`);
+        fetchBoxDetails(true);
+      } else {
+        throw new Error(res.message || "Failed to record audit");
+      }
+    } catch (err: any) {
+      console.error("Error submitting audit:", err);
+      showToast(err.message || "Failed to submit audit.", "error");
+    } finally {
+      setIsSubmittingAudit(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "ACTIVE":
+        return {
+          bg: "bg-[#AEAC78]/25",
+          border: "border-[#AEAC78]/80",
+          text: "text-[#2d3416]",
+          dot: "bg-[#AEAC78]",
+          label: "Active & Verified",
+        };
+      case "NEEDS_TAG":
+        return {
+          bg: "bg-amber-50",
+          border: "border-amber-200",
+          text: "text-amber-700",
+          dot: "bg-amber-500",
+          label: "Pending Tagging",
+        };
+      case "ISSUE":
+        return {
+          bg: "bg-rose-50",
+          border: "border-rose-200",
+          text: "text-rose-700",
+          dot: "bg-rose-500",
+          label: "Alarm / Issue",
+        };
+      default:
+        return {
+          bg: "bg-slate-50",
+          border: "border-slate-200",
+          text: "text-slate-700",
+          dot: "bg-slate-500",
+          label: status,
+        };
+    }
+  };
+
+  // Fallback hardware list if box has no registered catalog hardware
+  const getDisplayEquipment = (
+    boxData: BoxDetailData,
+  ): HardwareEquipmentItem[] => {
+    if (boxData.equipment && boxData.equipment.length > 0) {
+      return boxData.equipment;
+    }
+    return [
+      {
+        id: "eq-split",
+        name:
+          boxData.category === "MAIN_BOX"
+            ? "Main Optical Feeder 24-Port"
+            : "1:16 PLC Cassette Splitter",
+        type: "Optical Splitter",
+        category: "Optical Equipment",
+        serial: `SPL-${boxData.code}`,
+        status: "Operational",
+      },
+      {
+        id: "eq-adp",
+        name: "SC/UPC Fiber Coupler Panel",
+        type: "Coupler Plate",
+        category: "Optical Equipment",
+        serial: `ADP-${boxData.code}`,
+        status: "Operational",
+      },
+      {
+        id: "eq-brk",
+        name: boxData.circuitBreaker || "20A DIN-Rail MCB",
+        type: "Circuit Breaker",
+        category: "Circuit / Internal Management",
+        serial: `CB-${boxData.code}`,
+        status: "Operational",
+      },
+      {
+        id: "eq-tray",
+        name: "Fiber Splice Protection Sleeves",
+        type: "Splice Tray",
+        category: "Protection Hardware",
+        serial: `SPT-${boxData.code}`,
+        status: "Operational",
+      },
+    ];
+  };
+
+  // Loading Screen
+  if (loading && !box) {
+    return (
+      <SafeAreaView
+        edges={["top"]}
+        className="flex-1 bg-[#f8fafc] items-center justify-center p-6"
+      >
+        <StatusBar style="dark" />
+        <ActivityIndicator size="large" color="#4d6029" />
+        <Text className="text-sm font-poppins-medium text-[#475569] mt-3">
+          Loading box specifications...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Error Screen
+  if (error && !box) {
+    return (
+      <SafeAreaView
+        edges={["top"]}
+        className="flex-1 bg-[#f8fafc] items-center justify-center p-6"
+      >
+        <StatusBar style="dark" />
+        <View className="w-16 h-16 rounded-3xl bg-rose-100 items-center justify-center mb-4">
+          <Ionicons name="alert-circle" size={32} color="#e11d48" />
+        </View>
+        <Text className="text-lg font-poppins-bold text-[#0f172a] text-center mb-1">
+          Box Not Found
+        </Text>
+        <Text className="text-xs font-poppins text-[#64748b] text-center mb-6 max-w-xs">
+          {error}
+        </Text>
+        <View className="flex-row gap-3">
+          <TouchableOpacity
+            onPress={handleGoBack}
+            className="bg-slate-200 px-5 py-2.5 rounded-xl"
+            activeOpacity={0.8}
+          >
+            <Text className="text-xs font-poppins-semibold text-[#334155]">
+              Go Back
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => fetchBoxDetails(false)}
+            className="bg-[#4d6029] px-5 py-2.5 rounded-xl flex-row items-center"
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="refresh"
+              size={14}
+              color="#ffffff"
+              style={{ marginRight: 6 }}
+            />
+            <Text className="text-xs font-poppins-bold text-white">Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!box) return null;
+
+  const displayEquipment = getDisplayEquipment(box);
+  const statusInfo = getStatusBadge(box.status);
+  const portsOccupied =
+    box.portsUsed ?? box.activePorts ?? (box.clients ? box.clients.length : 0);
+
+  // Dynamic calculations for Subscriber Type & Subscriber Plan cards
+  const clientsList = box.clients || [];
+  const totalSubscribers = clientsList.length;
+
+  // 1. Subscriber Type Analytics
+  const residentialSubscribers = clientsList.filter((c) => {
+    const t = (c.clientType || "").toUpperCase();
+    return t.includes("RESIDENTIAL");
+  });
+  const commercialSubscribers = clientsList.filter((c) => {
+    const t = (c.clientType || "").toUpperCase();
+    return t.includes("COMMERCIAL") || t.includes("ENTERPRISE") || t.includes("GOVERNMENT");
+  });
+
+  const resCount = residentialSubscribers.length;
+  const comCount = commercialSubscribers.length;
+  const resPct = totalSubscribers > 0 ? Math.round((resCount / totalSubscribers) * 100) : 0;
+  const comPct = totalSubscribers > 0 ? Math.round((comCount / totalSubscribers) * 100) : 0;
+
+  // Check if box itself or subscribers has an explicit type set by admin
+  const explicitBoxType = ((box.subscriberType || box.clientType || "") as string).trim().toUpperCase();
+  const hasBoxExplicitCommercial = explicitBoxType.includes("COMMERCIAL");
+  const hasBoxExplicitResidential = explicitBoxType.includes("RESIDENTIAL");
+
+  const hasSubscriberType =
+    hasBoxExplicitCommercial ||
+    hasBoxExplicitResidential ||
+    resCount > 0 ||
+    comCount > 0;
+
+  const isCommercial =
+    hasBoxExplicitCommercial ||
+    comCount > resCount ||
+    (comCount > 0 && resCount === 0);
+
+  // 2. Subscriber Plan Analytics
+  const planAggMap = new Map<string, { count: number; category: string; speed: string }>();
+  clientsList.forEach((c) => {
+    const planName = c.plan || "100 Mbps Fiber Starter";
+    const isCom = (c.clientType || "").toUpperCase().includes("COMMERCIAL");
+    const existing = planAggMap.get(planName) || {
+      count: 0,
+      category: isCom ? "Commercial" : "Residential",
+      speed: planName.match(/\d+\s*(?:Mbps|Gbps)/i)?.[0] || "Fiber",
+    };
+    existing.count += 1;
+    planAggMap.set(planName, existing);
+  });
+
+  const activePlans = Array.from(planAggMap.entries()).map(([planName, data]) => ({
+    name: planName,
+    count: data.count,
+    category: data.category,
+    speed: data.speed,
+    pct: totalSubscribers > 0 ? Math.round((data.count / totalSubscribers) * 100) : 0,
+  }));
 
   return (
     <SafeAreaView edges={["top"]} className="flex-1 bg-[#f8fafc]">
@@ -511,9 +464,19 @@ export default function BoxDetailsScreen() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <View className="mx-4 mt-2 bg-[#4d6029] border border-[#3e4e20] px-4 py-3 rounded-2xl flex-row items-center justify-between shadow-lg z-50">
+        <View
+          className={`mx-4 mt-2 px-4 py-3 rounded-2xl flex-row items-center justify-between shadow-lg z-50 border ${
+            toastType === "error"
+              ? "bg-rose-900 border-rose-500"
+              : "bg-[#4d6029] border-[#3e4e20]"
+          }`}
+        >
           <View className="flex-row items-center flex-1 mr-2">
-            <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
+            <Ionicons
+              name={toastType === "error" ? "alert-circle" : "checkmark-circle"}
+              size={18}
+              color="#ffffff"
+            />
             <Text className="text-xs font-poppins-bold text-white ml-2 flex-1">
               {toastMessage}
             </Text>
@@ -525,7 +488,7 @@ export default function BoxDetailsScreen() {
       )}
 
       {/* Main Top Header Banner */}
-      <View className="bg-[#4d6029] px-5 py-4 flex-row items-center justify-between shadow-md">
+      <View className="bg-[#4d6029] px-5 py-3.5 flex-row items-center justify-between shadow-md">
         <View className="flex-row items-center flex-1 mr-2">
           {/* Back Button */}
           <TouchableOpacity
@@ -547,71 +510,105 @@ export default function BoxDetailsScreen() {
 
           {/* Box Header Info */}
           <View className="flex-1">
-            <View className="flex-row items-center">
-              <Text className="text-lg text-center font-poppins-bold text-white">
-                {box.code}
-              </Text>
-            </View>
+            <Text
+              className="text-base font-poppins-bold text-white"
+              numberOfLines={1}
+            >
+              {box.code}
+            </Text>
+            <Text
+              className="text-[11px] font-poppins text-white/80"
+              numberOfLines={1}
+            >
+              {box.siteName}
+            </Text>
           </View>
+        </View>
+
+        {/* Header Action Buttons */}
+        <View className="flex-row items-center gap-2">
+          <TouchableOpacity
+            onPress={() => fetchBoxDetails(true)}
+            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center active:bg-white/30"
+            accessibilityLabel="Refresh"
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Ionicons name="refresh-outline" size={18} color="#ffffff" />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleOpenAuditModal}
+            className="bg-white/25 border border-white/30 px-3 py-1.5 rounded-xl flex-row items-center active:bg-white/35"
+          >
+            <Ionicons name="shield-checkmark" size={14} color="#ffffff" />
+            <Text className="text-[11px] font-poppins-bold text-white ml-1.5">
+              Audit
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       {/* Scrollable Page Body */}
       <ScrollView
         className="flex-1 px-4 pt-4"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 50 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchBoxDetails(true)}
+            tintColor="#4d6029"
+          />
+        }
       >
         <View className="max-w-2xl w-full self-center">
-          {/* 🌟 Dedicated Main Box / Sub Box Classification & Hierarchy Card */}
-          {box.category === "MAIN_BOX" ? (
-            <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-sm shadow-slate-200/50">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center flex-1 mr-2">
-                  <View className="w-10 h-10 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3">
-                    <MaterialCommunityIcons
-                      name="server-network"
-                      size={20}
-                      color="#4d6029"
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                      Main Distribution Box
-                    </Text>
-                  </View>
+          {/* 1. Classification & Hierarchy Card */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View
+                  className={`w-10 h-10 rounded-2xl items-center justify-center mr-3 ${
+                    box.category === "MAIN_BOX"
+                      ? "bg-[#4d6029]/10"
+                      : "bg-amber-500/10"
+                  }`}
+                >
+                  <MaterialCommunityIcons
+                    name="server-network"
+                    size={20}
+                    color={box.category === "MAIN_BOX" ? "#4d6029" : "#b45309"}
+                  />
                 </View>
-                <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2.5 py-1 rounded-xl">
-                  <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
-                    MAIN BOX
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-sm shadow-slate-200/50">
-              <View className="flex-row items-center justify-between mb-3">
-                <View className="flex-row items-center flex-1 mr-2">
-                  <View className="w-10 h-10 rounded-2xl bg-amber-500/10 items-center justify-center mr-3">
-                    <MaterialCommunityIcons
-                      name="server-network"
-                      size={20}
-                      color="#b45309"
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                      Sub-Distribution Box
-                    </Text>
-                  </View>
-                </View>
-                <View className="bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl">
-                  <Text className="text-[10px] font-poppins-bold text-[#b45309]">
-                    SUB-DISTRIBUTION BOX
+                <View className="flex-1">
+                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                    {box.category === "MAIN_BOX"
+                      ? "Main Distribution Box"
+                      : "Sub-Distribution Box"}
                   </Text>
                 </View>
               </View>
 
+              {/* Status Pill */}
+              <View
+                className={`px-2.5 py-1 rounded-xl flex-row items-center border ${statusInfo.bg} ${statusInfo.border}`}
+              >
+                <View
+                  className={`w-2 h-2 rounded-full mr-1.5 ${statusInfo.dot}`}
+                />
+                <Text
+                  className={`text-[10px] font-poppins-bold ${statusInfo.text}`}
+                >
+                  {statusInfo.label}
+                </Text>
+              </View>
+            </View>
+
+            {/* Parent Box reference for Sub Boxes */}
+            {box.category === "SUB_BOX" && (
               <View className="pt-3 border-t border-slate-100 flex-row items-center justify-between">
                 <View className="flex-row items-center flex-1 mr-2">
                   <Ionicons
@@ -620,44 +617,49 @@ export default function BoxDetailsScreen() {
                     color="#64748b"
                   />
                   <Text className="text-xs font-poppins-medium text-[#475569] ml-1.5">
-                    Main Box:
+                    Parent Feeder Box:
                   </Text>
                 </View>
                 <View className="bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl">
-                  <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                    {box.parentCode || "DB-MN-01 (Aguinaldo Central Hub)"}
+                  <Text className="text-xs font-mono font-bold text-[#0f172a]">
+                    {box.parentCode || "DB-MN-01"}
                   </Text>
                 </View>
               </View>
-            </View>
-          )}
+            )}
+          </View>
 
-          {/* 1. Location & GIS Coordinates Card */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-sm shadow-slate-200/50">
-            <View className="flex-row items-start justify-between">
-              <View className="flex-row items-start flex-1 mr-2">
-                <View className="w-9 h-9 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3 mt-0.5">
-                  <Ionicons name="location" size={18} color="#4d6029" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                    {box.location}
-                  </Text>
-                  <Text className="text-xs font-poppins text-[#64748b] mt-0.5">
-                    Zone: {box.zone} · GPS: {box.gps}
-                  </Text>
-                </View>
+          {/* 2. Location & GIS Coordinates Card */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
+            <View className="flex-row items-start">
+              <View className="w-9 h-9 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3 mt-0.5">
+                <Ionicons name="location" size={18} color="#4d6029" />
               </View>
-              <View className="bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-xl">
-                <Text className="text-[10px] font-poppins-semibold text-[#475569]">
-                  Utility Pole
+              <View className="flex-1">
+                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  {box.siteName}
+                </Text>
+                <Text className="text-xs font-poppins text-[#64748b] mt-0.5">
+                  {box.address}
+                </Text>
+                <Text className="text-[11px] font-poppins text-slate-500 mt-1">
+                  Zone:{" "}
+                  <Text className="font-poppins-bold text-[#0f172a]">
+                    {box.zone || "Iligan"}
+                  </Text>
+                  {" · "}
+                  GPS:{" "}
+                  <Text className="font-mono text-[#0f172a]">
+                    {Number(box.latitude).toFixed(4)},{" "}
+                    {Number(box.longitude).toFixed(4)}
+                  </Text>
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* 2. 🛠️ DEDICATED HARDWARE & EQUIPMENT CARD */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-sm shadow-slate-200/50">
+          {/* 3. Hardware Equipment Card */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
             <View className="flex-row items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
               <View className="flex-row items-center">
                 <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
@@ -671,16 +673,15 @@ export default function BoxDetailsScreen() {
                   Hardware Equipment
                 </Text>
               </View>
-              <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2.5 py-0.5 rounded-full">
-                <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
-                  {box.equipment.length} Items Installed
+              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
+                <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                  {displayEquipment.length} Items Installed
                 </Text>
               </View>
             </View>
 
-            {/* Equipment Items List */}
-            <View className="space-y-2.5">
-              {box.equipment.map((item) => (
+            <View className="space-y-2">
+              {displayEquipment.map((item) => (
                 <View
                   key={item.id}
                   className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 flex-row items-center justify-between mb-2"
@@ -689,9 +690,11 @@ export default function BoxDetailsScreen() {
                     <View className="w-8 h-8 rounded-xl bg-[#4d6029] items-center justify-center mr-2.5">
                       <MaterialCommunityIcons
                         name={
-                          item.category === "Optical Equipment"
+                          (item.type || "").toLowerCase().includes("splitter")
                             ? "resistor-nodes"
-                            : item.category === "Circuit / Internal Management"
+                            : (item.type || "")
+                                  .toLowerCase()
+                                  .includes("breaker")
                               ? "flash"
                               : "shield-check"
                         }
@@ -716,9 +719,9 @@ export default function BoxDetailsScreen() {
                   </View>
 
                   <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-lg flex-row items-center">
-                    <View className="w-1.5 h-1.5 rounded-full bg-[#4d6029] mr-1" />
+                    <View className="w-1.5 h-1.5 rounded-full bg-[#AEAC78] mr-1" />
                     <Text className="text-[9px] font-poppins-bold text-[#2d3416]">
-                      {item.status}
+                      {item.status || "OPERATIONAL"}
                     </Text>
                   </View>
                 </View>
@@ -726,40 +729,55 @@ export default function BoxDetailsScreen() {
             </View>
           </View>
 
-          {/* 2. Splitter Port Matrix */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-sm shadow-slate-200/50">
+          {/* 4. Splitter Port Matrix */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                Port Allocated
-              </Text>
-              <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2.5 py-0.5 rounded-full">
-                <Text className="text-[11px] font-poppins-bold text-[#2d3416]">
-                  {box.portsUsed}/{box.totalPorts} Used
+              <View className="flex-row items-center">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <MaterialCommunityIcons
+                    name="lan"
+                    size={16}
+                    color="#4d6029"
+                  />
+                </View>
+                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  Port Allocation
+                </Text>
+              </View>
+              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
+                <Text className="text-[11px] font-poppins-bold text-[#4d6029]">
+                  {portsOccupied} / {box.totalPorts} Assigned
                 </Text>
               </View>
             </View>
 
-            <View className="flex-row flex-wrap gap-2.5 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/80">
+            <View className="flex-row flex-wrap gap-2 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/80">
               {Array.from({ length: box.totalPorts }).map((_, i) => {
                 const portNum = i + 1;
-                const isOccupied = portNum <= box.portsUsed;
+                const clientOnPort = (box.clients || []).find(
+                  (c) =>
+                    c.portNumber === portNum || c.port === `Port ${portNum}`,
+                );
+                const isOccupied =
+                  Boolean(clientOnPort) || portNum <= portsOccupied;
+
                 return (
                   <View
                     key={portNum}
                     className={`w-11 h-12 rounded-2xl items-center justify-center border ${
                       isOccupied
-                        ? "bg-[#AEAC78]/25 border-[#AEAC78]/90 shadow-xs"
+                        ? "bg-[#4d6029] border-[#3e4e20] shadow-xs"
                         : "bg-white border-slate-200 shadow-xs"
                     }`}
                   >
                     <Ionicons
                       name="hardware-chip"
-                      size={15}
-                      color={isOccupied ? "#4d6029" : "#94a3b8"}
+                      size={14}
+                      color={isOccupied ? "#ffffff" : "#94a3b8"}
                     />
                     <Text
                       className={`text-[9px] font-poppins-bold mt-0.5 ${
-                        isOccupied ? "text-[#2d3416]" : "text-[#94a3b8]"
+                        isOccupied ? "text-white" : "text-[#94a3b8]"
                       }`}
                     >
                       P{portNum}
@@ -770,46 +788,341 @@ export default function BoxDetailsScreen() {
             </View>
           </View>
 
-          {/* 3. Connected Subscribers */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-5 shadow-sm shadow-slate-200/50">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                Connected Clients
-              </Text>
-              <Text className="text-xs font-poppins text-[#64748b]">
-                {box.subscribers.length} Registered
-              </Text>
+          {/* 5. Subscriber Type Card (Single Reflected Type: Residential, Commercial, or Empty) */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
+            <View className="flex-row items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <View
+                  className={`w-8 h-8 rounded-xl items-center justify-center mr-2.5 ${
+                    !hasSubscriberType
+                      ? "bg-slate-100"
+                      : isCommercial
+                        ? "bg-blue-500/10"
+                        : "bg-emerald-500/10"
+                  }`}
+                >
+                  <Ionicons
+                    name={
+                      !hasSubscriberType
+                        ? "people-outline"
+                        : isCommercial
+                          ? "business"
+                          : "home"
+                    }
+                    size={16}
+                    color={
+                      !hasSubscriberType
+                        ? "#64748b"
+                        : isCommercial
+                          ? "#2563eb"
+                          : "#059669"
+                    }
+                  />
+                </View>
+                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  Subscriber Type
+                </Text>
+              </View>
+              <View
+                className={`px-2.5 py-0.5 rounded-full border ${
+                  !hasSubscriberType
+                    ? "bg-slate-50 border-slate-200"
+                    : isCommercial
+                      ? "bg-blue-50 border-blue-200/70"
+                      : "bg-emerald-50 border-emerald-200/70"
+                }`}
+              >
+                <Text
+                  className={`text-[10px] font-poppins-bold ${
+                    !hasSubscriberType
+                      ? "text-slate-500"
+                      : isCommercial
+                        ? "text-blue-700"
+                        : "text-emerald-800"
+                  }`}
+                >
+                  {!hasSubscriberType
+                    ? "Unassigned"
+                    : isCommercial
+                      ? "Commercial Tier"
+                      : "Residential Tier"}
+                </Text>
+              </View>
             </View>
 
-            <View className="gap-2.5">
-              {box.subscribers.map((sub) => (
-                <View
-                  key={sub.port}
-                  className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
-                >
-                  <View className="flex-row items-center flex-1 mr-2">
-                    <View className="w-8 h-8 rounded-xl bg-[#AEAC78]/30 border border-[#AEAC78]/80 items-center justify-center mr-3">
-                      <Text className="text-[11px] font-poppins-bold text-[#2d3416]">
-                        P{sub.port}
-                      </Text>
+            {/* Content: Active Single Tile or Empty State */}
+            {hasSubscriberType ? (
+              isCommercial ? (
+                <View className="bg-blue-50/60 border border-blue-200/70 p-4 rounded-2xl">
+                  <View className="flex-row items-center justify-between mb-2.5">
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <View className="w-9 h-9 rounded-xl bg-blue-500/15 items-center justify-center mr-3">
+                        <Ionicons name="business" size={18} color="#2563eb" />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                          Commercial
+                        </Text>
+                        <Text className="text-[11px] font-poppins text-blue-700/80">
+                          Business & corporate fiber connection
+                        </Text>
+                      </View>
                     </View>
-                    <View className="flex-1">
-                      <Text
-                        className="text-xs font-poppins-bold text-[#0f172a]"
-                        numberOfLines={1}
-                      >
-                        {sub.name}
+                    <View className="bg-blue-100 px-2 py-0.5 rounded">
+                      <Text className="text-[10px] font-poppins-bold text-blue-800">
+                        {totalSubscribers > 0 ? `${comPct}%` : "Active"}
                       </Text>
                     </View>
                   </View>
+
+                  <View className="pt-2.5 border-t border-blue-200/60 flex-row items-center justify-between">
+                    <Text className="text-xs font-poppins-semibold text-blue-900">
+                      {comCount} {comCount === 1 ? "Subscriber" : "Subscribers"} Connected
+                    </Text>
+                    <Text className="text-[10px] font-poppins-medium text-blue-700/80">
+                      Enterprise SLA
+                    </Text>
+                  </View>
                 </View>
-              ))}
+              ) : (
+                <View className="bg-emerald-50/60 border border-emerald-200/70 p-4 rounded-2xl">
+                  <View className="flex-row items-center justify-between mb-2.5">
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <View className="w-9 h-9 rounded-xl bg-emerald-500/15 items-center justify-center mr-3">
+                        <Ionicons name="home" size={18} color="#059669" />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                          Residential
+                        </Text>
+                        <Text className="text-[11px] font-poppins text-emerald-700/80">
+                          Home & personal fiber connection
+                        </Text>
+                      </View>
+                    </View>
+                    <View className="bg-emerald-100 px-2 py-0.5 rounded">
+                      <Text className="text-[10px] font-poppins-bold text-emerald-800">
+                        {totalSubscribers > 0 ? `${resPct}%` : "Active"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View className="pt-2.5 border-t border-emerald-200/60 flex-row items-center justify-between">
+                    <Text className="text-xs font-poppins-semibold text-emerald-900">
+                      {resCount} {resCount === 1 ? "Subscriber" : "Subscribers"} Connected
+                    </Text>
+                    <Text className="text-[10px] font-poppins-medium text-emerald-700/80">
+                      Standard FTTH
+                    </Text>
+                  </View>
+                </View>
+              )
+            ) : (
+              <View className="bg-slate-50 p-4 rounded-2xl border border-dashed border-slate-200 items-center justify-center">
+                <MaterialCommunityIcons
+                  name="account-question-outline"
+                  size={24}
+                  color="#94a3b8"
+                />
+                <Text className="text-xs font-poppins-bold text-slate-700 mt-1.5">
+                  No Subscriber Type Set
+                </Text>
+                <Text className="text-[11px] font-poppins text-slate-400 text-center mt-0.5">
+                  No subscriber type has been assigned to this distribution box yet.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* 6. Subscriber Plan Card (Bandwidth Plans Allocation) */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
+            <View className="flex-row items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <MaterialCommunityIcons
+                    name="speedometer"
+                    size={16}
+                    color="#4d6029"
+                  />
+                </View>
+                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  Subscriber Plan
+                </Text>
+              </View>
+              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
+                <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                  {activePlans.length} {activePlans.length === 1 ? "Tier Active" : "Tiers Active"}
+                </Text>
+              </View>
             </View>
+
+            {activePlans.length > 0 ? (
+              <View className="space-y-2.5">
+                {activePlans.map((planItem) => (
+                  <View
+                    key={planItem.name}
+                    className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 mb-2"
+                  >
+                    <View className="flex-row items-center justify-between mb-2">
+                      <View className="flex-row items-center flex-1 mr-2">
+                        <View className="w-7 h-7 rounded-xl bg-[#4d6029] items-center justify-center mr-2.5 shadow-xs">
+                          <MaterialCommunityIcons
+                            name="speedometer"
+                            size={14}
+                            color="#ffffff"
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text
+                            className="text-xs font-poppins-bold text-[#0f172a]"
+                            numberOfLines={1}
+                          >
+                            {planItem.name}
+                          </Text>
+                          <Text className="text-[10px] font-poppins text-[#64748b]">
+                            {planItem.category} Fiber Tier
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View className="flex-row items-center gap-1.5">
+                        <View className="bg-slate-200/80 px-2 py-0.5 rounded">
+                          <Text className="text-[10px] font-poppins-bold text-[#334155]">
+                            {planItem.speed}
+                          </Text>
+                        </View>
+                        <View className="bg-[#4d6029]/15 border border-[#4d6029]/30 px-2 py-0.5 rounded">
+                          <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                            {planItem.count} {planItem.count === 1 ? "Port" : "Ports"} ({planItem.pct}%)
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Bandwidth Share Bar */}
+                    <View className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                      <View
+                        className="bg-[#4d6029] h-full rounded-full"
+                        style={{ width: `${planItem.pct}%` }}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View className="bg-slate-50 p-4 rounded-2xl border border-dashed border-slate-200 items-center justify-center">
+                <MaterialCommunityIcons
+                  name="speedometer-slow"
+                  size={24}
+                  color="#94a3b8"
+                />
+                <Text className="text-xs font-poppins-bold text-slate-700 mt-1.5">
+                  No Active Plans Allocated
+                </Text>
+                <Text className="text-[11px] font-poppins text-slate-400 text-center mt-0.5">
+                  Service plans will populate automatically as subscribers are assigned to optical ports.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* 7. Connected Subscribers / Clients */}
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-5 shadow-xs">
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <Ionicons name="people" size={16} color="#4d6029" />
+                </View>
+                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  Client Connected
+                </Text>
+              </View>
+              <Text className="text-xs font-poppins text-[#64748b]">
+                {box.clients?.length || 0} Registered
+              </Text>
+            </View>
+
+            {!box.clients || box.clients.length === 0 ? (
+              <View className="bg-slate-50 p-6 rounded-2xl border border-slate-100 items-center justify-center">
+                <Ionicons name="people-outline" size={28} color="#94a3b8" />
+                <Text className="text-xs font-poppins-bold text-slate-700 mt-2">
+                  No Active Subscribers
+                </Text>
+                <Text className="text-[11px] font-poppins text-slate-400 text-center mt-0.5">
+                  All {box.totalPorts} ports currently open for field
+                  allocation.
+                </Text>
+              </View>
+            ) : (
+              <View className="gap-2.5">
+                {box.clients.map((sub, idx) => (
+                  <View
+                    key={sub.id || idx}
+                    className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <View className="w-8 h-8 rounded-xl bg-[#4d6029] items-center justify-center mr-3">
+                        <Text className="text-[10px] font-poppins-bold text-white">
+                          P
+                          {sub.portNumber ||
+                            sub.port.replace(/[^0-9]/g, "") ||
+                            idx + 1}
+                        </Text>
+                      </View>
+                      <View className="flex-1">
+                        <View className="flex-row items-center flex-wrap">
+                          <Text
+                            className="text-xs font-poppins-bold text-[#0f172a] mr-1.5"
+                            numberOfLines={1}
+                          >
+                            {sub.name}
+                          </Text>
+                          {sub.clientType && (
+                            <View
+                              className={`px-1.5 py-0.2 rounded border ${
+                                sub.clientType.toUpperCase().includes("COMMERCIAL")
+                                  ? "bg-blue-50 border-blue-200"
+                                  : "bg-emerald-50 border-emerald-200"
+                              }`}
+                            >
+                              <Text
+                                className={`text-[8px] font-poppins-bold ${
+                                  sub.clientType.toUpperCase().includes("COMMERCIAL")
+                                    ? "text-blue-700"
+                                    : "text-emerald-700"
+                                }`}
+                              >
+                                {sub.clientType.toUpperCase().includes("COMMERCIAL")
+                                  ? "Commercial"
+                                  : "Residential"}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text
+                          className="text-[10px] font-poppins text-[#64748b] mt-0.5"
+                          numberOfLines={1}
+                        >
+                          {sub.accountNumber} · {sub.plan || "Standard Fiber"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-lg flex-row items-center">
+                      <View className="w-1.5 h-1.5 rounded-full bg-[#AEAC78] mr-1" />
+                      <Text className="text-[9px] font-poppins-bold text-[#2d3416]">
+                        {sub.status || "CONNECTED"}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         </View>
       </ScrollView>
 
-      {/* Audit Inspection Modal */}
+      {/* 7. Field Audit Inspection Modal */}
       {isAuditModalOpen && (
         <Modal
           visible={isAuditModalOpen}
@@ -844,9 +1157,9 @@ export default function BoxDetailsScreen() {
                 {/* Physical Padlock Verification Toggle */}
                 <TouchableOpacity
                   onPress={() => setPadlockVerified(!padlockVerified)}
-                  className={`p-3.5 rounded-2xl border flex-row items-center justify-between ${
+                  className={`p-3.5 rounded-2xl border flex-row items-center justify-between mb-3 ${
                     padlockVerified
-                      ? "bg-[#AEAC78]/25 border-[#AEAC78]/80"
+                      ? "bg-emerald-50/70 border-emerald-200"
                       : "bg-rose-50/70 border-rose-200"
                   }`}
                   activeOpacity={0.8}
@@ -855,29 +1168,29 @@ export default function BoxDetailsScreen() {
                     <Ionicons
                       name={padlockVerified ? "lock-closed" : "lock-open"}
                       size={18}
-                      color={padlockVerified ? "#4d6029" : "#dc2626"}
+                      color={padlockVerified ? "#059669" : "#dc2626"}
                     />
                     <View className="ml-2.5 flex-1">
                       <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                        Padlock & Enclosure Seal
+                        Cabinet Padlock & Seal
                       </Text>
                       <Text className="text-[10px] font-poppins text-[#64748b]">
                         {padlockVerified
-                          ? "Secured and intact"
-                          : "Damaged / Unlatched"}
+                          ? "Physical lock latched and intact"
+                          : "Lock unlatched or seal broken"}
                       </Text>
                     </View>
                   </View>
                   <View
                     className={`px-2 py-0.5 rounded-lg ${
                       padlockVerified
-                        ? "bg-[#AEAC78]/40 border border-[#AEAC78]/80"
-                        : "bg-rose-100"
+                        ? "bg-emerald-100 border border-emerald-300"
+                        : "bg-rose-100 border border-rose-300"
                     }`}
                   >
                     <Text
                       className={`text-[10px] font-poppins-bold ${
-                        padlockVerified ? "text-[#2d3416]" : "text-rose-800"
+                        padlockVerified ? "text-emerald-800" : "text-rose-800"
                       }`}
                     >
                       {padlockVerified ? "VERIFIED" : "ISSUE"}
@@ -885,13 +1198,77 @@ export default function BoxDetailsScreen() {
                   </View>
                 </TouchableOpacity>
 
+                {/* Status Selection */}
+                <View className="mb-3">
+                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
+                    Box Operational Status:
+                  </Text>
+                  <View className="flex-row gap-2">
+                    {(["ACTIVE", "NEEDS_TAG", "ISSUE"] as const).map((st) => (
+                      <TouchableOpacity
+                        key={st}
+                        onPress={() => setAuditStatus(st)}
+                        className={`flex-1 py-2 rounded-xl items-center border ${
+                          auditStatus === st
+                            ? st === "ACTIVE"
+                              ? "bg-emerald-600 border-emerald-700"
+                              : st === "NEEDS_TAG"
+                                ? "bg-amber-600 border-amber-700"
+                                : "bg-rose-600 border-rose-700"
+                            : "bg-slate-100 border-slate-200"
+                        }`}
+                      >
+                        <Text
+                          className={`text-[10px] font-poppins-bold ${
+                            auditStatus === st ? "text-white" : "text-[#475569]"
+                          }`}
+                        >
+                          {st === "ACTIVE"
+                            ? "Active"
+                            : st === "NEEDS_TAG"
+                              ? "Needs Tag"
+                              : "Issue"}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Audit Readings Inputs */}
+                <View className="flex-row gap-2 mb-3">
+                  <View className="flex-1">
+                    <Text className="text-[10px] font-poppins text-[#475569] mb-1">
+                      Signal Loss
+                    </Text>
+                    <TextInput
+                      value={auditLoss}
+                      onChangeText={setAuditLoss}
+                      placeholder="-18.5 dBm"
+                      placeholderTextColor="#94a3b8"
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-[#0f172a]"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-[10px] font-poppins text-[#475569] mb-1">
+                      Cabinet Temp
+                    </Text>
+                    <TextInput
+                      value={auditTemp}
+                      onChangeText={setAuditTemp}
+                      placeholder="31.2 °C"
+                      placeholderTextColor="#94a3b8"
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-[#0f172a]"
+                    />
+                  </View>
+                </View>
+
                 {/* Audit Notes Input */}
                 <View>
-                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
-                    Field Observations & Notes:
+                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1">
+                    Field Inspection Notes:
                   </Text>
                   <TextInput
-                    placeholder="Enter optical readings, fiber condition, or maintenance tags..."
+                    placeholder="Describe cabinet condition, optical readings, or repair actions taken..."
                     placeholderTextColor="#94a3b8"
                     value={auditNotes}
                     onChangeText={setAuditNotes}
@@ -903,7 +1280,7 @@ export default function BoxDetailsScreen() {
               </View>
 
               {/* Submit / Cancel Buttons */}
-              <View className="flex-row space-x-2 pt-4 mt-4 border-t border-slate-100">
+              <View className="flex-row pt-4 mt-4 border-t border-slate-100 gap-2">
                 <TouchableOpacity
                   onPress={() => {
                     if (isWeb) {
@@ -919,17 +1296,28 @@ export default function BoxDetailsScreen() {
                       );
                     }
                   }}
-                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row mr-2 shadow-xs"
-                  activeOpacity={0.85}
+                  disabled={isSubmittingAudit}
+                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
                 >
-                  <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
-                  <Text className="text-white text-xs font-poppins-bold ml-1.5">
-                    Submit Audit Report
-                  </Text>
+                  {isSubmittingAudit ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color="#ffffff"
+                      />
+                      <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                        Submit Audit Report
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={() => setIsAuditModalOpen(false)}
+                  disabled={isSubmittingAudit}
                   className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">

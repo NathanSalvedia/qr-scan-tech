@@ -32,6 +32,7 @@ export default function UserLayout() {
       <Stack.Screen name="map" options={{ animation: 'none' }} />
       <Stack.Screen name="scanner" options={{ animation: 'none' }} />
       <Stack.Screen name="boxes" options={{ animation: 'none' }} />
+      <Stack.Screen name="box-details" options={{ animation: 'none' }} />
       <Stack.Screen name="profile" options={{ animation: 'none' }} />
     </Stack>
   );

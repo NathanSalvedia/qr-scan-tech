@@ -1,9 +1,11 @@
 import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
@@ -15,21 +17,55 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authService } from "@/services/auth";
+import { useAuth } from "@/services/auth-state";
+import { boxService } from "@/services/boxes";
+import { settingsService } from "@/services/settings";
 
 export default function UserProfileScreen() {
   const router = useRouter();
+  const { user, logout } = useAuth();
 
-  // Technician Status
+  // Dynamic Technician Profile Details
+  const initials = useMemo(() => {
+    const first = user?.firstName?.[0] || "";
+    const last = user?.lastName?.[0] || "";
+    if (first || last) return (first + last).toUpperCase();
+    if (user?.name) {
+      const parts = user.name.trim().split(" ");
+      return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+    }
+    return "TU";
+  }, [user]);
+
+  const fullName = useMemo(() => {
+    if (user?.firstName || user?.lastName) {
+      return `${user.firstName || ""} ${user.lastName || ""}`.trim();
+    }
+    if (user?.name) return user.name;
+    return "Field Technician";
+  }, [user]);
+
+  const email = useMemo(() => {
+    return user?.email || "technician@multifactors.com";
+  }, [user]);
+
+  const roleLabel = useMemo(() => {
+    return user?.role?.toLowerCase() === "admin"
+      ? "Network Administrator"
+      : "Field Technician";
+  }, [user]);
+
+  // Technician On-Duty Status (Persisted in AsyncStorage)
   const [isOnDuty, setIsOnDuty] = useState(true);
 
-  // Scanner Preferences
+  // Scanner Preferences (Persisted in AsyncStorage)
   const [vibrateOnScan, setVibrateOnScan] = useState(true);
   const [autoFlashlight, setAutoFlashlight] = useState(false);
   const [beepOnScan, setBeepOnScan] = useState(true);
 
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState("Today, 10:45 AM");
+  const [lastSyncTime, setLastSyncTime] = useState("Loading...");
   const [syncToast, setSyncToast] = useState<string | null>(null);
 
   // Password Modal State
@@ -38,48 +74,128 @@ export default function UserProfileScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswords, setShowPasswords] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   // Logout Modal State
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  const handleSyncData = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
-      const now = new Date();
-      const timeStr = `Today, ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-      setLastSyncTime(timeStr);
-      setSyncToast("Box records successfully synced offline!");
-      setTimeout(() => setSyncToast(null), 3000);
-    }, 1200);
+  // Load persisted settings on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [prefs, duty, syncTs] = await Promise.all([
+          settingsService.getScannerPreferences(),
+          settingsService.getOnDutyStatus(),
+          settingsService.getLastSyncTimestamp(),
+        ]);
+        if (!isMounted) return;
+        setVibrateOnScan(prefs.vibrateOnScan);
+        setAutoFlashlight(prefs.autoFlashlight);
+        setBeepOnScan(prefs.beepOnScan);
+        setIsOnDuty(duty);
+        setLastSyncTime(settingsService.formatLastSyncTime(syncTs));
+      } catch (e) {
+        console.error("Failed to load user settings:", e);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Handlers for Preferences
+  const handleToggleDuty = async () => {
+    const nextVal = !isOnDuty;
+    setIsOnDuty(nextVal);
+    await settingsService.setOnDutyStatus(nextVal);
   };
 
-  const handleSavePassword = () => {
+  const handleToggleVibrate = async (val: boolean) => {
+    setVibrateOnScan(val);
+    await settingsService.setScannerPreferences({ vibrateOnScan: val });
+  };
+
+  const handleToggleAutoFlash = async (val: boolean) => {
+    setAutoFlashlight(val);
+    await settingsService.setScannerPreferences({ autoFlashlight: val });
+  };
+
+  const handleToggleBeep = async (val: boolean) => {
+    setBeepOnScan(val);
+    await settingsService.setScannerPreferences({ beepOnScan: val });
+  };
+
+  // Dynamic Offline Sync
+  const handleSyncData = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await boxService.getAll();
+      if (res.success && Array.isArray(res.boxes)) {
+        await settingsService.saveOfflineBoxes(res.boxes);
+        const nowIso = new Date().toISOString();
+        setLastSyncTime(settingsService.formatLastSyncTime(nowIso));
+        setSyncToast(
+          `Successfully synced ${res.boxes.length} box records for offline use!`
+        );
+      } else {
+        setSyncToast("Sync failed: Could not load distribution boxes.");
+      }
+    } catch (e: any) {
+      console.error("Sync offline data error:", e);
+      setSyncToast("Sync failed: Server connection unavailable.");
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncToast(null), 3800);
+    }
+  };
+
+  // Dynamic Change Password via backend API
+  const handleSavePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       Alert.alert("Incomplete Form", "Please fill in all password fields.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert("Mismatch", "New password and confirmation do not match.");
+      Alert.alert("Password Mismatch", "New password and confirmation do not match.");
       return;
     }
     if (newPassword.length < 6) {
-      Alert.alert("Password Length", "Password must be at least 6 characters.");
+      Alert.alert(
+        "Password Too Short",
+        "New password must be at least 6 characters long."
+      );
       return;
     }
 
-    setShowPasswordModal(false);
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    Alert.alert("Success", "Your password has been successfully updated.");
+    setIsSavingPassword(true);
+    try {
+      const res = await authService.changePassword(currentPassword, newPassword);
+      if (res.success) {
+        setShowPasswordModal(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        Alert.alert("Success", res.message || "Your password has been successfully updated.");
+      } else {
+        Alert.alert("Update Failed", res.message || "Current password may be incorrect.");
+      }
+    } catch (e: any) {
+      Alert.alert("Network Error", e.message || "Failed to update password.");
+    } finally {
+      setIsSavingPassword(false);
+    }
   };
 
+  // Sign Out Handler
   const handleConfirmLogout = () => {
     setShowLogoutModal(false);
+    logout();
     authService.logout();
     router.replace("/auth/sign-in" as any);
   };
+
+  const appVersion = Constants.expoConfig?.version || "1.2.0";
 
   return (
     <SafeAreaView className="flex-1 bg-[#f8fafc]">
@@ -125,25 +241,25 @@ export default function UserProfileScreen() {
               <View className="flex-row items-center flex-1 pr-2">
                 <View className="w-12 h-12 rounded-2xl bg-[#4d6029] items-center justify-center mr-3 shadow-sm shadow-[#4d6029]/20">
                   <Text className="text-lg font-poppins-bold text-white">
-                    NS
+                    {initials}
                   </Text>
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-poppins-bold text-[#0f172a]">
-                    Nathan Salvedia
+                    {fullName}
                   </Text>
                   <Text className="text-xs font-poppins-medium text-[#64748b] mt-0.5">
-                    nathansalvedia2002@gmail.com
+                    {email}
                   </Text>
                   <Text className="text-[11px] font-poppins-semibold text-[#4d6029] mt-0.5">
-                    Field Technician
+                    {roleLabel}
                   </Text>
                 </View>
               </View>
 
               {/* On Duty Status Badge Toggle */}
               <TouchableOpacity
-                onPress={() => setIsOnDuty(!isOnDuty)}
+                onPress={handleToggleDuty}
                 activeOpacity={0.8}
                 className={`flex-row items-center px-2.5 py-1.5 rounded-full border ${
                   isOnDuty
@@ -195,7 +311,7 @@ export default function UserProfileScreen() {
                 </View>
                 <Switch
                   value={vibrateOnScan}
-                  onValueChange={setVibrateOnScan}
+                  onValueChange={handleToggleVibrate}
                   trackColor={{ false: "#cbd5e1", true: "#4d6029" }}
                   thumbColor="#ffffff"
                 />
@@ -222,7 +338,7 @@ export default function UserProfileScreen() {
                 </View>
                 <Switch
                   value={autoFlashlight}
-                  onValueChange={setAutoFlashlight}
+                  onValueChange={handleToggleAutoFlash}
                   trackColor={{ false: "#cbd5e1", true: "#4d6029" }}
                   thumbColor="#ffffff"
                 />
@@ -249,7 +365,7 @@ export default function UserProfileScreen() {
                 </View>
                 <Switch
                   value={beepOnScan}
-                  onValueChange={setBeepOnScan}
+                  onValueChange={handleToggleBeep}
                   trackColor={{ false: "#cbd5e1", true: "#4d6029" }}
                   thumbColor="#ffffff"
                 />
@@ -286,12 +402,16 @@ export default function UserProfileScreen() {
                   className="bg-[#4d6029]/10 px-3 py-1.5 rounded-lg border border-[#4d6029]/20 flex-row items-center active:bg-[#4d6029]/20"
                   activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name="refresh-outline"
-                    size={13}
-                    color="#4d6029"
-                    style={{ marginRight: 4 }}
-                  />
+                  {isSyncing ? (
+                    <ActivityIndicator size="small" color="#4d6029" style={{ marginRight: 4 }} />
+                  ) : (
+                    <Ionicons
+                      name="refresh-outline"
+                      size={13}
+                      color="#4d6029"
+                      style={{ marginRight: 4 }}
+                    />
+                  )}
                   <Text className="text-xs font-poppins-semibold text-[#4d6029]">
                     {isSyncing ? "Syncing..." : "Sync"}
                   </Text>
@@ -354,7 +474,7 @@ export default function UserProfileScreen() {
               MultiFactors Network Infrastructure
             </Text>
             <Text className="text-[9px] font-poppins-medium text-[#cbd5e1] mt-0.5">
-              QR Box Management · Version 1.2.0
+              QR Box Management · Version {appVersion}
             </Text>
           </View>
         </ScrollView>
@@ -365,7 +485,9 @@ export default function UserProfileScreen() {
         visible={showPasswordModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowPasswordModal(false)}
+        onRequestClose={() => {
+          if (!isSavingPassword) setShowPasswordModal(false);
+        }}
       >
         <View className="flex-1 bg-black/60 justify-center px-5">
           <View className="bg-white rounded-3xl p-6 max-w-md w-full self-center shadow-2xl">
@@ -381,7 +503,10 @@ export default function UserProfileScreen() {
               </View>
 
               <TouchableOpacity
-                onPress={() => setShowPasswordModal(false)}
+                onPress={() => {
+                  if (!isSavingPassword) setShowPasswordModal(false);
+                }}
+                disabled={isSavingPassword}
                 className="w-7 h-7 rounded-full bg-slate-100 items-center justify-center"
               >
                 <Ionicons name="close" size={16} color="#64748b" />
@@ -399,6 +524,7 @@ export default function UserProfileScreen() {
                 placeholderTextColor="#94a3b8"
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
+                editable={!isSavingPassword}
                 className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
               />
             </View>
@@ -413,6 +539,7 @@ export default function UserProfileScreen() {
                 placeholderTextColor="#94a3b8"
                 value={newPassword}
                 onChangeText={setNewPassword}
+                editable={!isSavingPassword}
                 className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
               />
             </View>
@@ -427,6 +554,7 @@ export default function UserProfileScreen() {
                 placeholderTextColor="#94a3b8"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
+                editable={!isSavingPassword}
                 className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
               />
             </View>
@@ -451,6 +579,7 @@ export default function UserProfileScreen() {
             <View className="flex-row gap-3">
               <TouchableOpacity
                 onPress={() => setShowPasswordModal(false)}
+                disabled={isSavingPassword}
                 className="flex-1 bg-slate-100 py-3 rounded-xl items-center justify-center"
                 activeOpacity={0.8}
               >
@@ -461,12 +590,17 @@ export default function UserProfileScreen() {
 
               <TouchableOpacity
                 onPress={handleSavePassword}
+                disabled={isSavingPassword}
                 className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center shadow-sm"
                 activeOpacity={0.88}
               >
-                <Text className="text-xs font-poppins-bold text-white">
-                  Save Changes
-                </Text>
+                {isSavingPassword ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text className="text-xs font-poppins-bold text-white">
+                    Save Changes
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

@@ -17,14 +17,15 @@ const AVATAR_COLORS = [
   'bg-slate-700',
 ];
 
-const ROLES_POOL = [
-  'Field Optical Technician',
-  'Senior Maintenance Lineman',
-  'Field Network Specialist',
-  'Optical Fiber Splicer',
-  'Emergency Dispatch Lineman',
-  'Field QA & Compliance Specialist',
-  'Network Infrastructure Technician',
+const AVATAR_HEX_COLORS = [
+  '#4d6029',
+  '#0284c7',
+  '#059669',
+  '#4f46e5',
+  '#0d9488',
+  '#d97706',
+  '#e11d48',
+  '#475569',
 ];
 
 function formatScanTime(date: Date): string {
@@ -155,8 +156,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         id: user.id,
         employeeId: `TECH-ILG-${(index + 1).toString().padStart(2, '0')}`,
         name: `${user.firstName} ${user.lastName}`.trim(),
-        role: ROLES_POOL[index % ROLES_POOL.length],
+        role: user.role,
         avatarBg: AVATAR_COLORS[index % AVATAR_COLORS.length],
+        avatarColor: AVATAR_HEX_COLORS[index % AVATAR_HEX_COLORS.length],
         phone: user.phoneNumber || '+63 917 000 0000',
         email: user.email,
         dutyStatus,

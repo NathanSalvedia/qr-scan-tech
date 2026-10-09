@@ -1,11 +1,16 @@
 import { UserBottomNavigation } from "@/components/user-bottom-navigation";
-import { BOX_PINS } from "@/constants/distribution-boxes";
+import { useAuth } from "@/services/auth-state";
+import { boxService } from "@/services/boxes";
+import { logsService, type RecentScanItem } from "@/services/logs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  AppState,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -13,14 +18,152 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+const getGreeting = (date: Date = new Date()): string => {
+  const hour = date.getHours();
+  if (hour >= 18) {
+    return "Good evening";
+  }
+
+  if (hour >= 12) {
+    return "Good afternoon";
+  }
+
+  return "Good morning";
+};
+
+const getScanBadge = (scan: RecentScanItem) => {
+  if (scan.isAlarm || scan.boxStatus === "ISSUE") {
+    return {
+      label: scan.isAlarm ? "Alarm" : "Issue",
+      icon: "alert-circle" as const,
+      iconColor: "#e11d48",
+      iconBg: "bg-rose-50 border-rose-100",
+      pillBg: "bg-rose-100",
+      pillText: "text-rose-800",
+    };
+  }
+  if (scan.boxStatus === "NEEDS_TAG") {
+    return {
+      label: "Needs Tag",
+      icon: "tag-outline" as const,
+      iconColor: "#d97706",
+      iconBg: "bg-amber-50 border-amber-100",
+      pillBg: "bg-amber-100",
+      pillText: "text-amber-800",
+    };
+  }
+  return {
+    label: "Operational",
+    icon: "cube" as const,
+    iconColor: "#4d6029",
+    iconBg: "bg-emerald-50 border-emerald-100",
+    pillBg: "bg-emerald-100",
+    pillText: "text-emerald-800",
+  };
+};
+
 export default function UserDashboardScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [isOnDuty, setIsOnDuty] = useState(true);
 
-  const totalBoxes = BOX_PINS.length;
-  const taggedBoxes = BOX_PINS.filter((b) => b.status === "ACTIVE").length;
-  const needsTagBoxes = BOX_PINS.filter((b) => b.status === "NEEDS_TAG").length;
-  const issueBoxes = BOX_PINS.filter((b) => b.status === "ISSUE").length;
+  const [stats, setStats] = useState({
+    total: 0,
+    tagged: 0,
+    needsTag: 0,
+    issues: 0,
+  });
+  const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
+  const [greeting, setGreeting] = useState<string>(getGreeting());
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Dynamically update greeting every 30 seconds and whenever app returns to active
+  useEffect(() => {
+    const updateGreeting = () => {
+      setGreeting(getGreeting());
+    };
+
+    const interval = setInterval(updateGreeting, 30000);
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        updateGreeting();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, []);
+
+  const fetchDashboard = useCallback(async () => {
+    const [boxesRes, scansRes] = await Promise.all([
+      boxService.getAll(),
+      logsService.getMyRecentScans(5),
+    ]);
+
+    const boxes =
+      boxesRes.success && boxesRes.boxes
+        ? (boxesRes.boxes as { status: string }[])
+        : null;
+
+    return {
+      stats: boxes
+        ? {
+            total: boxes.length,
+            tagged: boxes.filter((b) => b.status === "ACTIVE").length,
+            needsTag: boxes.filter((b) => b.status === "NEEDS_TAG").length,
+            issues: boxes.filter((b) => b.status === "ISSUE").length,
+          }
+        : null,
+      scans: scansRes.success && scansRes.scans ? scansRes.scans : null,
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const data = await fetchDashboard();
+        if (!isMounted) return;
+        if (data.stats) setStats(data.stats);
+        if (data.scans) setRecentScans(data.scans);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchDashboard]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setGreeting(getGreeting());
+    try {
+      const data = await fetchDashboard();
+      if (data.stats) setStats(data.stats);
+      if (data.scans) setRecentScans(data.scans);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchDashboard]);
+
+  const totalBoxes = stats.total;
+  const taggedBoxes = stats.tagged;
+  const needsTagBoxes = stats.needsTag;
+  const issueBoxes = stats.issues;
+
+  const displayName =
+    user?.name?.trim() ||
+    `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() ||
+    "Technician";
 
   const isWeb = Platform.OS === "web";
 
@@ -30,6 +173,13 @@ export default function UserDashboardScreen() {
 
       <ScrollView
         className="flex-1"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#4d6029"
+          />
+        }
         contentContainerStyle={{
           paddingHorizontal: isWeb ? 24 : 18,
           paddingTop: 16,
@@ -47,7 +197,7 @@ export default function UserDashboardScreen() {
               MultiFactors Sales
             </Text>
             <Text className="text-1xl font-poppins-bold text-[#0f172a] mt-0.5">
-              Good morning, Nathan Salvedia!
+              {greeting}, {displayName}!
             </Text>
           </View>
 
@@ -240,96 +390,79 @@ export default function UserDashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Item 1 */}
-          <TouchableOpacity
-            onPress={() => router.replace("/user/boxes")}
-            className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
-            activeOpacity={0.75}
-          >
-            <View className="flex-row items-center flex-1 pr-3">
-              <View className="w-10 h-10 rounded-xl bg-emerald-50 items-center justify-center mr-3 border border-emerald-100">
-                <MaterialCommunityIcons name="cube" size={20} color="#4d6029" />
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center">
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mr-2">
-                    DB-MB-01
-                  </Text>
-                  <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
-                    <Text className="text-[10px] font-poppins-semibold text-emerald-800">
-                      Operational
-                    </Text>
-                  </View>
-                </View>
-                <Text className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5">
-                  1:8 Splitter · -18.2 dBm · 15m ago
-                </Text>
-              </View>
+          {loading && recentScans.length === 0 ? (
+            <View className="bg-white rounded-2xl p-6 border border-slate-200/80 items-center">
+              <ActivityIndicator size="small" color="#4d6029" />
+              <Text className="text-[11px] font-poppins-medium text-[#64748b] mt-2">
+                Loading recent scans...
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-          </TouchableOpacity>
+          ) : recentScans.length === 0 ? (
+            <View className="bg-white rounded-2xl p-6 border border-slate-200/80 items-center">
+              <MaterialCommunityIcons
+                name="qrcode-scan"
+                size={28}
+                color="#94a3b8"
+              />
+              <Text className="text-xs font-poppins-bold text-[#0f172a] mt-2">
+                No scans yet
+              </Text>
+              <Text className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5 text-center">
+                Boxes you scan will appear here.
+              </Text>
+            </View>
+          ) : (
+            recentScans.map((scan) => {
+              const badge = getScanBadge(scan);
+              const details = [scan.siteName, scan.relativeTime]
+                .filter(Boolean)
+                .join(" · ");
 
-          {/* Item 2 */}
-          <TouchableOpacity
-            onPress={() => router.replace("/user/boxes")}
-            className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
-            activeOpacity={0.75}
-          >
-            <View className="flex-row items-center flex-1 pr-3">
-              <View className="w-10 h-10 rounded-xl bg-rose-50 items-center justify-center mr-3 border border-rose-100">
-                <MaterialCommunityIcons
-                  name="alert-circle"
-                  size={20}
-                  color="#e11d48"
-                />
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center">
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mr-2">
-                    DB-SB-03
-                  </Text>
-                  <View className="bg-rose-100 px-2 py-0.5 rounded-full">
-                    <Text className="text-[10px] font-poppins-semibold text-rose-800">
-                      Signal Loss
-                    </Text>
+              return (
+                <TouchableOpacity
+                  key={scan.id}
+                  onPress={() => router.replace("/user/boxes")}
+                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
+                  activeOpacity={0.75}
+                >
+                  <View className="flex-row items-center flex-1 pr-3">
+                    <View
+                      className={`w-10 h-10 rounded-xl items-center justify-center mr-3 border ${badge.iconBg}`}
+                    >
+                      <MaterialCommunityIcons
+                        name={badge.icon}
+                        size={20}
+                        color={badge.iconColor}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <View className="flex-row items-center">
+                        <Text className="text-sm font-poppins-bold text-[#0f172a] mr-2">
+                          {scan.boxCode}
+                        </Text>
+                        <View
+                          className={`px-2 py-0.5 rounded-full ${badge.pillBg}`}
+                        >
+                          <Text
+                            className={`text-[10px] font-poppins-semibold ${badge.pillText}`}
+                          >
+                            {badge.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text
+                        className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5"
+                        numberOfLines={1}
+                      >
+                        {details}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                <Text className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5">
-                  1:8 Splitter · -24.1 dBm · 1h ago
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-          </TouchableOpacity>
-
-          {/* Item 3 */}
-          <TouchableOpacity
-            onPress={() => router.replace("/user/boxes")}
-            className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
-            activeOpacity={0.75}
-          >
-            <View className="flex-row items-center flex-1 pr-3">
-              <View className="w-10 h-10 rounded-xl bg-emerald-50 items-center justify-center mr-3 border border-emerald-100">
-                <MaterialCommunityIcons name="cube" size={20} color="#4d6029" />
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center">
-                  <Text className="text-sm font-poppins-bold text-[#0f172a] mr-2">
-                    DB-SB-01
-                  </Text>
-                  <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
-                    <Text className="text-[10px] font-poppins-semibold text-emerald-800">
-                      Operational
-                    </Text>
-                  </View>
-                </View>
-                <Text className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5">
-                  1:4 Splitter · -17.5 dBm · 3h ago
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-          </TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
       </ScrollView>
 

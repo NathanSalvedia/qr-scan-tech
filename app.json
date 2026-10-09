@@ -38,7 +38,8 @@
         {
           "cameraPermission": "Allow MultiFactors to access the camera to scan distribution box QR codes."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

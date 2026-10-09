@@ -1,24 +1,5 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { authState } from './auth-state';
-
-const getApiBaseUrl = () => {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-    return envUrl;
-  }
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const hostIp = hostUri.split(':')[0];
-    return `http://${hostIp}:5000/api`;
-  }
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-  return 'http://localhost:5000/api';
-};
-
-const API_URL = getApiBaseUrl();
+import { API_BASE_URL as API_URL, apiFetch } from './api-config';
 
 export interface DashboardStats {
   totalBoxes: number;
@@ -73,7 +54,7 @@ export const dashboardService = {
   getStats: async (): Promise<DashboardStatsResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/dashboard/stats`, {
+      const res = await apiFetch(`${API_URL}/dashboard/stats`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -92,7 +73,7 @@ export const dashboardService = {
   getBoxes: async (): Promise<BoxesResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes`, {
+      const res = await apiFetch(`${API_URL}/boxes`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

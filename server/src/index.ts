@@ -6,6 +6,7 @@ import authRouter from './routes/auth.js';
 import dashboardRouter from './routes/dashboard.js';
 import boxesRouter from './routes/boxes.js';
 import techniciansRouter from './routes/technicians.js';
+import logsRouter from './routes/logs.js';
 
 // Load environment variables from root .env
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -22,6 +23,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/boxes', boxesRouter);
 app.use('/api/technicians', techniciansRouter);
+app.use('/api/logs', logsRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -32,11 +34,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Start Express Server
-app.listen(PORT, () => {
+// Start Express Server explicitly on 0.0.0.0 (all IPv4 interfaces)
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Backend server is running on http://localhost:${PORT}`);
+  console.log(`🌐 Network URL: http://192.168.111.16:${PORT}`);
   console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
   console.log(`📊 Dashboard API: http://localhost:${PORT}/api/dashboard`);
   console.log(`📦 Boxes API: http://localhost:${PORT}/api/boxes`);
   console.log(`👷 Technicians API: http://localhost:${PORT}/api/technicians`);
+  console.log(`📋 Activity Logs API: http://localhost:${PORT}/api/logs`);
 });

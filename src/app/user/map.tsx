@@ -1,10 +1,10 @@
 import { UserBottomNavigation } from "@/components/user-bottom-navigation";
-import { BOX_PINS, BoxPin } from "@/constants/distribution-boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Linking,
   Modal,
   Platform,
@@ -16,36 +16,160 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { boxService } from "@/services/boxes";
+
+export interface UserMapPin {
+  id: string;
+  code: string;
+  category: "MAIN_BOX" | "SUB_BOX";
+  status: "ACTIVE" | "NEEDS_TAG" | "ISSUE";
+  siteName: string;
+  address: string;
+  parentCode?: string | null;
+  equipmentItems: string[];
+  clientsCount: number;
+  latitude: number;
+  longitude: number;
+  zone: string;
+  tier: string;
+  portsUsed: number;
+  totalPorts: number;
+  opticalLoss: string;
+  circuitBreaker: string;
+  voltage: string;
+  temperature: string;
+  lastScannedBy?: string | null;
+  lastScannedAt?: string | null;
+}
 
 type FilterType = "ALL" | "ACTIVE" | "NEEDS_TAG" | "ISSUE";
 
 export default function UserMapScreen() {
+  const [boxes, setBoxes] = useState<UserMapPin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
   const [mapMode, setMapMode] = useState<"STREET_PINS" | "SATELLITE">(
     "STREET_PINS",
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPin, setSelectedPin] = useState<BoxPin | null>(null);
+  const [selectedPin, setSelectedPin] = useState<UserMapPin | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
   const isWeb = Platform.OS === "web";
 
-  const filteredPins = BOX_PINS.filter((pin) => {
+  const fetchMapBoxes = useCallback(async () => {
+    try {
+      const res = await boxService.getAll();
+      if (res.success && Array.isArray(res.boxes)) {
+        const mapped: UserMapPin[] = res.boxes.map((b: any) => ({
+          id: String(b.id),
+          code: String(b.code || "BOX"),
+          category: b.category === "MAIN_BOX" ? "MAIN_BOX" : "SUB_BOX",
+          status:
+            b.status === "ACTIVE" ||
+            b.status === "NEEDS_TAG" ||
+            b.status === "ISSUE"
+              ? b.status
+              : "ACTIVE",
+          siteName: String(b.siteName || "Distribution Site"),
+          address: String(b.address || "Iligan City"),
+          parentCode: b.parentCode || null,
+          equipmentItems: Array.isArray(b.equipmentItems)
+            ? b.equipmentItems
+            : Array.isArray(b.equipment)
+            ? b.equipment.map((e: any) =>
+                typeof e === "string" ? e : e.name || "Equipment",
+              )
+            : ["Optical Splitter", "Terminal Block"],
+          clientsCount: Number(b.clientsCount ?? b.clients?.length ?? 0),
+          latitude: Number(b.latitude) || 8.232,
+          longitude: Number(b.longitude) || 124.248,
+          zone: String(b.zone || "Poblacion"),
+          tier: String(
+            b.tier ||
+              (b.category === "MAIN_BOX"
+                ? "Tier 1 · Main Feeder"
+                : "Tier 2 · Sub-Distribution"),
+          ),
+          portsUsed: Number(b.portsUsed ?? b.activePorts ?? 0),
+          totalPorts: Number(b.totalPorts ?? 24),
+          opticalLoss: String(b.opticalLoss || "-18.5 dBm"),
+          circuitBreaker: String(b.circuitBreaker || "20A 1P MCB"),
+          voltage: String(b.voltage || "228.4 V"),
+          temperature: String(b.temperature || "31.2 °C"),
+          lastScannedBy: b.lastScannedBy ? String(b.lastScannedBy) : "Unverified",
+          lastScannedAt: b.lastScannedAt
+            ? String(b.lastScannedAt)
+            : "Pending Field Audit",
+        }));
+        return { boxes: mapped, error: null };
+      }
+      return { boxes: [], error: res.message || "Failed to load map nodes" };
+    } catch (err: any) {
+      return {
+        boxes: [],
+        error: err.message || "Network error loading map nodes",
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const { boxes: fetched, error: fetchErr } = await fetchMapBoxes();
+        if (!isMounted) return;
+        if (fetched) setBoxes(fetched);
+        if (fetchErr) setError(fetchErr);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchMapBoxes]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const { boxes: fetched, error: fetchErr } = await fetchMapBoxes();
+      if (fetched) setBoxes(fetched);
+      if (fetchErr) setError(fetchErr);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchMapBoxes]);
+
+  const filteredPins = boxes.filter((pin) => {
     const matchesFilter = activeFilter === "ALL" || pin.status === activeFilter;
+    const query = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      pin.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pin.siteName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pin.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pin.zone.toLowerCase().includes(searchQuery.toLowerCase());
+      query === "" ||
+      pin.code.toLowerCase().includes(query) ||
+      pin.siteName.toLowerCase().includes(query) ||
+      pin.address.toLowerCase().includes(query) ||
+      pin.zone.toLowerCase().includes(query);
     return matchesFilter && matchesSearch;
   });
+
+  const activeCount = boxes.filter((b) => b.status === "ACTIVE").length;
+  const needsTagCount = boxes.filter((b) => b.status === "NEEDS_TAG").length;
+  const issueCount = boxes.filter((b) => b.status === "ISSUE").length;
 
   // Listen for pin clicks from Web iframe
   useEffect(() => {
     if (isWeb && typeof window !== "undefined") {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === "SELECT_PIN") {
-          const found = BOX_PINS.find((p) => p.id === event.data.pinId);
+          const found = boxes.find((p) => p.id === event.data.pinId);
           if (found) {
             setSelectedPin(found);
           }
@@ -54,14 +178,14 @@ export default function UserMapScreen() {
       window.addEventListener("message", handleMessage);
       return () => window.removeEventListener("message", handleMessage);
     }
-  }, [isWeb]);
+  }, [isWeb, boxes]);
 
   // Handle messages from native WebView
   const handleNativeMessage = (event: { nativeEvent: { data: string } }) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data?.type === "SELECT_PIN") {
-        const found = BOX_PINS.find((p) => p.id === data.pinId);
+        const found = boxes.find((p) => p.id === data.pinId);
         if (found) {
           setSelectedPin(found);
         }
@@ -71,7 +195,7 @@ export default function UserMapScreen() {
     }
   };
 
-  const getStatusColor = (status: BoxPin["status"]) => {
+  const getStatusColor = (status: UserMapPin["status"]) => {
     switch (status) {
       case "ACTIVE":
         return {
@@ -278,7 +402,7 @@ export default function UserMapScreen() {
     `;
   };
 
-  const openDirections = (pin: BoxPin) => {
+  const openDirections = (pin: UserMapPin) => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${pin.latitude},${pin.longitude}&travelmode=driving`;
     if (isWeb) {
       if (typeof window !== "undefined") {
@@ -315,33 +439,50 @@ export default function UserMapScreen() {
               </View>
             </View>
 
-            {/* Satellite / Street Switcher */}
-            <TouchableOpacity
-              onPress={() =>
-                setMapMode(
-                  mapMode === "STREET_PINS" ? "SATELLITE" : "STREET_PINS",
-                )
-              }
-              className={`px-3 py-1.5 rounded-xl border flex-row items-center ${
-                mapMode === "SATELLITE"
-                  ? "bg-sky-600 border-sky-600"
-                  : "bg-slate-100 border-slate-200"
-              }`}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={mapMode === "SATELLITE" ? "map" : "earth"}
-                size={14}
-                color={mapMode === "SATELLITE" ? "#ffffff" : "#334155"}
-              />
-              <Text
-                className={`text-xs font-poppins-bold ml-1.5 ${
-                  mapMode === "SATELLITE" ? "text-white" : "text-[#334155]"
-                }`}
+            <View className="flex-row items-center gap-1.5">
+              {/* Refresh Button */}
+              <TouchableOpacity
+                onPress={handleRefresh}
+                disabled={refreshing}
+                className="w-8 h-8 rounded-xl border border-slate-200 bg-slate-50 items-center justify-center"
+                activeOpacity={0.8}
               >
-                {mapMode === "SATELLITE" ? "Street" : "Satellite"}
-              </Text>
-            </TouchableOpacity>
+                <Ionicons
+                  name="refresh"
+                  size={14}
+                  color="#334155"
+                  style={refreshing ? { transform: [{ rotate: "45deg" }] } : undefined}
+                />
+              </TouchableOpacity>
+
+              {/* Satellite / Street Switcher */}
+              <TouchableOpacity
+                onPress={() =>
+                  setMapMode(
+                    mapMode === "STREET_PINS" ? "SATELLITE" : "STREET_PINS",
+                  )
+                }
+                className={`px-3 py-1.5 rounded-xl border flex-row items-center ${
+                  mapMode === "SATELLITE"
+                    ? "bg-sky-600 border-sky-600"
+                    : "bg-slate-100 border-slate-200"
+                }`}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={mapMode === "SATELLITE" ? "map" : "earth"}
+                  size={14}
+                  color={mapMode === "SATELLITE" ? "#ffffff" : "#334155"}
+                />
+                <Text
+                  className={`text-xs font-poppins-bold ml-1.5 ${
+                    mapMode === "SATELLITE" ? "text-white" : "text-[#334155]"
+                  }`}
+                >
+                  {mapMode === "SATELLITE" ? "Street" : "Satellite"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Search Box Input */}
@@ -380,7 +521,7 @@ export default function UserMapScreen() {
                   activeFilter === "ALL" ? "text-white" : "text-[#64748b]"
                 }`}
               >
-                All Boxes ({BOX_PINS.length})
+                All Boxes ({boxes.length})
               </Text>
             </TouchableOpacity>
 
@@ -397,7 +538,7 @@ export default function UserMapScreen() {
                   activeFilter === "ACTIVE" ? "text-white" : "text-[#4d6029]"
                 }`}
               >
-                Tagged (4)
+                Tagged ({activeCount})
               </Text>
             </TouchableOpacity>
 
@@ -414,7 +555,7 @@ export default function UserMapScreen() {
                   activeFilter === "NEEDS_TAG" ? "text-white" : "text-amber-700"
                 }`}
               >
-                Needs Tag (2)
+                Needs Tag ({needsTagCount})
               </Text>
             </TouchableOpacity>
 
@@ -431,7 +572,7 @@ export default function UserMapScreen() {
                   activeFilter === "ISSUE" ? "text-white" : "text-rose-700"
                 }`}
               >
-                Issues (1)
+                Issues ({issueCount})
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -439,9 +580,29 @@ export default function UserMapScreen() {
 
         {/* FULL INTERACTIVE GOOGLE MAP CONTAINER */}
         <View className="flex-1 relative bg-[#e2e8f0] overflow-hidden">
+          {loading && boxes.length === 0 && (
+            <View className="absolute inset-0 z-20 bg-white/80 items-center justify-center">
+              <ActivityIndicator size="large" color="#4d6029" />
+              <Text className="text-xs font-poppins-medium text-slate-600 mt-2">
+                Loading network grid nodes...
+              </Text>
+            </View>
+          )}
+
+          {!loading && boxes.length === 0 && (
+            <View className="absolute top-4 left-4 right-4 z-20 bg-white/95 rounded-2xl p-4 shadow-md border border-slate-200 items-center">
+              <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                No distribution boxes found
+              </Text>
+              <Text className="text-[11px] font-poppins text-slate-500 text-center mt-0.5">
+                {error || "Registered distribution boxes will appear on this map."}
+              </Text>
+            </View>
+          )}
+
           {isWeb ? (
             <iframe
-              key={`user-map-${activeFilter}-${mapMode}`}
+              key={`user-map-${activeFilter}-${mapMode}-${boxes.length}`}
               title="Technician Distribution Box Map"
               srcDoc={generateMapHtml()}
               style={{
@@ -452,7 +613,7 @@ export default function UserMapScreen() {
             />
           ) : (
             <WebView
-              key={`native-user-map-${activeFilter}-${mapMode}`}
+              key={`native-user-map-${activeFilter}-${mapMode}-${boxes.length}`}
               originWhitelist={["*"]}
               source={{ html: generateMapHtml() }}
               onMessage={handleNativeMessage}
@@ -517,7 +678,7 @@ export default function UserMapScreen() {
                     Loss
                   </Text>
                   <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {selectedPin.opticalLoss.split(" ")[0]}
+                    {(selectedPin.opticalLoss || "-18.5").split(" ")[0]}
                   </Text>
                 </View>
                 <View className="w-px bg-slate-200 h-full" />
@@ -526,7 +687,7 @@ export default function UserMapScreen() {
                     Breaker
                   </Text>
                   <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {selectedPin.circuitBreaker.split(" ")[0]}
+                    {(selectedPin.circuitBreaker || "20A").split(" ")[0]}
                   </Text>
                 </View>
                 <View className="w-px bg-slate-200 h-full" />
@@ -541,7 +702,7 @@ export default function UserMapScreen() {
                         : "text-[#0f172a]"
                     }`}
                   >
-                    {selectedPin.temperature.split(" ")[0]}°C
+                    {(selectedPin.temperature || "30").split(" ")[0]}°C
                   </Text>
                 </View>
               </View>
@@ -711,7 +872,7 @@ export default function UserMapScreen() {
                     <Text className="text-[10px] font-poppins-bold text-[#64748b] uppercase tracking-wider mb-2">
                       Internal Equipment Checklist
                     </Text>
-                    {selectedPin.equipmentItems.map((item, idx) => (
+                    {(selectedPin.equipmentItems || []).map((item, idx) => (
                       <View
                         key={idx}
                         className="flex-row items-center mb-1.5 last:mb-0"
@@ -733,9 +894,9 @@ export default function UserMapScreen() {
                     <Text className="text-[10px] font-poppins text-[#64748b]">
                       Last Verified By:{" "}
                       <Text className="font-poppins-bold text-[#0f172a]">
-                        {selectedPin.lastScannedBy}
+                        {selectedPin.lastScannedBy || "Unverified"}
                       </Text>{" "}
-                      ({selectedPin.lastScannedAt})
+                      ({selectedPin.lastScannedAt || "Pending Field Audit"})
                     </Text>
                   </View>
                 </ScrollView>

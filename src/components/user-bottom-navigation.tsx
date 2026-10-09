@@ -1,5 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
 import {
   LayoutChangeEvent,
@@ -24,7 +24,6 @@ interface UserBottomNavigationProps {
 export function UserBottomNavigation({
   activeRoute,
 }: UserBottomNavigationProps) {
-  const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
   const [navWidth, setNavWidth] = useState<number>(windowWidth);
 

@@ -33,9 +33,49 @@ export interface ClientConnection {
   port: string;
   accountNumber: string;
   name: string;
+  clientType?: "Commercial" | "Residential" | string;
   plan?: string;
   status: "CONNECTED" | "DISCONNECTED";
 }
+
+export const AVAILABLE_SUBSCRIBER_PLANS = [
+  {
+    name: "100 Mbps Fiber Starter",
+    category: "Residential" as const,
+    speed: "100 Mbps",
+    description: "Standard residential fiber connection",
+  },
+  {
+    name: "200 Mbps Fiber Pro",
+    category: "Residential" as const,
+    speed: "200 Mbps",
+    description: "High-speed family streaming & work from home",
+  },
+  {
+    name: "300 Mbps Fiber Ultra",
+    category: "Residential" as const,
+    speed: "300 Mbps",
+    description: "Ultra-fast low-latency home tier",
+  },
+  {
+    name: "300 Mbps Business Fiber",
+    category: "Commercial" as const,
+    speed: "300 Mbps",
+    description: "Commercial business tier with dedicated SLA",
+  },
+  {
+    name: "500 Mbps Dedicated Fiber",
+    category: "Commercial" as const,
+    speed: "500 Mbps",
+    description: "Dedicated optical bandwidth for corporate & malls",
+  },
+  {
+    name: "1 Gbps Enterprise Link",
+    category: "Commercial" as const,
+    speed: "1 Gbps",
+    description: "Enterprise gigabit backbone link",
+  },
+];
 
 export interface DistributionBox {
   id: string;
@@ -219,6 +259,11 @@ export default function BoxManagementScreen() {
   const [newClientPort, setNewClientPort] = useState("");
   const [newClientAccount, setNewClientAccount] = useState("");
   const [newClientName, setNewClientName] = useState("");
+  const [newClientType, setNewClientType] = useState<"Residential" | "Commercial">("Residential");
+  const [isClientTypeDropdownOpen, setIsClientTypeDropdownOpen] = useState(false);
+  const [newClientPlan, setNewClientPlan] = useState("100 Mbps Fiber Starter");
+  const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] = useState(false);
+  const [subscriberPlanFilter, setSubscriberPlanFilter] = useState<string>("ALL");
   const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
     useState(false);
   const [matchedSubscriber, setMatchedSubscriber] =
@@ -273,6 +318,14 @@ export default function BoxManagementScreen() {
     if (matched) {
       setNewClientName(matched.name);
       setMatchedSubscriber(matched);
+      if (matched.category === "Commercial" || matched.category === "Residential") {
+        setNewClientType(matched.category);
+      } else if (matched.category === "Enterprise" || matched.category === "Government") {
+        setNewClientType("Commercial");
+      }
+      if (matched.plan) {
+        setNewClientPlan(matched.plan);
+      }
     } else {
       setMatchedSubscriber(null);
     }
@@ -282,6 +335,14 @@ export default function BoxManagementScreen() {
     setNewClientAccount(sub.accountNumber);
     setNewClientName(sub.name);
     setMatchedSubscriber(sub);
+    if (sub.category === "Commercial" || sub.category === "Residential") {
+      setNewClientType(sub.category);
+    } else if (sub.category === "Enterprise" || sub.category === "Government") {
+      setNewClientType("Commercial");
+    }
+    if (sub.plan) {
+      setNewClientPlan(sub.plan);
+    }
     setIsSubscriberDirectoryOpen(false);
   };
 
@@ -320,6 +381,14 @@ export default function BoxManagementScreen() {
       setNewClientAccount(unassignedInDirectory.accountNumber);
       setNewClientName(unassignedInDirectory.name);
       setMatchedSubscriber(unassignedInDirectory);
+      if (unassignedInDirectory.category === "Commercial" || unassignedInDirectory.category === "Residential") {
+        setNewClientType(unassignedInDirectory.category);
+      } else if (unassignedInDirectory.category === "Enterprise" || unassignedInDirectory.category === "Government") {
+        setNewClientType("Commercial");
+      }
+      if (unassignedInDirectory.plan) {
+        setNewClientPlan(unassignedInDirectory.plan);
+      }
     } else {
       const fallbackAcc = generateSequentialAccount(selectedBoxForDetails);
       setNewClientAccount(fallbackAcc);
@@ -329,13 +398,26 @@ export default function BoxManagementScreen() {
       if (matched) {
         setNewClientName(matched.name);
         setMatchedSubscriber(matched);
+        if (matched.category === "Commercial" || matched.category === "Residential") {
+          setNewClientType(matched.category);
+        } else if (matched.category === "Enterprise" || matched.category === "Government") {
+          setNewClientType("Commercial");
+        }
+        if (matched.plan) {
+          setNewClientPlan(matched.plan);
+        }
       } else {
         setNewClientName("");
         setMatchedSubscriber(null);
+        setNewClientType("Residential");
+        setNewClientPlan("100 Mbps Fiber Starter");
       }
     }
 
     setIsClientPortDropdownOpen(false);
+    setIsClientTypeDropdownOpen(false);
+    setIsClientPlanDropdownOpen(false);
+    setSubscriberPlanFilter("ALL");
     setIsSubscriberDirectoryOpen(false);
     setDirectorySearchQuery("");
     setIsAddClientModalOpen(true);
@@ -370,6 +452,8 @@ export default function BoxManagementScreen() {
       port: newClientPort,
       accountNumber: newClientAccount.trim().toUpperCase(),
       name: newClientName.trim(),
+      clientType: newClientType,
+      plan: newClientPlan,
       status: "CONNECTED",
     };
 
@@ -403,6 +487,8 @@ export default function BoxManagementScreen() {
         port: newClientPort,
         accountNumber: newClientAccount.trim().toUpperCase(),
         name: newClientName.trim(),
+        clientType: newClientType,
+        plan: newClientPlan,
       })
       .catch((err) => console.error("Error saving client:", err));
   };
@@ -1817,18 +1903,51 @@ export default function BoxManagementScreen() {
                                     </Text>
                                   </View>
                                   <View className="flex-1">
-                                    <Text
-                                      className="text-xs font-poppins-bold text-[#0f172a]"
-                                      numberOfLines={1}
-                                    >
-                                      {client.name}
-                                    </Text>
-                                    <Text
-                                      className="text-[11px] font-mono font-poppins-semibold text-[#64748b]"
-                                      numberOfLines={1}
-                                    >
-                                      {client.accountNumber}
-                                    </Text>
+                                    <View className="flex-row items-center flex-wrap">
+                                      <Text
+                                        className="text-xs font-poppins-bold text-[#0f172a] mr-1.5"
+                                        numberOfLines={1}
+                                      >
+                                        {client.name}
+                                      </Text>
+                                      {client.clientType && (
+                                        <View
+                                          className={`px-1.5 py-0.2 rounded border ${
+                                            client.clientType.toUpperCase().includes("COMMERCIAL")
+                                              ? "bg-blue-50 border-blue-200"
+                                              : "bg-emerald-50 border-emerald-200"
+                                          }`}
+                                        >
+                                          <Text
+                                            className={`text-[9px] font-poppins-bold ${
+                                              client.clientType.toUpperCase().includes("COMMERCIAL")
+                                                ? "text-blue-700"
+                                                : "text-emerald-700"
+                                            }`}
+                                          >
+                                            {client.clientType.toUpperCase().includes("COMMERCIAL")
+                                              ? "Commercial"
+                                              : "Residential"}
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                    <View className="flex-row items-center mt-0.5">
+                                      <Text
+                                        className="text-[11px] font-mono font-poppins-semibold text-[#64748b]"
+                                        numberOfLines={1}
+                                      >
+                                        {client.accountNumber}
+                                      </Text>
+                                      {client.plan && (
+                                        <Text
+                                          className="text-[10px] font-poppins text-[#94a3b8] ml-1.5"
+                                          numberOfLines={1}
+                                        >
+                                          · {client.plan}
+                                        </Text>
+                                      )}
+                                    </View>
                                   </View>
                                 </View>
 
@@ -3092,6 +3211,250 @@ export default function BoxManagementScreen() {
                       className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a] py-2"
                     />
                   </View>
+                </View>
+
+                {/* 4. Subscriber Type Dropdown (Commercial vs Residential) */}
+                <View className="mb-3.5">
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
+                    Subscriber Type (Classification) *
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsClientTypeDropdownOpen(!isClientTypeDropdownOpen);
+                      setIsClientPlanDropdownOpen(false);
+                      setIsClientPortDropdownOpen(false);
+                    }}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                    activeOpacity={0.8}
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <Ionicons
+                        name={
+                          newClientType === "Commercial"
+                            ? "business-outline"
+                            : "home-outline"
+                        }
+                        size={16}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-medium text-[#0f172a] ml-2">
+                        {newClientType}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={
+                        isClientTypeDropdownOpen
+                          ? "chevron-up"
+                          : "chevron-down"
+                      }
+                      size={16}
+                      color="#64748b"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Expanded Dropdown Panel matching Equipment Catalog */}
+                  {isClientTypeDropdownOpen && (
+                    <View className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 shadow-xs">
+                      {[
+                        {
+                          type: "Residential" as const,
+                          name: "Residential",
+                          badge: "Home",
+                        },
+                        {
+                          type: "Commercial" as const,
+                          name: "Commercial",
+                          badge: "Business",
+                        },
+                      ].map((item) => {
+                        const isSelected = newClientType === item.type;
+                        return (
+                          <TouchableOpacity
+                            key={item.type}
+                            onPress={() => {
+                              setNewClientType(item.type);
+                              setIsClientTypeDropdownOpen(false);
+                              if (item.type === "Residential") {
+                                if (
+                                  newClientPlan.includes("Business") ||
+                                  newClientPlan.includes("Enterprise")
+                                ) {
+                                  setNewClientPlan("100 Mbps Fiber Starter");
+                                }
+                              } else {
+                                if (newClientPlan.includes("Starter")) {
+                                  setNewClientPlan("300 Mbps Business Fiber");
+                                }
+                              }
+                            }}
+                            className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
+                            activeOpacity={0.7}
+                          >
+                            <View className="flex-row items-center flex-1 mr-2">
+                              <Ionicons
+                                name={
+                                  isSelected ? "checkbox" : "square-outline"
+                                }
+                                size={18}
+                                color={isSelected ? "#4d6029" : "#94a3b8"}
+                              />
+                              <Text
+                                className={`text-xs ml-2.5 font-poppins-medium ${
+                                  isSelected
+                                    ? "text-[#4d6029] font-poppins-semibold"
+                                    : "text-[#0f172a]"
+                                }`}
+                              >
+                                {item.name}
+                              </Text>
+                            </View>
+                            <View className="bg-slate-100 px-2 py-0.5 rounded">
+                              <Text className="text-[9px] font-poppins text-[#64748b]">
+                                {item.badge}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                {/* 5. Subscriber Plan Dropdown */}
+                <View className="mb-3.5">
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
+                    Subscriber Plan *
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsClientPlanDropdownOpen(!isClientPlanDropdownOpen);
+                      setIsClientTypeDropdownOpen(false);
+                      setIsClientPortDropdownOpen(false);
+                    }}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                    activeOpacity={0.8}
+                  >
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <MaterialCommunityIcons
+                        name="speedometer"
+                        size={16}
+                        color="#4d6029"
+                      />
+                      <Text
+                        className="text-xs font-poppins-medium text-[#0f172a] ml-2 flex-1"
+                        numberOfLines={1}
+                      >
+                        {newClientPlan || "Select Plan from Catalog"}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={
+                        isClientPlanDropdownOpen
+                          ? "chevron-up"
+                          : "chevron-down"
+                      }
+                      size={16}
+                      color="#64748b"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Expanded Dropdown Panel matching Equipment Catalog */}
+                  {isClientPlanDropdownOpen && (
+                    <View className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 shadow-xs">
+                      {/* Plan Category Filter Tabs */}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        className="mb-3"
+                        contentContainerStyle={{
+                          flexDirection: "row",
+                          gap: 6,
+                          alignItems: "center",
+                          paddingLeft: 2,
+                          paddingRight: 20,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        {[
+                          "ALL",
+                          "Residential",
+                          "Commercial",
+                        ].map((cat) => (
+                          <TouchableOpacity
+                            key={cat}
+                            onPress={() => setSubscriberPlanFilter(cat)}
+                            className={`px-2.5 py-1 rounded-xl border ${
+                              subscriberPlanFilter === cat
+                                ? "bg-[#4d6029] border-[#4d6029] shadow-xs"
+                                : "bg-white border-slate-200 shadow-xs"
+                            }`}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              className={`text-[11px] ${
+                                subscriberPlanFilter === cat
+                                  ? "text-white font-poppins-bold"
+                                  : "text-[#64748b] font-poppins-medium"
+                              }`}
+                            >
+                              {cat === "ALL" ? "All" : cat}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+
+                      {/* Plan Item Checklist */}
+                      <ScrollView
+                        className="max-h-56"
+                        contentContainerStyle={{ paddingVertical: 2 }}
+                        showsVerticalScrollIndicator={true}
+                        nestedScrollEnabled={true}
+                      >
+                        {AVAILABLE_SUBSCRIBER_PLANS.filter(
+                          (plan) =>
+                            subscriberPlanFilter === "ALL" ||
+                            plan.category === subscriberPlanFilter,
+                        ).map((plan) => {
+                          const isSelected = newClientPlan === plan.name;
+                          return (
+                            <TouchableOpacity
+                              key={plan.name}
+                              onPress={() => {
+                                setNewClientPlan(plan.name);
+                                setIsClientPlanDropdownOpen(false);
+                              }}
+                              className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
+                              activeOpacity={0.7}
+                            >
+                              <View className="flex-row items-center flex-1 mr-2">
+                                <Ionicons
+                                  name={
+                                    isSelected ? "checkbox" : "square-outline"
+                                  }
+                                  size={18}
+                                  color={isSelected ? "#4d6029" : "#94a3b8"}
+                                />
+                                <Text
+                                  className={`text-xs ml-2.5 font-poppins-medium ${
+                                    isSelected
+                                      ? "text-[#4d6029] font-poppins-semibold"
+                                      : "text-[#0f172a]"
+                                  }`}
+                                >
+                                  {plan.name}
+                                </Text>
+                              </View>
+                              <View className="bg-slate-100 px-2 py-0.5 rounded">
+                                <Text className="text-[9px] font-poppins text-[#64748b]">
+                                  {plan.category}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               </ScrollView>
 

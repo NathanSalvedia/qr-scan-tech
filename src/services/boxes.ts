@@ -1,24 +1,5 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { authState } from './auth-state';
-
-const getApiBaseUrl = () => {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-    return envUrl;
-  }
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const hostIp = hostUri.split(':')[0];
-    return `http://${hostIp}:5000/api`;
-  }
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-  return 'http://localhost:5000/api';
-};
-
-const API_URL = getApiBaseUrl();
+import { API_BASE_URL as API_URL, apiFetch } from './api-config';
 
 export interface EquipmentItem {
   id: string;
@@ -31,6 +12,7 @@ export interface ClientConnection {
   port: string;
   accountNumber: string;
   name: string;
+  clientType?: 'Commercial' | 'Residential' | string;
   plan?: string;
   status: 'CONNECTED' | 'DISCONNECTED';
 }
@@ -49,10 +31,21 @@ export interface DistributionBox {
   status: 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE';
   totalPorts: number;
   activePorts: number;
+  portsUsed?: number;
+  zone?: string;
+  tier?: string;
+  subscriberType?: 'Commercial' | 'Residential' | string;
+  clientType?: 'Commercial' | 'Residential' | string;
+  opticalLoss?: string;
+  temperature?: string;
+  circuitBreaker?: string;
+  voltage?: string;
   equipment: EquipmentItem[];
   clients: ClientConnection[];
   qrToken: string;
   lastScanned?: string;
+  lastScannedBy?: string;
+  lastScannedAt?: string;
   notes?: string;
 }
 
@@ -68,7 +61,7 @@ export const boxService = {
   getAll: async (): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes`, {
+      const res = await apiFetch(`${API_URL}/boxes`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -84,7 +77,7 @@ export const boxService = {
   getById: async (id: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${id}`, {
+      const res = await apiFetch(`${API_URL}/boxes/${id}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -100,7 +93,7 @@ export const boxService = {
   create: async (payload: any): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes`, {
+      const res = await apiFetch(`${API_URL}/boxes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,7 +111,7 @@ export const boxService = {
   update: async (id: string, payload: any): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${id}`, {
+      const res = await apiFetch(`${API_URL}/boxes/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -135,11 +128,11 @@ export const boxService = {
   // 5. Assign Client to Port
   assignClient: async (
     boxId: string,
-    client: { port: string; accountNumber: string; name: string; plan?: string }
+    client: { port: string; accountNumber: string; name: string; plan?: string; clientType?: string }
   ): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${boxId}/clients`, {
+      const res = await apiFetch(`${API_URL}/boxes/${boxId}/clients`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,7 +150,7 @@ export const boxService = {
   toggleClientStatus: async (boxId: string, port: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${boxId}/clients/${port}`, {
+      const res = await apiFetch(`${API_URL}/boxes/${boxId}/clients/${port}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +167,7 @@ export const boxService = {
   removeClient: async (boxId: string, port: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${boxId}/clients/${port}`, {
+      const res = await apiFetch(`${API_URL}/boxes/${boxId}/clients/${port}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -191,7 +184,7 @@ export const boxService = {
   delete: async (id: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${id}`, {
+      const res = await apiFetch(`${API_URL}/boxes/${id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -208,7 +201,7 @@ export const boxService = {
   recordDispatch: async (boxId: string, stickerSize?: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/${boxId}/dispatch`, {
+      const res = await apiFetch(`${API_URL}/boxes/${boxId}/dispatch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -226,7 +219,7 @@ export const boxService = {
   recordBatchDispatch: async (boxIds: string[], batchNumber?: string): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();
-      const res = await fetch(`${API_URL}/boxes/dispatch-batch`, {
+      const res = await apiFetch(`${API_URL}/boxes/dispatch-batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

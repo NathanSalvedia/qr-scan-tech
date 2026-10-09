@@ -102,7 +102,7 @@ export default function TechniciansScreen() {
     const matchesQuery =
       query === "" ||
       tech.name.toLowerCase().includes(query) ||
-      tech.employeeId.toLowerCase().includes(query) ||
+      tech.email.toLowerCase().includes(query) ||
       tech.role.toLowerCase().includes(query) ||
       tech.phone.toLowerCase().includes(query) ||
       tech.lastBoxCode.toLowerCase().includes(query);
@@ -388,7 +388,7 @@ export default function TechniciansScreen() {
               <View className="flex-1 flex-row items-center bg-[#f8fafc] border border-slate-200/80 rounded-2xl px-3.5 py-2.5">
                 <Ionicons name="search" size={17} color="#64748b" />
                 <TextInput
-                  placeholder="Search by technician name, ID (e.g. TECH-ILG-01), role, or phone..."
+                  placeholder="Search by technician name, email, role, or phone..."
                   placeholderTextColor="#94a3b8"
                   value={searchQuery}
                   onChangeText={(text) => {
@@ -540,7 +540,8 @@ export default function TechniciansScreen() {
                           {/* 1. Technician & Role */}
                           <View className="flex-[2] min-w-[220px] pr-2 flex-row items-center">
                             <View
-                              className={`w-10 h-10 rounded-2xl ${tech.avatarBg} items-center justify-center mr-3 shadow-xs`}
+                              className="w-10 h-10 rounded-2xl items-center justify-center mr-3 shadow-xs"
+                              style={{ backgroundColor: tech.avatarColor || '#4d6029' }}
                             >
                               <Text className="text-sm font-poppins-bold text-white">
                                 {tech.name
@@ -557,14 +558,8 @@ export default function TechniciansScreen() {
                                 {tech.name}
                               </Text>
                               <View className="flex-row items-center mt-0.5">
-                                <Text className="text-[10px] font-mono font-semibold text-[#4d6029] mr-1.5">
-                                  {tech.employeeId}
-                                </Text>
-                                <Text
-                                  className="text-[10px] font-poppins text-[#64748b]"
-                                  numberOfLines={1}
-                                >
-                                  · {tech.role}
+                                <Text className="text-[10px] font-poppins text-[#64748b]">
+                                  role: <Text className="font-poppins-semibold text-[#475569]">{tech.role}</Text>
                                 </Text>
                               </View>
                             </View>
@@ -817,7 +812,8 @@ export default function TechniciansScreen() {
               <View className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex-row items-center justify-between">
                 <View className="flex-row items-center">
                   <View
-                    className={`w-12 h-12 rounded-2xl ${selectedTechForDetails.avatarBg} items-center justify-center mr-3.5 shadow-sm`}
+                    className="w-12 h-12 rounded-2xl items-center justify-center mr-3.5 shadow-sm"
+                    style={{ backgroundColor: selectedTechForDetails.avatarColor || '#4d6029' }}
                   >
                     <Text className="text-base font-poppins-bold text-white">
                       {selectedTechForDetails.name
@@ -833,12 +829,12 @@ export default function TechniciansScreen() {
                       </Text>
                       <View className="bg-slate-200 px-2 py-0.5 rounded-md ml-2">
                         <Text className="text-[10px] font-mono font-bold text-[#334155]">
-                          {selectedTechForDetails.employeeId}
+                          role: {selectedTechForDetails.role}
                         </Text>
                       </View>
                     </View>
                     <Text className="text-xs font-poppins text-[#64748b]">
-                      {selectedTechForDetails.role} ·{" "}
+                      {selectedTechForDetails.email} ·{" "}
                       {selectedTechForDetails.phone}
                     </Text>
                   </View>

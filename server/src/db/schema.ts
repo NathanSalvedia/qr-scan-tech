@@ -77,6 +77,7 @@ export const clientConnections = pgTable('client_connections', {
   portNumber: integer('port_number').notNull(),
   accountNumber: varchar('account_number', { length: 100 }).notNull(),
   customerName: varchar('customer_name', { length: 150 }).notNull(),
+  clientType: varchar('client_type', { length: 50 }).default('RESIDENTIAL'),
   servicePlan: varchar('service_plan', { length: 100 }),
   signalDbm: varchar('signal_dbm', { length: 50 }),
   status: varchar('status', { length: 50 }).default('CONNECTED').notNull(),

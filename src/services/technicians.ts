@@ -1,24 +1,5 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { authState } from './auth-state';
-
-const getApiBaseUrl = () => {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-    return envUrl;
-  }
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const hostIp = hostUri.split(':')[0];
-    return `http://${hostIp}:5000/api`;
-  }
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-  return 'http://localhost:5000/api';
-};
-
-const API_URL = getApiBaseUrl();
+import { API_BASE_URL as API_URL, apiFetch } from './api-config';
 
 export interface ScanLogEntry {
   id: string;
@@ -43,6 +24,7 @@ export interface Technician {
   name: string;
   role: string;
   avatarBg: string;
+  avatarColor?: string;
   phone: string;
   email: string;
   dutyStatus: 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY';
@@ -70,7 +52,7 @@ export const technicianService = {
   getAll: async (): Promise<TechniciansApiResponse> => {
     try {
       const token = await authState.getToken();
-      const response = await fetch(`${API_URL}/technicians`, {
+      const response = await apiFetch(`${API_URL}/technicians`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +78,7 @@ export const technicianService = {
   getById: async (id: string): Promise<{ success: boolean; technician?: Technician; message?: string }> => {
     try {
       const token = await authState.getToken();
-      const response = await fetch(`${API_URL}/technicians/${id}`, {
+      const response = await apiFetch(`${API_URL}/technicians/${id}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
