@@ -91,8 +91,8 @@ export const BOX_PINS: BoxPin[] = [
     category: 'MAIN_BOX',
     status: 'ACTIVE',
     siteName: 'Multifactors Sales',
-    address: 'Crown Paper and Stationery Warehouse, Iligan City, 9200 Lanao del Norte',
-    zone: 'Poblacion',
+    address: 'Badelles Extension cor. 11th Street, Pala-o, Iligan City, 9200 Lanao del Norte',
+    zone: 'Pala-o',
     tier: 'Tier 1 · Main Feeder',
     equipmentItems: [
       'Fiber Optic Adapters / Couplers',
@@ -110,8 +110,8 @@ export const BOX_PINS: BoxPin[] = [
     installedDate: '2024-04-10',
     lastScannedBy: 'Tech. M. Santos',
     lastScannedAt: 'Yesterday, 04:15 PM',
-    latitude: 8.227864,
-    longitude: 124.240089,
+    latitude: 8.224850,
+    longitude: 124.249850,
   },
   {
     id: '3',

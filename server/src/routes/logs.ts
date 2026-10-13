@@ -454,12 +454,23 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ success: false, message: 'Valid boxId or boxCode is required' });
     }
 
+    // Normalize scanType to match standard system audit types
+    const rawScanType = String(scanType || 'CAMERA_QR').toUpperCase().trim();
+    let safeScanType = 'CAMERA_QR';
+    if (['ROUTINE_AUDIT', 'MANUAL_AUDIT', 'AUDIT'].includes(rawScanType)) {
+      safeScanType = 'ROUTINE_AUDIT';
+    } else if (['MANUAL_SEARCH', 'SIMULATED_SCAN', 'SIMULATION', 'MANUAL'].includes(rawScanType)) {
+      safeScanType = 'MANUAL_SEARCH';
+    } else if (rawScanType === 'CAMERA_QR') {
+      safeScanType = 'CAMERA_QR';
+    }
+
     const [newLog] = await db
       .insert(scanAuditLogs)
       .values({
         boxId: targetBoxId,
         technicianId,
-        scanType,
+        scanType: safeScanType,
         padlockVerified: Boolean(padlockVerified),
         measuredSignal: measuredSignal ? String(measuredSignal) : null,
         measuredTemp: measuredTemp ? String(measuredTemp) : null,

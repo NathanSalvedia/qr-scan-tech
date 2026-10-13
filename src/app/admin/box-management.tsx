@@ -1,13 +1,11 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
 import {
   STANDARD_HARDWARE_CATALOG,
-  STATIC_SUBSCRIBERS_DIRECTORY,
-  SubscriberDirectoryRecord,
 } from "@/constants/distribution-boxes";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +19,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { boxService } from "@/services/boxes";
+import { subscriberService, SubscriberRecord } from "@/services/subscribers";
 
 export interface EquipmentItem {
   id: string;
@@ -40,40 +39,64 @@ export interface ClientConnection {
 
 export const AVAILABLE_SUBSCRIBER_PLANS = [
   {
-    name: "100 Mbps Fiber Starter",
+    name: "50 Mbps Fiber Plan",
+    category: "Residential" as const,
+    speed: "50 Mbps",
+    description: "Standard 50 Mbps residential fiber connection",
+  },
+  {
+    name: "70 Mbps Fiber Plan",
+    category: "Residential" as const,
+    speed: "70 Mbps",
+    description: "High-speed 70 Mbps home streaming & browsing",
+  },
+  {
+    name: "100 Mbps Fiber Plan",
     category: "Residential" as const,
     speed: "100 Mbps",
-    description: "Standard residential fiber connection",
+    description: "Fast 100 Mbps family fiber connection",
   },
   {
-    name: "200 Mbps Fiber Pro",
+    name: "200 Mbps Fiber Plan",
     category: "Residential" as const,
     speed: "200 Mbps",
-    description: "High-speed family streaming & work from home",
+    description: "High-speed 200 Mbps streaming & gaming tier",
   },
   {
-    name: "300 Mbps Fiber Ultra",
+    name: "300 Mbps Fiber Plan",
     category: "Residential" as const,
     speed: "300 Mbps",
-    description: "Ultra-fast low-latency home tier",
+    description: "Ultra-fast 300 Mbps low-latency fiber tier",
   },
   {
-    name: "300 Mbps Business Fiber",
+    name: "50 Mbps Fiber Plan",
+    category: "Commercial" as const,
+    speed: "50 Mbps",
+    description: "50 Mbps commercial fiber plan",
+  },
+  {
+    name: "70 Mbps Fiber Plan",
+    category: "Commercial" as const,
+    speed: "70 Mbps",
+    description: "70 Mbps commercial fiber plan",
+  },
+  {
+    name: "100 Mbps Fiber Plan",
+    category: "Commercial" as const,
+    speed: "100 Mbps",
+    description: "100 Mbps commercial fiber plan",
+  },
+  {
+    name: "200 Mbps Fiber Plan",
+    category: "Commercial" as const,
+    speed: "200 Mbps",
+    description: "200 Mbps commercial fiber plan",
+  },
+  {
+    name: "300 Mbps Fiber Plan",
     category: "Commercial" as const,
     speed: "300 Mbps",
-    description: "Commercial business tier with dedicated SLA",
-  },
-  {
-    name: "500 Mbps Dedicated Fiber",
-    category: "Commercial" as const,
-    speed: "500 Mbps",
-    description: "Dedicated optical bandwidth for corporate & malls",
-  },
-  {
-    name: "1 Gbps Enterprise Link",
-    category: "Commercial" as const,
-    speed: "1 Gbps",
-    description: "Enterprise gigabit backbone link",
+    description: "300 Mbps commercial fiber plan",
   },
 ];
 
@@ -240,9 +263,11 @@ export default function BoxManagementScreen() {
   const [newMountingType, setNewMountingType] = useState<
     "Utility Pole" | "Wall Mount" | "Cabinet"
   >("Utility Pole");
-  const [newPoleNumber, setNewPoleNumber] = useState("");
-  const [newLatitude, setNewLatitude] = useState("8.225963");
-  const [newLongitude, setNewLongitude] = useState("124.238820");
+  const [newLatitude, setNewLatitude] = useState("");
+  const [newLongitude, setNewLongitude] = useState("");
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodingStatus, setGeocodingStatus] = useState<string | null>(null);
+  const geocodeDebounceRef = useRef<any>(null);
   const [newPorts, setNewPorts] = useState("24");
   const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
   const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([
@@ -263,13 +288,14 @@ export default function BoxManagementScreen() {
   const [newClientName, setNewClientName] = useState("");
   const [newClientType, setNewClientType] = useState<"Residential" | "Commercial">("Residential");
   const [isClientTypeDropdownOpen, setIsClientTypeDropdownOpen] = useState(false);
-  const [newClientPlan, setNewClientPlan] = useState("100 Mbps Fiber Starter");
+  const [newClientPlan, setNewClientPlan] = useState("100 Mbps Fiber Plan");
   const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] = useState(false);
   const [subscriberPlanFilter, setSubscriberPlanFilter] = useState<string>("ALL");
   const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
     useState(false);
   const [matchedSubscriber, setMatchedSubscriber] =
-    useState<SubscriberDirectoryRecord | null>(null);
+    useState<any | null>(null);
+  const [liveDirectory, setLiveDirectory] = useState<SubscriberRecord[]>([]);
   const [isSubscriberDirectoryOpen, setIsSubscriberDirectoryOpen] =
     useState(false);
   const [directorySearchQuery, setDirectorySearchQuery] = useState("");
@@ -287,68 +313,86 @@ export default function BoxManagementScreen() {
     return available;
   };
 
-  const generateSequentialAccount = (box: DistributionBox | null) => {
-    if (!box) return "ACC-ILG-001";
-    const zonePrefix =
-      box.code.includes("MN01") || box.code.includes("MN-01")
-        ? "ILG"
-        : box.code.includes("SB03") || box.code.includes("SB-03")
-          ? "TBD"
-          : box.code.includes("SB02") || box.code.includes("SB-02")
-            ? "IIT"
-            : box.code.includes("SB05") || box.code.includes("SB-05")
-              ? "TMB"
-              : box.code.includes("SB06") || box.code.includes("SB-06")
-                ? "DLC"
-                : "ILG";
-    const nextSeq = box.clients.length + 1;
-    return `ACC-${zonePrefix}-${
-      nextSeq < 10 ? "00" + nextSeq : nextSeq < 100 ? "0" + nextSeq : nextSeq
-    }`;
-  };
-
-  const handleAccountChange = (acc: string) => {
-    setNewClientAccount(acc);
-    const trimmed = acc.trim().toUpperCase();
-    if (!trimmed) {
+  const handleAccountChange = async (acc: string) => {
+    // Only accept numeric digits, up to 10 digits
+    const clean = acc.replace(/\D/g, "").slice(0, 10);
+    setNewClientAccount(clean);
+    if (!clean) {
       setMatchedSubscriber(null);
       return;
     }
-    const matched = STATIC_SUBSCRIBERS_DIRECTORY.find(
-      (s) => s.accountNumber.toUpperCase() === trimmed,
+
+    // 1. Search in live directory from database
+    const dirSource = liveDirectory;
+    const matched = dirSource.find(
+      (s: any) =>
+        s.accountNumber === clean ||
+        String(s.accountNumber).replace(/\D/g, "") === clean,
     );
+
     if (matched) {
-      setNewClientName(matched.name);
+      const subName = matched.customerName || matched.name;
+      setNewClientName(subName);
       setMatchedSubscriber(matched);
-      if (matched.category === "Commercial" || matched.category === "Residential") {
-        setNewClientType(matched.category);
-      } else if (matched.category === "Enterprise" || matched.category === "Government") {
+      const cat = matched.subscriberType || matched.category;
+      if (cat === "Commercial" || cat === "Residential") {
+        setNewClientType(cat);
+      } else if (cat === "Enterprise" || cat === "Government" || cat === "Academic") {
         setNewClientType("Commercial");
       }
-      if (matched.plan) {
-        setNewClientPlan(matched.plan);
+      const planName = matched.servicePlan || matched.plan;
+      if (planName) {
+        setNewClientPlan(planName);
       }
-    } else {
-      setMatchedSubscriber(null);
+      return;
     }
+
+    // 2. If 10 digits entered and not matched in local cache, query backend API
+    if (clean.length === 10) {
+      try {
+        const lookup = await subscriberService.lookupSubscriber(clean);
+        if (lookup.success && lookup.matched && lookup.subscriber) {
+          const sub = lookup.subscriber;
+          setNewClientName(sub.customerName || sub.name);
+          setMatchedSubscriber(sub);
+          const cat = sub.subscriberType || sub.category;
+          if (cat === "Commercial" || cat === "Residential") {
+            setNewClientType(cat as any);
+          } else {
+            setNewClientType("Commercial");
+          }
+          if (sub.servicePlan || sub.plan) {
+            setNewClientPlan(sub.servicePlan || sub.plan);
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn("Subscriber lookup error:", err);
+      }
+    }
+
+    setMatchedSubscriber(null);
   };
 
-  const handleSelectFromDirectory = (sub: SubscriberDirectoryRecord) => {
-    setNewClientAccount(sub.accountNumber);
-    setNewClientName(sub.name);
+  const handleSelectFromDirectory = (sub: any) => {
+    const acc = String(sub.accountNumber).replace(/\D/g, "").slice(0, 10) || sub.accountNumber;
+    setNewClientAccount(acc);
+    setNewClientName(sub.customerName || sub.name);
     setMatchedSubscriber(sub);
-    if (sub.category === "Commercial" || sub.category === "Residential") {
-      setNewClientType(sub.category);
-    } else if (sub.category === "Enterprise" || sub.category === "Government") {
+    const cat = sub.subscriberType || sub.category;
+    if (cat === "Commercial" || cat === "Residential") {
+      setNewClientType(cat);
+    } else if (cat === "Enterprise" || cat === "Government" || cat === "Academic") {
       setNewClientType("Commercial");
     }
-    if (sub.plan) {
-      setNewClientPlan(sub.plan);
+    const planName = sub.servicePlan || sub.plan;
+    if (planName) {
+      setNewClientPlan(planName);
     }
     setIsSubscriberDirectoryOpen(false);
   };
 
-  const handleOpenAddClientModal = () => {
+  const handleOpenAddClientModal = async () => {
     if (!selectedBoxForDetails) return;
     const available = getAvailablePorts(selectedBoxForDetails);
     if (available.length === 0) {
@@ -367,54 +411,22 @@ export default function BoxManagementScreen() {
     const defaultPort = available[0];
     setNewClientPort(defaultPort);
 
-    // Identify already assigned subscriber accounts across all boxes
-    const assignedAccounts = new Set(
-      boxes.flatMap((b) => b.clients.map((c) => c.accountNumber.toUpperCase())),
-    );
-
-    // Look for first pending/unassigned subscriber in directory matching the zone or overall
-    const unassignedInDirectory = STATIC_SUBSCRIBERS_DIRECTORY.find(
-      (s) =>
-        s.status === "PENDING_PROVISIONING" &&
-        !assignedAccounts.has(s.accountNumber.toUpperCase()),
-    );
-
-    if (unassignedInDirectory) {
-      setNewClientAccount(unassignedInDirectory.accountNumber);
-      setNewClientName(unassignedInDirectory.name);
-      setMatchedSubscriber(unassignedInDirectory);
-      if (unassignedInDirectory.category === "Commercial" || unassignedInDirectory.category === "Residential") {
-        setNewClientType(unassignedInDirectory.category);
-      } else if (unassignedInDirectory.category === "Enterprise" || unassignedInDirectory.category === "Government") {
-        setNewClientType("Commercial");
+    // Fetch live subscribers directory from backend in background for live matching & browsing
+    try {
+      const dirRes = await subscriberService.getAllSubscribers();
+      if (dirRes.success && dirRes.subscribers && dirRes.subscribers.length > 0) {
+        setLiveDirectory(dirRes.subscribers);
       }
-      if (unassignedInDirectory.plan) {
-        setNewClientPlan(unassignedInDirectory.plan);
-      }
-    } else {
-      const fallbackAcc = generateSequentialAccount(selectedBoxForDetails);
-      setNewClientAccount(fallbackAcc);
-      const matched = STATIC_SUBSCRIBERS_DIRECTORY.find(
-        (s) => s.accountNumber.toUpperCase() === fallbackAcc.toUpperCase(),
-      );
-      if (matched) {
-        setNewClientName(matched.name);
-        setMatchedSubscriber(matched);
-        if (matched.category === "Commercial" || matched.category === "Residential") {
-          setNewClientType(matched.category);
-        } else if (matched.category === "Enterprise" || matched.category === "Government") {
-          setNewClientType("Commercial");
-        }
-        if (matched.plan) {
-          setNewClientPlan(matched.plan);
-        }
-      } else {
-        setNewClientName("");
-        setMatchedSubscriber(null);
-        setNewClientType("Residential");
-        setNewClientPlan("100 Mbps Fiber Starter");
-      }
+    } catch (e) {
+      console.warn("Could not fetch live directory:", e);
     }
+
+    // Input fields start completely empty for Admin input
+    setNewClientAccount("");
+    setNewClientName("");
+    setMatchedSubscriber(null);
+    setNewClientType("Residential");
+    setNewClientPlan("100 Mbps Fiber Plan");
 
     setIsClientPortDropdownOpen(false);
     setIsClientTypeDropdownOpen(false);
@@ -482,6 +494,9 @@ export default function BoxManagementScreen() {
       prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
     );
     setIsAddClientModalOpen(false);
+    setNewClientAccount("");
+    setNewClientName("");
+    setMatchedSubscriber(null);
 
     // Persist to backend
     boxService
@@ -493,6 +508,17 @@ export default function BoxManagementScreen() {
         plan: newClientPlan,
       })
       .catch((err) => console.error("Error saving client:", err));
+  };
+
+  const handleCloseAddClientModal = () => {
+    setIsAddClientModalOpen(false);
+    setNewClientAccount("");
+    setNewClientName("");
+    setMatchedSubscriber(null);
+    setIsClientPortDropdownOpen(false);
+    setIsClientTypeDropdownOpen(false);
+    setIsClientPlanDropdownOpen(false);
+    setIsSubscriberDirectoryOpen(false);
   };
 
   const handleToggleClientStatus = (port: string) => {
@@ -573,13 +599,157 @@ export default function BoxManagementScreen() {
     return `${prefix}${nextNum < 10 ? "0" : ""}${nextNum}`;
   };
 
+  const performGeocodeLookup = async (addr: string) => {
+    const rawAddress = addr.trim();
+    if (rawAddress.length < 3) {
+      setGeocodingStatus(null);
+      return;
+    }
+
+    setIsGeocoding(true);
+    setGeocodingStatus("Detecting coordinates from address...");
+
+    // Iligan City known barangays list for intelligent fallback
+    const iliganBarangays = [
+      "Mahayahay",
+      "Tubod",
+      "Suarez",
+      "Pala-o",
+      "Tibanga",
+      "Hinaplanon",
+      "Poblacion",
+      "Buru-un",
+      "Del Carmen",
+      "Kiwalan",
+      "Dalipuga",
+      "Ditucalan",
+      "Tambacan",
+      "Ubaldo Laya",
+      "Saray",
+      "San Roque",
+      "Santa Elena",
+      "Santa Filomena",
+      "Santiago",
+      "Santo Rosario",
+      "Tipanoy",
+      "Tomas L. Cabili",
+      "Tominobo",
+      "Luinab",
+      "Mandulog",
+      "Maria Cristina",
+      "Upper Hinaplanon",
+      "Villa Verde",
+      "Acmac",
+      "Bagong Silang",
+      "Bonbonon",
+      "Bunawan",
+      "Digkilaan",
+      "Dulag",
+      "Hindang",
+      "Kabacsanan",
+      "Kalilangan",
+      "Lanipao",
+      "Mainit",
+      "Panoroganan",
+      "Puga-an",
+      "Rogongon",
+      "Abuno",
+    ];
+
+    const lower = rawAddress.toLowerCase();
+    const matchedBarangay = iliganBarangays.find((b) =>
+      lower.includes(b.toLowerCase())
+    );
+
+    const normalizedAddress = rawAddress
+      .replace(/\bbro\b\.?/gi, "Brother")
+      .replace(/\bst\b\.?/gi, "Street")
+      .replace(/\bave\b\.?/gi, "Avenue")
+      .replace(/\brd\b\.?/gi, "Road");
+
+    try {
+      // 1. First attempt: Search the street address directly within Iligan City
+      const queryWithCity = `${normalizedAddress}, Iligan City, Philippines`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        queryWithCity
+      )}&viewbox=124.15,8.35,124.40,8.12&bounded=0&countrycodes=ph&limit=1`;
+
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        const found = data[0];
+        const lat = Number(found.lat).toFixed(6);
+        const lon = Number(found.lon).toFixed(6);
+        setNewLatitude(lat);
+        setNewLongitude(lon);
+        const matchedName =
+          found.name ||
+          (found.display_name ? found.display_name.split(",")[0] : rawAddress);
+        setGeocodingStatus(`Auto-detected: ${matchedName}`);
+        setIsGeocoding(false);
+        return;
+      }
+
+      // 2. Second attempt: If direct address search has no match (e.g. private compound or unmapped street)
+      // but contains a recognized barangay, fallback to that barangay center
+      if (matchedBarangay) {
+        const brgyUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          `${matchedBarangay}, Iligan City, Philippines`
+        )}&viewbox=124.15,8.35,124.40,8.12&bounded=0&countrycodes=ph&limit=1`;
+
+        const brgyRes = await fetch(brgyUrl, {
+          headers: { Accept: "application/json" },
+        });
+        const brgyData = await brgyRes.json();
+
+        if (Array.isArray(brgyData) && brgyData.length > 0) {
+          const found = brgyData[0];
+          const lat = Number(found.lat).toFixed(6);
+          const lon = Number(found.lon).toFixed(6);
+          setNewLatitude(lat);
+          setNewLongitude(lon);
+          setGeocodingStatus(`Auto-detected: Barangay ${matchedBarangay}`);
+          setIsGeocoding(false);
+          return;
+        }
+      }
+
+      setGeocodingStatus(
+        "Address not found on map — please enter coordinates manually"
+      );
+    } catch (err) {
+      console.warn("Geocoding lookup error:", err);
+      setGeocodingStatus("Lookup unavailable — please enter manually");
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleAddressChange = (text: string) => {
+    setNewAddress(text);
+    if (geocodeDebounceRef.current) {
+      clearTimeout(geocodeDebounceRef.current);
+    }
+    geocodeDebounceRef.current = setTimeout(() => {
+      performGeocodeLookup(text);
+    }, 700);
+  };
+
   const handleOpenRegisterModal = () => {
     const defaultCat: "MAIN_BOX" | "SUB_BOX" = "SUB_BOX";
     setNewCategory(defaultCat);
     setNewCode(getNextBoxCode(defaultCat, boxes));
     setNewParentCode("DB-MN-01");
+    setNewSiteName("");
+    setNewAddress("");
+    setNewLatitude("");
+    setNewLongitude("");
+    setGeocodingStatus(null);
+    setIsGeocoding(false);
     setNewMountingType("Utility Pole");
-    setNewPoleNumber("");
     setNewPorts("24");
     setIsPortsDropdownOpen(false);
     setNewSelectedEquipment([
@@ -654,6 +824,8 @@ export default function BoxManagementScreen() {
       box.siteName.toLowerCase().includes(query) ||
       box.address.toLowerCase().includes(query) ||
       (box.poleNumber && box.poleNumber.toLowerCase().includes(query)) ||
+      (box.latitude !== undefined && String(box.latitude).includes(query)) ||
+      (box.longitude !== undefined && String(box.longitude).includes(query)) ||
       (box.mountingType && box.mountingType.toLowerCase().includes(query)) ||
       box.equipment.some((eq) => eq.name.toLowerCase().includes(query));
 
@@ -753,7 +925,7 @@ export default function BoxManagementScreen() {
       siteName: newSiteName.trim(),
       address: newAddress.trim(),
       mountingType: newMountingType,
-      poleNumber: newPoleNumber.trim() || null,
+      poleNumber: null,
       latitude: parseFloat(newLatitude) || 8.227625,
       longitude: parseFloat(newLongitude) || 124.238500,
       status: "NEEDS_TAG",
@@ -802,14 +974,15 @@ export default function BoxManagementScreen() {
         setNewSiteName("");
         setNewAddress("");
         setNewMountingType("Utility Pole");
-        setNewPoleNumber("");
         setNewPorts("24");
         setIsPortsDropdownOpen(false);
         setNewSelectedEquipment([]);
         setIsEquipmentDropdownOpen(false);
         setCustomEquipmentInput("");
-        setNewLatitude("8.225963");
-        setNewLongitude("124.238820");
+        setNewLatitude("");
+        setNewLongitude("");
+        setGeocodingStatus(null);
+        setIsGeocoding(false);
 
         // Open QR print preview for the newly added box immediately
         setSelectedBoxForQR(savedBox);
@@ -1181,7 +1354,7 @@ export default function BoxManagementScreen() {
                     </View>
                     <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider text-center">
-                        Pole Tag / Landmark Reference
+                        Latitude & Longitude
                       </Text>
                     </View>
                     <View className="w-[110px] min-w-[110px] text-right">
@@ -1352,19 +1525,38 @@ export default function BoxManagementScreen() {
                           </View>
                         </View>
 
-                        {/* 6. Pole Tag / Landmark Reference */}
+                        {/* 6. Latitude & Longitude */}
                         <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
-                          <Text
-                            className="text-xs font-poppins-bold text-[#0f172a] text-center"
-                            numberOfLines={1}
-                          >
-                            {box.poleNumber || "Pole #ILG-PL-01"}
-                          </Text>
+                          <View className="flex-row items-center">
+                            <Ionicons
+                              name="navigate-outline"
+                              size={12}
+                              color="#4d6029"
+                            />
+                            <Text
+                              className="text-xs font-mono font-poppins-bold text-[#0f172a] ml-1 text-center"
+                              numberOfLines={1}
+                            >
+                              {box.latitude !== undefined && box.latitude !== null
+                                ? Number(box.latitude).toFixed(6)
+                                : "0.000000"}
+                              ,{" "}
+                              {box.longitude !== undefined && box.longitude !== null
+                                ? Number(box.longitude).toFixed(6)
+                                : "0.000000"}
+                            </Text>
+                          </View>
                           <Text
                             className="text-[10px] font-poppins text-[#64748b] mt-0.5 text-center"
                             numberOfLines={1}
                           >
-                            {box.siteName.split("/")[0].trim()}
+                            {box.latitude !== undefined && box.latitude !== null
+                              ? `${Number(box.latitude).toFixed(4)}° N`
+                              : ""}
+                            ,{" "}
+                            {box.longitude !== undefined && box.longitude !== null
+                              ? `${Number(box.longitude).toFixed(4)}° E`
+                              : ""}
                           </Text>
                         </View>
 
@@ -2367,7 +2559,7 @@ export default function BoxManagementScreen() {
                     placeholder="e.g. National Highway, Suarez, Iligan City"
                     placeholderTextColor="#94a3b8"
                     value={newAddress}
-                    onChangeText={setNewAddress}
+                    onChangeText={handleAddressChange}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-poppins-medium text-[#0f172a]"
                   />
                 </View>
@@ -2431,27 +2623,6 @@ export default function BoxManagementScreen() {
                   </View>
                 </View>
 
-                {/* Pole / Landmark Reference Number */}
-                <View className="mt-3">
-                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1">
-                    Pole Tag / Landmark Reference:
-                  </Text>
-                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                    <Ionicons
-                      name="location-outline"
-                      size={16}
-                      color="#94a3b8"
-                    />
-                    <TextInput
-                      placeholder="e.g. Pole #ILG-PL-42 / Near Barangay Hall"
-                      placeholderTextColor="#94a3b8"
-                      value={newPoleNumber}
-                      onChangeText={setNewPoleNumber}
-                      className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a]"
-                    />
-                  </View>
-                </View>
-
                 {/* GPS Field Geolocation Coordinates */}
                 <View className="mt-3 bg-slate-50 border border-slate-200/90 rounded-2xl p-3">
                   <View className="flex-row items-center justify-between mb-2">
@@ -2461,10 +2632,48 @@ export default function BoxManagementScreen() {
                         GPS Geolocation Coordinates:
                       </Text>
                     </View>
-                    <Text className="text-[10px] font-poppins text-slate-500">
-                      WGS84 6-Decimal
-                    </Text>
+                    <View className="flex-row items-center">
+                      {isGeocoding && (
+                        <View className="flex-row items-center mr-2">
+                          <ActivityIndicator size="small" color="#4d6029" />
+                          <Text className="text-[10px] font-poppins text-[#4d6029] ml-1">
+                            Detecting...
+                          </Text>
+                        </View>
+                      )}
+                      <Text className="text-[10px] font-poppins text-slate-500">
+                        WGS84 6-Decimal
+                      </Text>
+                    </View>
                   </View>
+
+                  {geocodingStatus && (
+                    <View className="flex-row items-center mb-2 px-1">
+                      <Ionicons
+                        name={
+                          geocodingStatus.startsWith("Auto-detected")
+                            ? "checkmark-circle"
+                            : "information-circle-outline"
+                        }
+                        size={12}
+                        color={
+                          geocodingStatus.startsWith("Auto-detected")
+                            ? "#16a34a"
+                            : "#64748b"
+                        }
+                      />
+                      <Text
+                        className={`text-[10px] font-poppins ml-1 ${
+                          geocodingStatus.startsWith("Auto-detected")
+                            ? "text-emerald-700 font-poppins-medium"
+                            : "text-[#64748b]"
+                        }`}
+                        numberOfLines={1}
+                      >
+                        {geocodingStatus}
+                      </Text>
+                    </View>
+                  )}
 
                   <View className="flex-row gap-2">
                     <View className="flex-1">
@@ -2472,7 +2681,7 @@ export default function BoxManagementScreen() {
                         Latitude (°N):
                       </Text>
                       <TextInput
-                        placeholder="8.227625"
+                        placeholder="e.g. 8.227625"
                         placeholderTextColor="#94a3b8"
                         value={newLatitude}
                         onChangeText={setNewLatitude}
@@ -2485,7 +2694,7 @@ export default function BoxManagementScreen() {
                         Longitude (°E):
                       </Text>
                       <TextInput
-                        placeholder="124.238500"
+                        placeholder="e.g. 124.238500"
                         placeholderTextColor="#94a3b8"
                         value={newLongitude}
                         onChangeText={setNewLongitude}
@@ -2493,67 +2702,6 @@ export default function BoxManagementScreen() {
                         className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
                       />
                     </View>
-                  </View>
-
-                  {/* Quick Preset Buttons */}
-                  <View className="flex-row flex-wrap gap-1.5 mt-2.5">
-                    <TouchableOpacity
-                      onPress={() => {
-                        setNewLatitude("8.225963");
-                        setNewLongitude("124.238820");
-                      }}
-                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
-                        ICNHS / Mahayahay
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setNewLatitude("8.224150");
-                        setNewLongitude("124.243500");
-                      }}
-                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
-                        Multifactors / Ubaldo Laya
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setNewLatitude("8.232000");
-                        setNewLongitude("124.248000");
-                      }}
-                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
-                        City Hall / Poblacion
-                      </Text>
-                    </TouchableOpacity>
-                    {typeof navigator !== "undefined" && navigator.geolocation && (
-                      <TouchableOpacity
-                        onPress={() => {
-                          navigator.geolocation.getCurrentPosition(
-                            (pos) => {
-                              setNewLatitude(pos.coords.latitude.toFixed(6));
-                              setNewLongitude(pos.coords.longitude.toFixed(6));
-                            },
-                            (err) => console.log("GPS err", err),
-                            { enableHighAccuracy: true }
-                          );
-                        }}
-                        className="bg-[#4d6029]/10 border border-[#4d6029]/30 px-2.5 py-1 rounded-lg flex-row items-center"
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="locate" size={11} color="#4d6029" />
-                        <Text className="text-[10px] font-poppins-bold text-[#4d6029] ml-1">
-                          Current Device GPS
-                        </Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
                 </View>
 
@@ -3016,7 +3164,7 @@ export default function BoxManagementScreen() {
           visible={isAddClientModalOpen}
           transparent
           animationType="fade"
-          onRequestClose={() => setIsAddClientModalOpen(false)}
+          onRequestClose={handleCloseAddClientModal}
         >
           <View className="flex-1 bg-black/60 items-center justify-center p-4">
             <View className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh]">
@@ -3040,7 +3188,7 @@ export default function BoxManagementScreen() {
                   </View>
                 </View>
                 <TouchableOpacity
-                  onPress={() => setIsAddClientModalOpen(false)}
+                  onPress={handleCloseAddClientModal}
                   className="p-2 rounded-full bg-slate-100 hover:bg-slate-200"
                 >
                   <Ionicons name="close" size={18} color="#475569" />
@@ -3158,7 +3306,7 @@ export default function BoxManagementScreen() {
                 <View className="mb-3.5">
                   <View className="flex-row items-center justify-between mb-1.5">
                     <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                      Subscriber Account Number *
+                      Subscriber Account Number (10 Digits) *
                     </Text>
                     <TouchableOpacity
                       onPress={() =>
@@ -3188,12 +3336,13 @@ export default function BoxManagementScreen() {
                     <TextInput
                       value={newClientAccount}
                       onChangeText={handleAccountChange}
-                      placeholder="e.g. ACC-ILG-015 or ACC-IIT-006"
+                      placeholder="e.g. 2608000015 (10-digit)"
                       placeholderTextColor="#94a3b8"
-                      autoCapitalize="characters"
+                      keyboardType="numeric"
+                      maxLength={10}
                       className="flex-1 ml-2 text-xs font-mono font-poppins-semibold text-[#0f172a] py-2"
                     />
-                    {matchedSubscriber && (
+                    {matchedSubscriber ? (
                       <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2 py-0.5 rounded flex-row items-center">
                         <Ionicons
                           name="checkmark-circle"
@@ -3204,103 +3353,134 @@ export default function BoxManagementScreen() {
                           Matched
                         </Text>
                       </View>
-                    )}
+                    ) : newClientAccount.length === 10 ? (
+                      <View className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex-row items-center">
+                        <Ionicons name="flash" size={11} color="#059669" />
+                        <Text className="text-[10px] font-poppins-semibold text-emerald-700 ml-1">
+                          New 10-Digit
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   {/* Expandable Directory Browser */}
                   {isSubscriberDirectoryOpen && (
                     <View className="mt-2.5 p-3 bg-slate-50 rounded-2xl border border-slate-200 max-h-56">
-                      <View className="flex-row items-center justify-between mb-2">
-                        <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
-                          Central Billing Directory (
-                          {STATIC_SUBSCRIBERS_DIRECTORY.length} records)
-                        </Text>
-                        <Text className="text-[10px] font-poppins text-[#64748b]">
-                          Tap to auto-fill
-                        </Text>
-                      </View>
+                      {liveDirectory.length === 0 ? (
+                        <View className="py-5 items-center justify-center">
+                          <Ionicons
+                            name="folder-open-outline"
+                            size={28}
+                            color="#94a3b8"
+                          />
+                          <Text className="text-xs font-poppins-semibold text-[#64748b] mt-2">
+                            Directory is empty (0 records)
+                          </Text>
+                          <Text className="text-[10px] font-poppins text-[#94a3b8] mt-0.5 text-center px-4">
+                            No pre-registered subscribers found in the database.
+                          </Text>
+                        </View>
+                      ) : (
+                        <>
+                          <View className="flex-row items-center justify-between mb-2">
+                            <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                              Central Subscribers Directory ({liveDirectory.length} records)
+                            </Text>
+                            <Text className="text-[10px] font-poppins text-[#64748b]">
+                              Tap to auto-fill
+                            </Text>
+                          </View>
 
-                      <View className="flex-row items-center bg-white border border-slate-200 rounded-xl px-2.5 py-1 mb-2">
-                        <Ionicons name="search" size={13} color="#94a3b8" />
-                        <TextInput
-                          value={directorySearchQuery}
-                          onChangeText={setDirectorySearchQuery}
-                          placeholder="Search directory by name, account #, or plan..."
-                          placeholderTextColor="#94a3b8"
-                          className="flex-1 ml-2 text-xs font-poppins text-[#0f172a] py-1"
-                        />
-                        {directorySearchQuery.length > 0 && (
-                          <TouchableOpacity
-                            onPress={() => setDirectorySearchQuery("")}
-                          >
-                            <Ionicons
-                              name="close-circle"
-                              size={14}
-                              color="#94a3b8"
+                          <View className="flex-row items-center bg-white border border-slate-200 rounded-xl px-2.5 py-1 mb-2">
+                            <Ionicons name="search" size={13} color="#94a3b8" />
+                            <TextInput
+                              value={directorySearchQuery}
+                              onChangeText={setDirectorySearchQuery}
+                              placeholder="Search by name, 10-digit account #, or plan..."
+                              placeholderTextColor="#94a3b8"
+                              className="flex-1 ml-2 text-xs font-poppins text-[#0f172a] py-1"
                             />
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                            {directorySearchQuery.length > 0 && (
+                              <TouchableOpacity
+                                onPress={() => setDirectorySearchQuery("")}
+                              >
+                                <Ionicons
+                                  name="close-circle"
+                                  size={14}
+                                  color="#94a3b8"
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
 
-                      <ScrollView
-                        className="max-h-36 space-y-1.5"
-                        showsVerticalScrollIndicator={true}
-                        nestedScrollEnabled={true}
-                      >
-                        {STATIC_SUBSCRIBERS_DIRECTORY.filter((s) => {
-                          const q = directorySearchQuery.toLowerCase().trim();
-                          return (
-                            q === "" ||
-                            s.name.toLowerCase().includes(q) ||
-                            s.accountNumber.toLowerCase().includes(q) ||
-                            s.plan.toLowerCase().includes(q) ||
-                            s.category.toLowerCase().includes(q)
-                          );
-                        }).map((sub) => {
-                          const isCurrentlySelected =
-                            newClientAccount.toUpperCase() ===
-                            sub.accountNumber.toUpperCase();
-                          return (
-                            <TouchableOpacity
-                              key={sub.accountNumber}
-                              onPress={() => handleSelectFromDirectory(sub)}
-                              className={`p-2 rounded-xl border flex-row items-center justify-between mb-1 ${
-                                isCurrentlySelected
-                                  ? "bg-[#FCF0DA] border-[#edd5a6]"
-                                  : "bg-white border-slate-200/80"
-                              }`}
-                              activeOpacity={0.7}
-                            >
-                              <View className="flex-1 mr-2">
-                                <View className="flex-row items-center">
-                                  <Text className="text-xs font-mono font-poppins-bold text-[#4d6029] mr-2">
-                                    {sub.accountNumber}
-                                  </Text>
-                                  <Text
-                                    className="text-xs font-poppins-bold text-[#0f172a] flex-1"
-                                    numberOfLines={1}
+                          <ScrollView
+                            className="max-h-36 space-y-1.5"
+                            showsVerticalScrollIndicator={true}
+                            nestedScrollEnabled={true}
+                          >
+                            {liveDirectory
+                              .filter((s: any) => {
+                                const q = directorySearchQuery.toLowerCase().trim();
+                                const sName = (s.customerName || s.name || "").toLowerCase();
+                                const sAcc = (s.accountNumber || "").toLowerCase();
+                                const sPlan = (s.servicePlan || s.plan || "").toLowerCase();
+                                const sCat = (s.subscriberType || s.category || "").toLowerCase();
+                                return (
+                                  q === "" ||
+                                  sName.includes(q) ||
+                                  sAcc.includes(q) ||
+                                  sPlan.includes(q) ||
+                                  sCat.includes(q)
+                                );
+                              })
+                              .map((sub: any) => {
+                                const isCurrentlySelected =
+                                  newClientAccount === sub.accountNumber ||
+                                  newClientAccount ===
+                                    String(sub.accountNumber).replace(/\D/g, "");
+                                return (
+                                  <TouchableOpacity
+                                    key={sub.accountNumber}
+                                    onPress={() => handleSelectFromDirectory(sub)}
+                                    className={`p-2 rounded-xl border flex-row items-center justify-between mb-1 ${
+                                      isCurrentlySelected
+                                        ? "bg-[#FCF0DA] border-[#edd5a6]"
+                                        : "bg-white border-slate-200/80"
+                                    }`}
+                                    activeOpacity={0.7}
                                   >
-                                    {sub.name}
-                                  </Text>
-                                </View>
-                                <Text
-                                  className="text-[10px] font-poppins text-[#64748b]"
-                                  numberOfLines={1}
-                                >
-                                  {sub.category}
-                                </Text>
-                              </View>
-                              <View className="bg-slate-100 px-2 py-0.5 rounded">
-                                <Text className="text-[9px] font-poppins-semibold text-[#475569]">
-                                  {sub.status === "ACTIVE"
-                                    ? "Active"
-                                    : "Pending"}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                                    <View className="flex-1 mr-2">
+                                      <View className="flex-row items-center">
+                                        <Text className="text-xs font-mono font-poppins-bold text-[#4d6029] mr-2">
+                                          {sub.accountNumber}
+                                        </Text>
+                                        <Text
+                                          className="text-xs font-poppins-bold text-[#0f172a] flex-1"
+                                          numberOfLines={1}
+                                        >
+                                          {sub.customerName || sub.name}
+                                        </Text>
+                                      </View>
+                                      <Text
+                                        className="text-[10px] font-poppins text-[#64748b]"
+                                        numberOfLines={1}
+                                      >
+                                        {sub.subscriberType || sub.category} · {sub.servicePlan || sub.plan}
+                                      </Text>
+                                    </View>
+                                    <View className="bg-slate-100 px-2 py-0.5 rounded">
+                                      <Text className="text-[9px] font-poppins-semibold text-[#475569]">
+                                        {sub.status === "ACTIVE"
+                                          ? "Active"
+                                          : "Pending"}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                          </ScrollView>
+                        </>
+                      )}
                     </View>
                   )}
                 </View>
@@ -3383,18 +3563,7 @@ export default function BoxManagementScreen() {
                             onPress={() => {
                               setNewClientType(item.type);
                               setIsClientTypeDropdownOpen(false);
-                              if (item.type === "Residential") {
-                                if (
-                                  newClientPlan.includes("Business") ||
-                                  newClientPlan.includes("Enterprise")
-                                ) {
-                                  setNewClientPlan("100 Mbps Fiber Starter");
-                                }
-                              } else {
-                                if (newClientPlan.includes("Starter")) {
-                                  setNewClientPlan("300 Mbps Business Fiber");
-                                }
-                              }
+                              setSubscriberPlanFilter(item.type);
                             }}
                             className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
                             activeOpacity={0.7}
@@ -3527,7 +3696,7 @@ export default function BoxManagementScreen() {
                           const isSelected = newClientPlan === plan.name;
                           return (
                             <TouchableOpacity
-                              key={plan.name}
+                              key={`${plan.category}-${plan.name}`}
                               onPress={() => {
                                 setNewClientPlan(plan.name);
                                 setIsClientPlanDropdownOpen(false);
@@ -3581,7 +3750,7 @@ export default function BoxManagementScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => setIsAddClientModalOpen(false)}
+                  onPress={handleCloseAddClientModal}
                   className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">

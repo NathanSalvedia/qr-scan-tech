@@ -8,6 +8,7 @@ import boxesRouter from './routes/boxes.js';
 import techniciansRouter from './routes/technicians.js';
 import logsRouter from './routes/logs.js';
 import settingsRouter from './routes/settings.js';
+import subscribersRouter from './routes/subscribers.js';
 
 // Load environment variables from root .env
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -26,6 +27,7 @@ app.use('/api/boxes', boxesRouter);
 app.use('/api/technicians', techniciansRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/subscribers', subscribersRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

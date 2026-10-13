@@ -23,14 +23,14 @@ async function updateLocations() {
   console.log('Updated DB-MN-01:', res1);
 
   // 2. Update Multifactors Sales Automation Inc. (DB-MN-02)
-  // No. 0005 Juan C. Legaspi Street, Ubaldo D. Laya -> Lat: 8.224150, Lng: 124.243500
+  // Badelles Extension cor. 11th Street, Pala-o -> Lat: 8.224850, Lng: 124.249850
   const res2 = await db
     .update(distributionBoxes)
     .set({
       siteName: 'Multifactors Sales Automation Inc.',
-      address: 'No. 0005 Juan C. Legaspi Street, Ubaldo D. Laya, Iligan City, 9200 Lanao del Norte',
-      latitude: '8.224150',
-      longitude: '124.243500',
+      address: 'Badelles Extension cor. 11th Street, Pala-o, Iligan City, 9200 Lanao del Norte',
+      latitude: '8.224850',
+      longitude: '124.249850',
       updatedAt: new Date(),
     })
     .where(eq(distributionBoxes.code, 'DB-MN-02'))

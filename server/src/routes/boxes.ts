@@ -10,8 +10,9 @@ import {
   users,
   zones,
   scanAuditLogs,
+  subscribers,
 } from '../db/schema.js';
-import { eq, and, desc, or } from 'drizzle-orm';
+import { eq, and, desc, or, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           accountNumber: c.accountNumber,
           name: c.customerName,
           clientType: c.clientType || 'Residential',
-          plan: c.servicePlan || '100 Mbps Fiber Starter',
+          plan: c.servicePlan || '100 Mbps Fiber Plan',
           status: c.status,
         }));
 
@@ -163,7 +164,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       accountNumber: c.accountNumber,
       name: c.customerName,
       clientType: c.clientType || 'Residential',
-      plan: c.servicePlan || '100 Mbps Fiber Starter',
+      plan: c.servicePlan || '100 Mbps Fiber Plan',
       status: c.status,
     }));
 
@@ -491,10 +492,37 @@ router.post('/:id/clients', requireAuth, async (req: AuthenticatedRequest, res: 
         accountNumber: String(accountNumber).trim(),
         customerName: String(name).trim(),
         clientType: clientType || 'RESIDENTIAL',
-        servicePlan: plan || '100 Mbps Fiber Starter',
+        servicePlan: plan || '100 Mbps Fiber Plan',
         status: 'CONNECTED',
       })
       .returning();
+
+    // Sync central subscribers directory (upsert so it is always maintained in subscribers table)
+    try {
+      const cleanAcc = String(accountNumber).trim();
+      const cleanName = String(name).trim();
+      const cleanType = clientType || 'Residential';
+      const cleanPlan = plan || '100 Mbps Fiber Plan';
+      await db.execute(sql`
+        INSERT INTO subscribers (
+          account_number, customer_name, subscriber_type, service_plan, status, assigned_box_id, assigned_port
+        )
+        VALUES (
+          ${cleanAcc}, ${cleanName}, ${cleanType}, ${cleanPlan}, 'ACTIVE', ${id}, ${`Port ${portNum}`}
+        )
+        ON CONFLICT (account_number) DO UPDATE
+        SET 
+          customer_name = EXCLUDED.customer_name,
+          subscriber_type = EXCLUDED.subscriber_type,
+          service_plan = EXCLUDED.service_plan,
+          status = 'ACTIVE',
+          assigned_box_id = EXCLUDED.assigned_box_id,
+          assigned_port = EXCLUDED.assigned_port,
+          updated_at = NOW();
+      `);
+    } catch (subErr) {
+      console.warn('Non-fatal: could not upsert into subscribers table', subErr);
+    }
 
     return res.json({
       success: true,
@@ -549,9 +577,32 @@ router.delete('/:id/clients/:port', requireAuth, async (req: AuthenticatedReques
     const { id, port } = req.params;
     const portNum = typeof port === 'number' ? port : parseInt(String(port).replace(/\D/g, ''), 10) || 1;
 
+    // Find client connection before deleting so we can reset subscriber status
+    const [existingClient] = await db
+      .select()
+      .from(clientConnections)
+      .where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum)))
+      .limit(1);
+
     await db
       .delete(clientConnections)
       .where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum)));
+
+    if (existingClient?.accountNumber) {
+      try {
+        await db
+          .update(subscribers)
+          .set({
+            status: 'PENDING_PROVISIONING',
+            assignedBoxId: null,
+            assignedPort: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(subscribers.accountNumber, existingClient.accountNumber));
+      } catch (subErr) {
+        console.warn('Non-fatal: could not reset subscribers table', subErr);
+      }
+    }
 
     return res.json({
       success: true,

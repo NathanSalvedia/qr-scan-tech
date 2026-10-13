@@ -144,3 +144,21 @@ export const systemSettings = pgTable('system_settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Central Subscribers Directory Table
+export const subscribers = pgTable('subscribers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  accountNumber: varchar('account_number', { length: 10 }).notNull().unique(),
+  customerName: varchar('customer_name', { length: 150 }).notNull(),
+  subscriberType: varchar('subscriber_type', { length: 50 }).default('Residential').notNull(),
+  servicePlan: varchar('service_plan', { length: 100 }).notNull(),
+  contactNumber: varchar('contact_number', { length: 30 }),
+  email: varchar('email', { length: 255 }),
+  address: text('address'),
+  status: varchar('status', { length: 50 }).default('PENDING_PROVISIONING').notNull(),
+  assignedBoxId: uuid('assigned_box_id'),
+  assignedPort: varchar('assigned_port', { length: 20 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+

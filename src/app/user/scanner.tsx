@@ -324,7 +324,7 @@ export default function UserScannerScreen() {
   const handleSimulateSelect = (boxCode: string) => {
     setIsSimulateModalOpen(false);
     setTimeout(() => {
-      processBoxScan(boxCode, 'SIMULATED_SCAN');
+      processBoxScan(boxCode, 'MANUAL_SEARCH');
     }, 250);
   };
 
@@ -334,7 +334,7 @@ export default function UserScannerScreen() {
     setManualCodeInput('');
     setIsSimulateModalOpen(false);
     setTimeout(() => {
-      processBoxScan(code, 'SIMULATED_SCAN');
+      processBoxScan(code, 'MANUAL_SEARCH');
     }, 250);
   };
 
