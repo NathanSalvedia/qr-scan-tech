@@ -9,6 +9,15 @@ export interface RegisterPayload {
   password: string;
 }
 
+export interface RegisterWithPhonePayload {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  password: string;
+  idToken: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   message?: string;
@@ -18,8 +27,44 @@ export interface AuthResponse {
 }
 
 export const authService = {
-  // 1. Sign Up (Register)
+  // Pre-check if email is already taken before sending SMS
+  checkAvailability: async (email: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await apiFetch(`${API_URL}/auth/check-availability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      return await res.json();
+    } catch {
+      return { success: true };
+    }
+  },
+
+  // 1. Sign Up (Register with Phone)
+  registerWithPhone: async (payload: RegisterWithPhonePayload): Promise<AuthResponse> => {
+    try {
+      const res = await apiFetch(`${API_URL}/auth/register-with-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data: AuthResponse = await res.json();
+      if (data.success && data.user) {
+        authState.setUser(data.user, data.token || null);
+      }
+      return data;
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Failed to complete phone registration.',
+      };
+    }
+  },
+
+  // 1b. Legacy Register (Email OTP)
   register: async (payload: RegisterPayload): Promise<AuthResponse> => {
+
     try {
       const res = await apiFetch(`${API_URL}/auth/register`, {
         method: 'POST',

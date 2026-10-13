@@ -14,15 +14,55 @@ type Listener = () => void;
 
 class AuthStateManager {
   private email: string = '';
+  private phone: string = '';
   private mode: 'verification' | 'reset' = 'verification';
+  private otpType: 'sms' | 'email' = 'email';
+  private confirmationResult: any = null;
+  private pendingRegistration: any = null;
   private user: AuthUser | null = null;
   private token: string | null = null;
   private listeners: Set<Listener> = new Set();
 
   // OTP flow helpers
-  setAuthTarget(email: string, mode: 'verification' | 'reset' = 'verification') {
+  setAuthTarget(email: string, mode: 'verification' | 'reset' = 'verification', phone = '', otpType: 'sms' | 'email' = 'email') {
     this.email = email.trim().toLowerCase();
+    this.phone = phone.trim();
     this.mode = mode;
+    this.otpType = otpType;
+  }
+
+  setPendingRegistration(data: any, confirmationResult: any) {
+    this.pendingRegistration = data;
+    this.confirmationResult = confirmationResult;
+    this.email = data.email?.trim().toLowerCase() || '';
+    this.phone = data.phone?.trim() || '';
+    this.mode = 'verification';
+    this.otpType = 'sms';
+  }
+
+  setConfirmationResult(confirmationResult: any) {
+    this.confirmationResult = confirmationResult;
+  }
+
+  clearPendingRegistration() {
+    this.pendingRegistration = null;
+    this.confirmationResult = null;
+  }
+
+  getPendingRegistration() {
+    return this.pendingRegistration;
+  }
+
+  getConfirmationResult() {
+    return this.confirmationResult;
+  }
+
+  getPhone(): string {
+    return this.phone;
+  }
+
+  getOtpType(): 'sms' | 'email' {
+    return this.otpType;
   }
 
   getEmail(): string {
@@ -32,6 +72,7 @@ class AuthStateManager {
   getMode(): 'verification' | 'reset' {
     return this.mode;
   }
+
 
   // Session & User management
   setUser(user: AuthUser | null, token?: string | null) {

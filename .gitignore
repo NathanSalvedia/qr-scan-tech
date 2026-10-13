@@ -38,6 +38,9 @@ yarn-error.*
 server/.env
 server/node_modules/
 server/dist/
+server/src/config/*.json
+*service-account*.json
+*account-service*.json
 
 # typescript
 *.tsbuildinfo

@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { SidebarNavigation } from '@/components/sidebar-navigation';
+import { WebView } from 'react-native-webview';
 
 import { useDashboardData } from '@/hooks/useDashboardData';
 import type { BoxData } from '@/services/dashboard';
@@ -93,63 +94,107 @@ export default function AdminDashboardScreen() {
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <style>
-          * { box-sizing: border-box; }
-          body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #e2e8f0; }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body, html, #map { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f172a; }
+          
+          .custom-pin-container {
+            background: transparent !important;
+            border: none !important;
+          }
+          
+          /* Field-ready calibrated pin badge: anchored at exact bottom tip (60px, 56px) */
           .custom-pin-badge {
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: flex-end;
+            width: 120px;
+            height: 56px;
             cursor: pointer;
-            transform: translate(-50%, -100%);
-            transition: transform 0.15s ease, filter 0.15s ease;
+            transform-origin: 50% 100%;
+            transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.18s ease;
+            filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));
           }
-          .custom-pin-badge:hover {
-            transform: translate(-50%, -108%) scale(1.08);
-            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.35));
+          .custom-pin-badge:hover, .custom-pin-badge.selected {
+            transform: scale(1.12);
+            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.5));
             z-index: 1000 !important;
           }
+          
           .pin-pill {
-            padding: 4px 9px;
+            padding: 3px 9px;
             border-radius: 9999px;
             font-weight: 700;
             font-size: 11px;
             color: #ffffff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
             border: 2px solid #ffffff;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
             white-space: nowrap;
           }
           .pin-pill.active { background-color: #4d6029; }
           .pin-pill.needs-tag { background-color: #d97706; }
           .pin-pill.issue { background-color: #dc2626; }
+          
           .pin-dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
             background: #ffffff;
+            box-shadow: 0 0 4px rgba(255,255,255,0.8);
           }
+          
           .pin-sublabel {
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.96);
             color: #0f172a;
             font-size: 9.5px;
-            font-weight: 600;
+            font-weight: 700;
             padding: 2px 6px;
-            border-radius: 6px;
-            margin-top: 3px;
-            border: 1px solid rgba(0,0,0,0.12);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            border-radius: 5px;
+            margin-top: 2px;
+            border: 1px solid rgba(0,0,0,0.15);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.18);
             white-space: nowrap;
-            max-width: 140px;
+            max-width: 120px;
             overflow: hidden;
             text-overflow: ellipsis;
           }
-          /* Custom Google Style Zoom Control */
+          
+          /* Downward pointer needle pointing directly at GPS coordinate */
+          .pin-needle {
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 7px solid #4d6029;
+            margin-top: -1px;
+            z-index: 2;
+          }
+          .pin-needle.active { border-top-color: #4d6029; }
+          .pin-needle.needs-tag { border-top-color: #d97706; }
+          .pin-needle.issue { border-top-color: #dc2626; }
+          
+          /* Ground contact target dot placed at exact coordinate */
+          .pin-ground-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #0f172a;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 0 0 2px rgba(77, 96, 41, 0.6);
+            margin-top: -1px;
+            z-index: 3;
+          }
+          .pin-ground-dot.needs-tag { box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.6); }
+          .pin-ground-dot.issue { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.6); }
+          
+          /* Custom Google Style Zoom & Layer Controls */
           .leaflet-control-zoom {
             border: none !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-            border-radius: 8px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+            border-radius: 10px !important;
             overflow: hidden;
           }
           .leaflet-control-zoom a {
@@ -160,27 +205,43 @@ export default function AdminDashboardScreen() {
           .leaflet-control-zoom a:hover {
             background: #f8fafc !important;
           }
+          .leaflet-control-layers {
+            border-radius: 10px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+            border: none !important;
+            font-weight: 600 !important;
+            font-size: 11px !important;
+          }
         </style>
       </head>
       <body>
         <div id="map"></div>
         <script>
-          // Initialize map centered on Iligan City center
+          var pins = ${JSON.stringify(filteredPins)};
+
+          // Compute dynamic centroid center
+          var defaultCenter = pins.length > 0
+            ? [
+                pins.reduce(function(acc, p) { return acc + Number(p.latitude); }, 0) / pins.length,
+                pins.reduce(function(acc, p) { return acc + Number(p.longitude); }, 0) / pins.length
+              ]
+            : [8.2276, 124.2385];
+
           var map = L.map('map', {
-            center: [8.2320, 124.2480],
-            zoom: 14,
+            center: defaultCenter,
+            zoom: 15,
             zoomControl: true
           });
 
           // Primary Google Maps Street Layer
           var googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
+            maxZoom: 21,
             attribution: 'Map data &copy; Google'
           });
 
           // Google Maps Satellite + Streets Hybrid Layer
           var googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
+            maxZoom: 21,
             attribution: 'Imagery &copy; Google'
           });
 
@@ -204,27 +265,40 @@ export default function AdminDashboardScreen() {
           };
           L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
 
-          var pins = ${JSON.stringify(filteredPins)};
           var markerGroup = L.featureGroup();
+
+          function notifySelection(pinId) {
+            if (window.parent && window.parent.postMessage) {
+              window.parent.postMessage({ type: 'SELECT_PIN', pinId: pinId }, '*');
+            }
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_PIN', pinId: pinId }));
+            }
+          }
 
           pins.forEach(function(pin) {
             var statusClass = pin.status === 'ACTIVE' ? 'active' : (pin.status === 'NEEDS_TAG' ? 'needs-tag' : 'issue');
+            var displayName = pin.siteName ? pin.siteName.split('-')[0].split('/')[0].trim() : pin.code;
+
             var icon = L.divIcon({
               className: 'custom-pin-container',
-              html: '<div class="custom-pin-badge">' +
+              html: '<div class="custom-pin-badge" id="badge-' + pin.id + '">' +
                       '<div class="pin-pill ' + statusClass + '">' +
                         '<span class="pin-dot"></span>' +
                         '<span>' + pin.code + '</span>' +
                       '</div>' +
-                      '<div class="pin-sublabel">' + pin.siteName.split('-')[0].split('/')[0].trim() + '</div>' +
+                      '<div class="pin-sublabel">' + displayName + '</div>' +
+                      '<div class="pin-needle ' + statusClass + '"></div>' +
+                      '<div class="pin-ground-dot ' + statusClass + '"></div>' +
                     '</div>',
-              iconSize: [80, 46],
-              iconAnchor: [40, 46]
+              iconSize: [120, 56],
+              iconAnchor: [60, 56]
             });
 
-            var marker = L.marker([pin.latitude, pin.longitude], { icon: icon });
+            var marker = L.marker([Number(pin.latitude), Number(pin.longitude)], { icon: icon });
             marker.on('click', function() {
-              window.parent.postMessage({ type: 'SELECT_PIN', pinId: pin.id }, '*');
+              map.flyTo([Number(pin.latitude), Number(pin.longitude)], Math.max(map.getZoom(), 17), { duration: 0.6 });
+              notifySelection(pin.id);
             });
             markerGroup.addLayer(marker);
           });
@@ -545,66 +619,31 @@ export default function AdminDashboardScreen() {
                     }}
                   />
                 ) : (
-                  <View className="flex-1 items-center justify-center p-6 bg-slate-100">
-                    <Ionicons name="map" size={48} color="#4d6029" />
-                    <Text className="text-sm font-poppins-bold text-[#0f172a] mt-2">
-                      Iligan City Distribution Box Network
-                    </Text>
-                    <Text className="text-xs font-poppins text-[#64748b] text-center mt-1">
-                      {boxes.length} Nodes across distribution network
-                    </Text>
-                  </View>
+                  <WebView
+                    key={`admin-map-webview-${activeFilter}-${mapMode}`}
+                    originWhitelist={['*']}
+                    source={{ html: generateMapHtml() }}
+                    style={{ flex: 1 }}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    onMessage={(event) => {
+                      try {
+                        const data = JSON.parse(event.nativeEvent.data);
+                        if (data.type === 'SELECT_PIN') {
+                          const found = boxes.find((p) => p.id === data.pinId);
+                          if (found) setSelectedPin(found);
+                        }
+                      } catch {
+                        // Fallback
+                      }
+                    }}
+                  />
                 )}
-              </View>
-
-              {/* Map Footer Bar with Quick Box Jump Pills */}
-              <View className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex-row items-center justify-between flex-wrap gap-2">
-                <View className="flex-row items-center">
-                  <Ionicons name="navigate-circle-outline" size={16} color="#4d6029" />
-                  <Text className="text-xs font-poppins-semibold text-[#475569] ml-1.5 mr-2">
-                    Quick Jump to Box:
-                  </Text>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5">
-                  {boxes.length === 0 ? (
-                    <Text className="text-xs font-poppins text-slate-400 py-1">
-                      No distribution boxes found
-                    </Text>
-                  ) : (
-                    boxes.map((pin) => (
-                    <TouchableOpacity
-                      key={pin.id}
-                      onPress={() => setSelectedPin(pin)}
-                      className={`px-2.5 py-1 rounded-lg border flex-row items-center mr-1.5 ${
-                        selectedPin?.id === pin.id
-                          ? 'bg-[#4d6029] border-[#4d6029]'
-                          : 'bg-white border-slate-200 hover:bg-slate-100'
-                      }`}
-                      activeOpacity={0.7}
-                    >
-                      <View
-                        className={`w-2 h-2 rounded-full mr-1.5 ${
-                          pin.status === 'ACTIVE'
-                            ? 'bg-emerald-500'
-                            : pin.status === 'NEEDS_TAG'
-                            ? 'bg-amber-500'
-                            : 'bg-rose-500'
-                        }`}
-                      />
-                      <Text
-                        className={`text-[11px] font-poppins-bold ${
-                          selectedPin?.id === pin.id ? 'text-white' : 'text-[#334155]'
-                        }`}
-                      >
-                        {pin.code}
-                      </Text>
-                    </TouchableOpacity>
-                  )))}
-                </ScrollView>
               </View>
             </View>
 
             {/* 3. SELECTED PIN INSPECTOR DRAWER */}
+
             {selectedPin && (
               <View className="mt-4 bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm">
                 <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3">

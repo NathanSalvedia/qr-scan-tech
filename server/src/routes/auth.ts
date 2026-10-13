@@ -6,8 +6,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { sendOtpEmail } from '../services/mailer.js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
+import { firebaseAdminAuth } from '../services/firebase-admin.js';
 
 const router = Router();
+
 
 // Helper: Generate a random 6-digit OTP string
 const generate6DigitCode = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -445,6 +447,244 @@ router.post('/change-password', requireAuth, async (req: AuthenticatedRequest, r
     });
   } catch (err: any) {
     console.error('Change password error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 8. UPDATE PROFILE (Name, Email, and optional Password)
+// =================================================================
+router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    const { name, firstName, lastName, email, currentPassword, newPassword } = req.body;
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User account not found.' });
+    }
+
+    // Determine first and last name
+    let newFirst = user.firstName;
+    let newLast = user.lastName;
+
+    if (firstName !== undefined && firstName !== null) {
+      newFirst = String(firstName).trim();
+    }
+    if (lastName !== undefined && lastName !== null) {
+      newLast = String(lastName).trim();
+    }
+    if (name && (!firstName && !lastName)) {
+      const parts = String(name).trim().split(' ').filter(Boolean);
+      newFirst = parts[0] || user.firstName;
+      newLast = parts.slice(1).join(' ') || '';
+    }
+
+    // Determine email
+    let newEmail = user.email;
+    if (email && String(email).trim()) {
+      const cleanEmail = String(email).toLowerCase().trim();
+      if (cleanEmail !== user.email) {
+        const existing = await db.query.users.findFirst({
+          where: eq(users.email, cleanEmail),
+        });
+        if (existing && existing.id !== userId) {
+          return res.status(400).json({
+            success: false,
+            message: 'This email is already in use by another account.',
+          });
+        }
+        newEmail = cleanEmail;
+      }
+    }
+
+    // Check and update password if provided
+    let newPasswordHash = user.passwordHash;
+    if (newPassword && String(newPassword).trim()) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password is required to set a new password.',
+        });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password is incorrect.',
+        });
+      }
+      if (String(newPassword).length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'New password must be at least 6 characters long.',
+        });
+      }
+      newPasswordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    await db.update(users)
+      .set({
+        firstName: newFirst,
+        lastName: newLast,
+        email: newEmail,
+        passwordHash: newPasswordHash,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    const updatedUser = {
+      id: user.id,
+      firstName: newFirst,
+      lastName: newLast,
+      name: `${newFirst} ${newLast}`.trim(),
+      email: newEmail,
+      role: user.role,
+      isActive: user.isActive,
+    };
+
+    const token = jwt.sign(
+      { id: user.id, email: newEmail, role: user.role },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully!',
+      user: updatedUser,
+      token,
+    });
+  } catch (err: any) {
+    console.error('Update profile error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 8b. CHECK ACCOUNT AVAILABILITY (Pre-registration check)
+// =================================================================
+router.post('/check-availability', async (req, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+    }
+    const cleanEmail = String(email).toLowerCase().trim();
+    const existing = await db.query.users.findFirst({
+      where: eq(users.email, cleanEmail),
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    return res.json({ success: true, message: 'Email is available.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 9. REGISTER WITH VERIFIED FIREBASE PHONE TOKEN
+// =================================================================
+router.post('/register-with-phone', async (req, res: Response) => {
+  try {
+    const { firstName, lastName, email, phone, password, idToken } = req.body;
+
+    if (!firstName || !lastName || !email || !password || !idToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields (First name, Last name, Email, Password, and Phone Token) are required.',
+      });
+    }
+
+    const cleanEmail = String(email).toLowerCase().trim();
+
+    // 1. Verify Firebase Phone Token
+    const authAdmin = firebaseAdminAuth();
+    if (!authAdmin) {
+      return res.status(500).json({
+        success: false,
+        message: 'Firebase Admin authentication is not configured on the server.',
+      });
+    }
+
+    let verifiedPhoneNumber: string | undefined;
+    try {
+      const decoded = await authAdmin.verifyIdToken(idToken);
+      verifiedPhoneNumber = decoded.phone_number;
+    } catch (tokenErr: any) {
+      console.error('Firebase ID token verification failed:', tokenErr.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired phone verification code. Please try again.',
+      });
+    }
+
+    // 2. Check if email already registered
+    const existing = await db.query.users.findFirst({
+      where: eq(users.email, cleanEmail),
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    // 3. Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 4. Create active user immediately (Phone is already verified via SMS!)
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        firstName: String(firstName).trim(),
+        lastName: String(lastName).trim(),
+        email: cleanEmail,
+        phoneNumber: verifiedPhoneNumber || (phone ? String(phone).trim() : null),
+        passwordHash: hashedPassword,
+        role: 'user',
+        isActive: true,
+      })
+      .returning();
+
+    // 5. Issue JWT token
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created and phone verified successfully!',
+      user: {
+        id: newUser.id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        name: `${newUser.firstName} ${newUser.lastName}`.trim(),
+        email: newUser.email,
+        phoneNumber: newUser.phoneNumber,
+        role: newUser.role,
+        isActive: newUser.isActive,
+      },
+      token,
+    });
+  } catch (err: any) {
+    console.error('Register with phone error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });

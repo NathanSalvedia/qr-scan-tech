@@ -241,6 +241,8 @@ export default function BoxManagementScreen() {
     "Utility Pole" | "Wall Mount" | "Cabinet"
   >("Utility Pole");
   const [newPoleNumber, setNewPoleNumber] = useState("");
+  const [newLatitude, setNewLatitude] = useState("8.225963");
+  const [newLongitude, setNewLongitude] = useState("124.238820");
   const [newPorts, setNewPorts] = useState("24");
   const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
   const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([
@@ -752,8 +754,8 @@ export default function BoxManagementScreen() {
       address: newAddress.trim(),
       mountingType: newMountingType,
       poleNumber: newPoleNumber.trim() || null,
-      latitude: 8.23 + (Math.random() * 0.02 - 0.01),
-      longitude: 124.245 + (Math.random() * 0.02 - 0.01),
+      latitude: parseFloat(newLatitude) || 8.227625,
+      longitude: parseFloat(newLongitude) || 124.238500,
       status: "NEEDS_TAG",
       totalPorts: parseInt(newPorts, 10) || 24,
       notes:
@@ -806,6 +808,8 @@ export default function BoxManagementScreen() {
         setNewSelectedEquipment([]);
         setIsEquipmentDropdownOpen(false);
         setCustomEquipmentInput("");
+        setNewLatitude("8.225963");
+        setNewLongitude("124.238820");
 
         // Open QR print preview for the newly added box immediately
         setSelectedBoxForQR(savedBox);
@@ -2445,6 +2449,111 @@ export default function BoxManagementScreen() {
                       onChangeText={setNewPoleNumber}
                       className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a]"
                     />
+                  </View>
+                </View>
+
+                {/* GPS Field Geolocation Coordinates */}
+                <View className="mt-3 bg-slate-50 border border-slate-200/90 rounded-2xl p-3">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center">
+                      <Ionicons name="navigate-outline" size={15} color="#4d6029" />
+                      <Text className="text-xs font-poppins-semibold text-[#334155] ml-1.5">
+                        GPS Geolocation Coordinates:
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] font-poppins text-slate-500">
+                      WGS84 6-Decimal
+                    </Text>
+                  </View>
+
+                  <View className="flex-row gap-2">
+                    <View className="flex-1">
+                      <Text className="text-[10px] font-poppins-medium text-[#64748b] mb-1">
+                        Latitude (°N):
+                      </Text>
+                      <TextInput
+                        placeholder="8.227625"
+                        placeholderTextColor="#94a3b8"
+                        value={newLatitude}
+                        onChangeText={setNewLatitude}
+                        keyboardType="numeric"
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-[10px] font-poppins-medium text-[#64748b] mb-1">
+                        Longitude (°E):
+                      </Text>
+                      <TextInput
+                        placeholder="124.238500"
+                        placeholderTextColor="#94a3b8"
+                        value={newLongitude}
+                        onChangeText={setNewLongitude}
+                        keyboardType="numeric"
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Quick Preset Buttons */}
+                  <View className="flex-row flex-wrap gap-1.5 mt-2.5">
+                    <TouchableOpacity
+                      onPress={() => {
+                        setNewLatitude("8.225963");
+                        setNewLongitude("124.238820");
+                      }}
+                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                        ICNHS / Mahayahay
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setNewLatitude("8.224150");
+                        setNewLongitude("124.243500");
+                      }}
+                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                        Multifactors / Ubaldo Laya
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setNewLatitude("8.232000");
+                        setNewLongitude("124.248000");
+                      }}
+                      className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                        City Hall / Poblacion
+                      </Text>
+                    </TouchableOpacity>
+                    {typeof navigator !== "undefined" && navigator.geolocation && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                              setNewLatitude(pos.coords.latitude.toFixed(6));
+                              setNewLongitude(pos.coords.longitude.toFixed(6));
+                            },
+                            (err) => console.log("GPS err", err),
+                            { enableHighAccuracy: true }
+                          );
+                        }}
+                        className="bg-[#4d6029]/10 border border-[#4d6029]/30 px-2.5 py-1 rounded-lg flex-row items-center"
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="locate" size={11} color="#4d6029" />
+                        <Text className="text-[10px] font-poppins-bold text-[#4d6029] ml-1">
+                          Current Device GPS
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
 

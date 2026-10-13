@@ -1,5 +1,6 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
 import { boxService } from "@/services/boxes";
+import { settingsService } from "@/services/settings";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -37,14 +38,20 @@ type FilterType = "ALL" | "NEEDS_TAG" | "MAIN_BOX" | "SUB_BOX";
 /**
  * Standard Placard Component (Reference Design)
  * 1. Dashed rounded outer border
- * 2. Header with green QR badge + "MULTIFACTORS · ILIGAN"
+ * 2. Header with green QR badge + Company/Placard Header
  * 3. Soft white rounded container with centered crisp QR code
  * 4. Box Code (e.g. DB-MN-01)
  * 5. Classification (e.g. MAIN DISTRIBUTION BOX)
  * 6. Site Name / Location
  * 7. Security Token ID
  */
-function PlacardCard({ box }: { box: PrintableBox }) {
+function PlacardCard({
+  box,
+  placardHeader = "MULTIFACTORS · ILIGAN",
+}: {
+  box: PrintableBox;
+  placardHeader?: string;
+}) {
   return (
     <View className="w-full max-w-[360px] self-center border-2 border-dashed border-slate-300 rounded-[32px] p-6 bg-white flex-col items-center justify-between shadow-xs my-2">
       {/* 1. Header: Brand Logo & City Name */}
@@ -57,7 +64,7 @@ function PlacardCard({ box }: { box: PrintableBox }) {
           />
         </View>
         <Text className="text-xs font-poppins-bold text-[#0f172a] uppercase tracking-wider">
-          MULTIFACTORS · ILIGAN
+          {placardHeader}
         </Text>
       </View>
 
@@ -95,12 +102,8 @@ function PlacardCard({ box }: { box: PrintableBox }) {
         >
           {box.siteName}
         </Text>
-
-        {/* Verification Token Key */}
-        <Text className="text-[10px] font-mono text-[#94a3b8] text-center mt-1 tracking-wider">
-          {box.qrToken}
-        </Text>
       </View>
+
     </View>
   );
 }
@@ -114,13 +117,31 @@ export default function QRPrintScreen() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [showDuplicateIfSingle, setShowDuplicateIfSingle] = useState(true);
+  const [placardHeader, setPlacardHeader] = useState("MULTIFACTORS · ILIGAN");
 
-  // Load real boxes from API
+  // Load real boxes & system settings from API
   useEffect(() => {
     let isMounted = true;
-    async function loadBoxes() {
+
+    async function loadData() {
       try {
         setLoading(true);
+
+        // Fetch system settings
+        try {
+          const sys = await settingsService.getSystemSettings();
+          if (isMounted && sys) {
+            if (sys.placardHeader) {
+              setPlacardHeader(sys.placardHeader);
+            }
+            if (sys.autoFillDuplicate !== undefined) {
+              setShowDuplicateIfSingle(sys.autoFillDuplicate);
+            }
+          }
+        } catch (settingsErr) {
+          console.warn("Failed to load settings in QR Print:", settingsErr);
+        }
+
         const res = await boxService.getAll();
         if (!isMounted) return;
         if (res.success && Array.isArray(res.boxes)) {
@@ -159,11 +180,12 @@ export default function QRPrintScreen() {
       }
     }
 
-    loadBoxes();
+    loadData();
     return () => {
       isMounted = false;
     };
   }, []);
+
 
   const isWeb = Platform.OS === "web";
 
@@ -754,7 +776,7 @@ export default function QRPrintScreen() {
                 {currentSheet ? (
                   <View className="bg-white rounded-3xl shadow-xl border border-slate-300 p-6 md:p-8 a4-print-page w-full min-h-[780px] flex-col justify-between">
                     {/* PLACARD 1: TOP HALF (210mm x 148.5mm reference design) */}
-                    <PlacardCard box={currentSheet.top} />
+                    <PlacardCard box={currentSheet.top} placardHeader={placardHeader} />
 
                     {/* CENTER CUT GUIDE (Exact Middle 148.5mm line) */}
                     <View className="my-2.5 flex-row items-center justify-center no-print">
@@ -774,8 +796,9 @@ export default function QRPrintScreen() {
 
                     {/* PLACARD 2: BOTTOM HALF (210mm x 148.5mm reference design) */}
                     {currentSheet.bottom ? (
-                      <PlacardCard box={currentSheet.bottom} />
+                      <PlacardCard box={currentSheet.bottom} placardHeader={placardHeader} />
                     ) : (
+
                       /* Blank Half State */
                       <View className="w-full max-w-[360px] self-center border-2 border-dashed border-slate-300 rounded-[32px] p-8 bg-slate-50/50 items-center justify-center my-2 min-h-[260px]">
                         <Ionicons

@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,8 +17,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { authService } from "@/services/auth";
 import { authState } from "@/services/auth-state";
+import { formatToE164, sendFirebasePhoneOtp } from "@/services/phone-auth";
+import {
+  FirebaseRecaptchaModal,
+  FirebaseRecaptchaRef,
+} from "@/components/firebase-recaptcha-modal";
+
+// Feature flag: Set to true whenever you want to switch to Firebase SMS OTP in the future
+const USE_SMS_OTP = false;
 
 export default function SignUpScreen() {
+  const recaptchaRef = useRef<FirebaseRecaptchaRef>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -83,6 +92,13 @@ export default function SignUpScreen() {
       return;
     }
     const phoneDigits = cleanPhone.replace(/\D/g, "");
+    if (phoneDigits.startsWith("09") && phoneDigits.length !== 11) {
+      showAlert(
+        "Invalid Phone Number",
+        `Philippine mobile numbers must be exactly 11 digits (e.g. 09171234567). You entered ${phoneDigits.length} digits.`
+      );
+      return;
+    }
     if (phoneDigits.length < 10 || phoneDigits.length > 13) {
       showAlert("Invalid Phone Number", "Please enter a valid mobile number (e.g. 09171234567).");
       return;
@@ -106,40 +122,109 @@ export default function SignUpScreen() {
 
     try {
       setIsLoading(true);
-      const res = await authService.register({
-        firstName: cleanFirstName,
-        lastName: cleanLastName,
-        email: cleanEmail,
-        phone: cleanPhone,
-        password,
-      });
 
-      if (!res.success) {
-        showAlert("Registration Failed", res.message || res.error || "Could not complete registration.");
-        return;
-      }
+      if (USE_SMS_OTP) {
+        // --- SMS OTP Flow (Preserved for future use) ---
+        const checkRes = await authService.checkAvailability(cleanEmail);
+        if (!checkRes.success) {
+          showAlert("Registration Error", checkRes.message || "An account with this email already exists.");
+          return;
+        }
 
-      if (isWeb) {
-        window.alert(`Account Created! A 6-digit verification code has been sent to ${cleanEmail}.`);
-        authState.setAuthTarget(cleanEmail, "verification");
-        router.push("/auth/otp");
-      } else {
-        Alert.alert(
-          "Account Created",
-          `Welcome ${cleanFirstName}! A 6-digit verification code has been sent to ${cleanEmail}.`,
-          [
-            {
-              text: "Enter OTP",
-              onPress: () => {
-                authState.setAuthTarget(cleanEmail, "verification");
-                router.push("/auth/otp");
-              },
-            },
-          ],
+        const formattedPhone = formatToE164(cleanPhone);
+        const appVerifier = Platform.OS === "web" ? undefined : {
+          type: "recaptcha",
+          verify: async () => {
+            if (recaptchaRef.current) {
+              return await recaptchaRef.current.verify();
+            }
+            return "native-token";
+          },
+          _reset: () => {},
+          render: async () => "0",
+          clear: () => {},
+        };
+
+        const confirmationResult = await sendFirebasePhoneOtp(formattedPhone, appVerifier as any);
+
+        authState.setPendingRegistration(
+          {
+            firstName: cleanFirstName,
+            lastName: cleanLastName,
+            email: cleanEmail,
+            phone: formattedPhone,
+            password,
+          },
+          confirmationResult
         );
+
+        if (isWeb) {
+          window.alert(`Verification Code Sent! A 6-digit SMS code has been sent to ${formattedPhone}.`);
+          router.push("/auth/otp");
+        } else {
+          Alert.alert(
+            "Verification Code Sent",
+            `A 6-digit SMS verification code has been sent to ${formattedPhone}.`,
+            [
+              {
+                text: "Enter OTP",
+                onPress: () => {
+                  router.push("/auth/otp");
+                },
+              },
+            ]
+          );
+        }
+      } else {
+        // --- Email OTP Flow (Active) ---
+        const res = await authService.register({
+          firstName: cleanFirstName,
+          lastName: cleanLastName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          password,
+        });
+
+        if (!res.success) {
+          showAlert("Registration Failed", res.message || res.error || "Could not complete registration.");
+          return;
+        }
+
+        authState.setAuthTarget(cleanEmail, "verification", cleanPhone, "email");
+
+        if (isWeb) {
+          window.alert(`Account Created! A 6-digit verification code has been sent to ${cleanEmail}.`);
+          router.push("/auth/otp");
+        } else {
+          Alert.alert(
+            "Account Created",
+            `Welcome ${cleanFirstName}! A 6-digit verification code has been sent to your email (${cleanEmail}).`,
+            [
+              {
+                text: "Enter OTP",
+                onPress: () => {
+                  router.push("/auth/otp");
+                },
+              },
+            ]
+          );
+        }
       }
     } catch (err: any) {
-      showAlert("Error", err.message || "An unexpected error occurred.");
+      console.error("Firebase Phone Auth error:", err);
+      let message = err.message || "Failed to send SMS verification code.";
+      if (err.code === "auth/invalid-phone-number") {
+        message = "Invalid phone number format. Please check your mobile number (e.g. 09171234567).";
+      } else if (err.code === "auth/quota-exceeded") {
+        message = "Daily SMS quota has been reached. Please try again later or use a Firebase test number.";
+      } else if (err.code === "auth/billing-not-enabled") {
+        message = "Live SMS requires a billing account in Firebase. Add your number under 'Phone numbers for testing' in Firebase Console for free instant testing, or upgrade to Blaze.";
+      } else if (err.code === "auth/too-many-requests") {
+        message = "Too many attempts. Please wait a few moments before trying again.";
+      } else if (err.code === "auth/captcha-check-failed") {
+        message = "Security verification failed. Please try again.";
+      }
+      showAlert("SMS Verification Failed", message);
     } finally {
       setIsLoading(false);
     }
@@ -148,6 +233,7 @@ export default function SignUpScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#f0f3f6]">
       <StatusBar style="dark" />
+      <FirebaseRecaptchaModal ref={recaptchaRef} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"

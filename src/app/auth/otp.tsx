@@ -17,10 +17,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authService } from "@/services/auth";
 import { authState } from "@/services/auth-state";
+import { sendFirebasePhoneOtp } from "@/services/phone-auth";
 
 export default function OtpVerificationScreen() {
   const userEmail = authState.getEmail();
+  const userPhone = authState.getPhone();
   const mode = authState.getMode();
+  const otpType = authState.getOtpType();
 
   const [code, setCode] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(true);
@@ -74,22 +77,44 @@ export default function OtpVerificationScreen() {
     inputRef.current?.focus();
 
     try {
-      const res = await authService.resendOtp(userEmail, mode);
-      if (res.success) {
-        setSuccessToast("A new 6-digit code has been sent.");
+      if (otpType === "sms") {
+        const phoneToUse = userPhone || authState.getPendingRegistration()?.phone;
+        const newConfirmation = await sendFirebasePhoneOtp(phoneToUse);
+        authState.setConfirmationResult(newConfirmation);
+        setSuccessToast("A new 6-digit SMS code has been sent.");
         setTimeout(() => setSuccessToast(null), 3500);
 
         if (!isWeb) {
           Alert.alert(
             "Code Resent",
-            `A new 6-digit verification code has been sent to ${userEmail}.`
+            `A new 6-digit SMS verification code has been sent to ${phoneToUse}.`
           );
         }
       } else {
-        setErrorMessage(res.message || res.error || "Failed to resend code.");
+        const res = await authService.resendOtp(userEmail, mode);
+        if (res.success) {
+          setSuccessToast("A new 6-digit code has been sent.");
+          setTimeout(() => setSuccessToast(null), 3500);
+
+          if (!isWeb) {
+            Alert.alert(
+              "Code Resent",
+              `A new 6-digit verification code has been sent to ${userEmail}.`
+            );
+          }
+        } else {
+          setErrorMessage(res.message || res.error || "Failed to resend code.");
+        }
       }
     } catch (err: any) {
-      setErrorMessage(err.message || "Could not connect to server.");
+      console.error("Resend OTP error:", err);
+      let msg = err.message || "Could not connect to server.";
+      if (err.code === "auth/too-many-requests") {
+        msg = "Too many resend attempts. Please wait a moment before trying again.";
+      } else if (err.code === "auth/quota-exceeded") {
+        msg = "Daily SMS quota has been reached.";
+      }
+      setErrorMessage(msg);
     }
   };
 
@@ -103,29 +128,76 @@ export default function OtpVerificationScreen() {
     setErrorMessage(null);
 
     try {
-      const res = await authService.verifyOtp(userEmail, codeToVerify, mode);
+      if (otpType === "sms") {
+        const confirmation = authState.getConfirmationResult();
+        if (!confirmation) {
+          setErrorMessage("SMS verification session not found. Please return to sign up and try again.");
+          setIsVerifying(false);
+          return;
+        }
 
-      if (!res.success) {
-        setErrorMessage(res.message || res.error || "Invalid verification code.");
+        // 1. Confirm Firebase OTP
+        const userCredential = await confirmation.confirm(codeToVerify);
+        const idToken = await userCredential.user.getIdToken();
+
+        // 2. Complete backend registration & obtain JWT session
+        const pending = authState.getPendingRegistration();
+        const res = await authService.registerWithPhone({
+          firstName: pending?.firstName || "",
+          lastName: pending?.lastName || "",
+          email: pending?.email || userEmail,
+          phone: pending?.phone || userPhone,
+          password: pending?.password || "",
+          idToken,
+        });
+
+        if (!res.success) {
+          setErrorMessage(res.message || res.error || "Registration failed.");
+          setIsVerifying(false);
+          return;
+        }
+
+        authState.clearPendingRegistration();
         setIsVerifying(false);
-        return;
-      }
 
-      setIsVerifying(false);
-
-      if (mode === "reset") {
-        router.replace("/auth/reset-password");
-      } else {
         const userRole = res.user?.role?.toLowerCase();
         if (userRole === "admin") {
           router.replace("/admin/dashboard");
         } else {
           router.replace("/user/dashboard");
         }
+      } else {
+        const res = await authService.verifyOtp(userEmail, codeToVerify, mode);
+
+        if (!res.success) {
+          setErrorMessage(res.message || res.error || "Invalid verification code.");
+          setIsVerifying(false);
+          return;
+        }
+
+        setIsVerifying(false);
+
+        if (mode === "reset") {
+          router.replace("/auth/reset-password");
+        } else {
+          const userRole = res.user?.role?.toLowerCase();
+          if (userRole === "admin") {
+            router.replace("/admin/dashboard");
+          } else {
+            router.replace("/user/dashboard");
+          }
+        }
       }
     } catch (err: any) {
+      console.error("Verification error:", err);
       setIsVerifying(false);
-      setErrorMessage(err.message || "An unexpected error occurred.");
+      let msg = err.message || "An unexpected error occurred.";
+      if (err.code === "auth/invalid-verification-code") {
+        msg = "Incorrect SMS verification code. Please check and try again.";
+      } else if (err.code === "auth/code-expired") {
+        msg = "This verification code has expired. Please request a new one.";
+      }
+      setErrorMessage(msg);
     }
   };
 
@@ -142,7 +214,11 @@ export default function OtpVerificationScreen() {
   };
 
   const handleGoBack = () => {
-    router.replace("/auth/sign-in");
+    if (mode === "verification") {
+      router.replace("/auth/sign-up");
+    } else {
+      router.replace("/auth/sign-in");
+    }
   };
 
   const isComplete = code.length === 6;
@@ -194,7 +270,11 @@ export default function OtpVerificationScreen() {
                   <View style={styles.iconBadgeInner}>
                     <MaterialCommunityIcons
                       name={
-                        mode === "reset" ? "lock-reset" : "email-check-outline"
+                        otpType === "sms"
+                          ? "cellphone-check"
+                          : mode === "reset"
+                            ? "lock-reset"
+                            : "email-check-outline"
                       }
                       size={28}
                       color="#ffffff"
@@ -211,17 +291,29 @@ export default function OtpVerificationScreen() {
 
               {/* Main Titles */}
               <Text style={styles.titleText}>
-                {mode === "reset" ? "Reset Password" : "Verify Your Email"}
+                {otpType === "sms"
+                  ? "Verify Your Phone"
+                  : mode === "reset"
+                    ? "Reset Password"
+                    : "Verify Your Email"}
               </Text>
 
               <Text style={styles.subtitleText}>
-                Enter the 6-digit verification code sent to
+                {otpType === "sms"
+                  ? "Enter the 6-digit verification code sent via SMS to"
+                  : "Enter the 6-digit verification code sent to"}
               </Text>
 
-              {/* Email Address Pill Badge */}
+              {/* Address / Contact Pill Badge */}
               <View style={styles.emailPill}>
-                <Ionicons name="mail" size={13} color="#4d6029" />
-                <Text style={styles.emailPillText}>{userEmail}</Text>
+                <Ionicons
+                  name={otpType === "sms" ? "call" : "mail"}
+                  size={13}
+                  color="#4d6029"
+                />
+                <Text style={styles.emailPillText}>
+                  {otpType === "sms" ? (userPhone || "your phone") : userEmail}
+                </Text>
               </View>
             </View>
 

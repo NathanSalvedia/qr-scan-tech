@@ -7,14 +7,14 @@ async function updateLocations() {
   console.log('Updating coordinates and addresses for distribution boxes...');
 
   // 1. Update Iligan City National High School (DB-MN-01)
-  // Plus Code: 66GQ+3RJ -> Lat: 8.227625, Lng: 124.238500
+  // Entrance on General Wood Street, Mahayahay -> Lat: 8.225963, Lng: 124.238820
   const res1 = await db
     .update(distributionBoxes)
     .set({
       siteName: 'Iligan City National High School',
-      address: '66GQ+3RJ, Gen. Wood Street, Corner Roxas Avenue, Brgy. Mahayahay, Iligan City, 9200 Lanao del Norte',
-      latitude: '8.227625',
-      longitude: '124.238500',
+      address: 'General Wood Street, Brgy. Mahayahay, Iligan City, 9200 Lanao del Norte',
+      latitude: '8.225963',
+      longitude: '124.238820',
       updatedAt: new Date(),
     })
     .where(eq(distributionBoxes.code, 'DB-MN-01'))
@@ -22,15 +22,15 @@ async function updateLocations() {
 
   console.log('Updated DB-MN-01:', res1);
 
-  // 2. Update MultiFactors Sales (DB-MN-02)
-  // Crown Paper and Stationery Warehouse -> Lat: 8.227864, Lng: 124.240089
+  // 2. Update Multifactors Sales Automation Inc. (DB-MN-02)
+  // No. 0005 Juan C. Legaspi Street, Ubaldo D. Laya -> Lat: 8.224150, Lng: 124.243500
   const res2 = await db
     .update(distributionBoxes)
     .set({
-      siteName: 'Multifactors Sales',
-      address: 'Crown Paper and Stationery Warehouse, Iligan City, 9200 Lanao del Norte',
-      latitude: '8.227864',
-      longitude: '124.240089',
+      siteName: 'Multifactors Sales Automation Inc.',
+      address: 'No. 0005 Juan C. Legaspi Street, Ubaldo D. Laya, Iligan City, 9200 Lanao del Norte',
+      latitude: '8.224150',
+      longitude: '124.243500',
       updatedAt: new Date(),
     })
     .where(eq(distributionBoxes.code, 'DB-MN-02'))

@@ -128,3 +128,19 @@ export const scanAuditLogs = pgTable('scan_audit_logs', {
   boxStatusAtScan: varchar('box_status_at_scan', { length: 50 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// System / Organization Settings Table
+export const systemSettings = pgTable('system_settings', {
+  id: varchar('id', { length: 50 }).primaryKey().default('default'),
+  companyName: varchar('company_name', { length: 150 }).default('MultiFactors Network Infrastructure').notNull(),
+  branchName: varchar('branch_name', { length: 150 }).default('Iligan City Operations').notNull(),
+  officeAddress: text('office_address').default('Aguinaldo St, Poblacion, Iligan City, 9200').notNull(),
+  hotline: varchar('hotline', { length: 50 }).default('(063) 221-4400').notNull(),
+  mobileDispatch: varchar('mobile_dispatch', { length: 50 }).default('+63 917 800 9000').notNull(),
+  placardHeader: varchar('placard_header', { length: 150 }).default('MULTIFACTORS · ILIGAN').notNull(),
+  paperFormat: varchar('paper_format', { length: 100 }).default('A4 Bondpaper (2 Placards / Sheet)').notNull(),
+  autoFillDuplicate: boolean('auto_fill_duplicate').default(true).notNull(),
+  tokenPrefix: varchar('token_prefix', { length: 50 }).default('QRTECH-BOX-').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
