@@ -72,6 +72,13 @@ export interface BoxDetailData {
   tier?: string | null;
   subscriberType?: string | null;
   clientType?: string | null;
+  latestIssue?: {
+    notes: string;
+    reportedBy?: string;
+    reportedAt?: string;
+    padlockVerified?: boolean;
+    issueType?: string;
+  } | null;
 }
 
 export default function BoxDetailsScreen() {
@@ -89,9 +96,10 @@ export default function BoxDetailsScreen() {
   const [isSubmittingAudit, setIsSubmittingAudit] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
   const [padlockVerified, setPadlockVerified] = useState(true);
-  const [auditLoss, setAuditLoss] = useState("-18.5 dBm");
-  const [auditTemp, setAuditTemp] = useState("31.2 °C");
   const [auditStatus, setAuditStatus] = useState<string>("ACTIVE");
+  const [selectedIssueType, setSelectedIssueType] = useState<string>(
+    "Defective Port / Splitter"
+  );
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -208,10 +216,9 @@ export default function BoxDetailsScreen() {
 
   const handleOpenAuditModal = () => {
     if (!box) return;
-    setAuditLoss(box.opticalLoss || "-18.5 dBm");
-    setAuditTemp(box.temperature || "31.2 °C");
     setAuditStatus(box.status || "ACTIVE");
     setPadlockVerified(true);
+    setSelectedIssueType("Defective Port / Splitter");
     setAuditNotes("");
     setIsAuditModalOpen(true);
   };
@@ -220,15 +227,24 @@ export default function BoxDetailsScreen() {
     if (!box) return;
     try {
       setIsSubmittingAudit(true);
+      let fullNotes = auditNotes.trim();
+      if (auditStatus === "ISSUE") {
+        fullNotes = fullNotes
+          ? `[${selectedIssueType}] ${fullNotes}`
+          : `[${selectedIssueType}] Hardware problem reported during field inspection`;
+      } else if (!fullNotes) {
+        fullNotes =
+          auditStatus === "ACTIVE"
+            ? "Field audit passed. Enclosure & hardware operational."
+            : "Field audit complete. Pending QR placard affixing.";
+      }
+
       const res = await logsService.recordScan({
         boxId: box.id,
         boxCode: box.code,
         scanType: "ROUTINE_AUDIT",
         padlockVerified,
-        measuredSignal: auditLoss,
-        measuredTemp: auditTemp,
-        auditNotes:
-          auditNotes.trim() || `Field audit inspection of ${box.code}`,
+        auditNotes: fullNotes,
         boxStatusAtScan: auditStatus,
       });
 
@@ -237,7 +253,11 @@ export default function BoxDetailsScreen() {
           await boxService.update(box.id, { status: auditStatus });
         }
         setIsAuditModalOpen(false);
-        showToast(`Audit for ${box.code} recorded successfully!`);
+        showToast(
+          auditStatus === "ISSUE"
+            ? `Hardware issue logged for ${box.code}`
+            : `Audit for ${box.code} recorded successfully!`
+        );
         fetchBoxDetails(true);
       } else {
         throw new Error(res.message || "Failed to record audit");
@@ -509,6 +529,37 @@ export default function BoxDetailsScreen() {
         }
       >
         <View className="max-w-2xl w-full self-center">
+          {/* Active Hardware Issue Alert Banner */}
+          {box.status === "ISSUE" && (
+            <View className="bg-rose-50 border border-rose-200/90 rounded-3xl p-4 mb-4 shadow-xs">
+              <View className="flex-row items-center justify-between mb-1.5">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5">
+                    <Ionicons name="warning" size={17} color="#dc2626" />
+                  </View>
+                  <Text className="text-xs font-poppins-bold text-rose-900">
+                    Active Hardware Issue Reported
+                  </Text>
+                </View>
+                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg">
+                  <Text className="text-[9px] font-poppins-bold text-rose-800">
+                    NEEDS REPAIR
+                  </Text>
+                </View>
+              </View>
+              <Text className="text-xs font-poppins text-rose-800 ml-10">
+                {box.latestIssue?.notes ||
+                  box.notes ||
+                  "Hardware problem or physical degradation reported. Inspection and repair required."}
+              </Text>
+              {box.latestIssue?.reportedBy && (
+                <Text className="text-[10px] font-poppins text-rose-500 ml-10 mt-1">
+                  Reported by {box.latestIssue.reportedBy} · {box.latestIssue.reportedAt}
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* 1. Classification & Hierarchy Card */}
           <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
             <View className="flex-row items-center justify-between mb-3">
@@ -939,33 +990,79 @@ export default function BoxDetailsScreen() {
                   </View>
                 </View>
 
-                {/* Audit Readings Inputs */}
-                <View className="flex-row gap-2 mb-3">
-                  <View className="flex-1">
-                    <Text className="text-[10px] font-poppins text-[#475569] mb-1">
-                      Signal Loss
+                {/* Hardware Issue Selection Chips or Operational Confirmation */}
+                {auditStatus === "ISSUE" ? (
+                  <View className="mb-3 bg-rose-50/70 border border-rose-200/90 rounded-2xl p-3">
+                    <Text className="text-[11px] font-poppins-bold text-rose-900 mb-2">
+                      Select Problem Type:
                     </Text>
-                    <TextInput
-                      value={auditLoss}
-                      onChangeText={setAuditLoss}
-                      placeholder="-18.5 dBm"
-                      placeholderTextColor="#94a3b8"
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-[#0f172a]"
-                    />
+                    <View className="flex-row flex-wrap gap-1.5">
+                      {[
+                        {
+                          id: "Cable Damage / Cut",
+                          icon: "flash-off",
+                          label: "Cable Cut / Damage",
+                        },
+                        {
+                          id: "Defective Port / Splitter",
+                          icon: "hardware-chip",
+                          label: "Defective Splitter / Port",
+                        },
+                        {
+                          id: "Broken Lock / Door",
+                          icon: "lock-open",
+                          label: "Broken Lock / Door",
+                        },
+                        {
+                          id: "Water / Weather Damage",
+                          icon: "rainy",
+                          label: "Water / Weather Damage",
+                        },
+                      ].map((issue) => (
+                        <TouchableOpacity
+                          key={issue.id}
+                          onPress={() => setSelectedIssueType(issue.id)}
+                          className={`py-1.5 px-2.5 rounded-xl border flex-row items-center ${
+                            selectedIssueType === issue.id
+                              ? "bg-rose-600 border-rose-700"
+                              : "bg-white border-rose-200"
+                          }`}
+                        >
+                          <Ionicons
+                            name={issue.icon as any}
+                            size={12}
+                            color={
+                              selectedIssueType === issue.id
+                                ? "#ffffff"
+                                : "#dc2626"
+                            }
+                            style={{ marginRight: 4 }}
+                          />
+                          <Text
+                            className={`text-[10px] font-poppins-bold ${
+                              selectedIssueType === issue.id
+                                ? "text-white"
+                                : "text-rose-800"
+                            }`}
+                          >
+                            {issue.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
-                  <View className="flex-1">
-                    <Text className="text-[10px] font-poppins text-[#475569] mb-1">
-                      Cabinet Temp
+                ) : (
+                  <View className="mb-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3 flex-row items-center">
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#059669"
+                    />
+                    <Text className="text-[11px] font-poppins text-emerald-800 ml-2 flex-1">
+                      All optical ports, enclosure, and hardware verified operational on-site.
                     </Text>
-                    <TextInput
-                      value={auditTemp}
-                      onChangeText={setAuditTemp}
-                      placeholder="31.2 °C"
-                      placeholderTextColor="#94a3b8"
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-[#0f172a]"
-                    />
                   </View>
-                </View>
+                )}
 
                 {/* Audit Notes Input */}
                 <View>
@@ -973,7 +1070,11 @@ export default function BoxDetailsScreen() {
                     Field Inspection Notes:
                   </Text>
                   <TextInput
-                    placeholder="Describe cabinet condition, optical readings, or repair actions taken..."
+                    placeholder={
+                      auditStatus === "ISSUE"
+                        ? "Describe specific damage (e.g. Port 4 connector cracked)..."
+                        : "Optional notes on cabinet condition, maintenance performed..."
+                    }
                     placeholderTextColor="#94a3b8"
                     value={auditNotes}
                     onChangeText={setAuditNotes}

@@ -172,6 +172,7 @@ export default function BoxManagementScreen() {
         }));
         setBoxes(mapped);
       } else {
+        console.warn("[box-management] Failed to fetch boxes:", res.message);
         setBoxes([]);
       }
     } catch (err: any) {
@@ -183,12 +184,11 @@ export default function BoxManagementScreen() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadInitial() {
-      try {
-        const res = await boxService.getAll();
-        if (!isMounted) return;
+    let active = true;
+    boxService
+      .getAll()
+      .then((res) => {
+        if (!active) return;
         if (res.success && Array.isArray(res.boxes)) {
           const mapped: DistributionBox[] = res.boxes.map((b: any) => ({
             id: b.id,
@@ -221,23 +221,20 @@ export default function BoxManagementScreen() {
           }));
           setBoxes(mapped);
         } else {
+          console.warn("[box-management] Failed to fetch boxes:", res.message);
           setBoxes([]);
         }
-      } catch (err: any) {
-        if (!isMounted) return;
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (!active) return;
         console.error("Failed to load boxes:", err);
         setBoxes([]);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadInitial();
+        setLoading(false);
+      });
 
     return () => {
-      isMounted = false;
+      active = false;
     };
   }, []);
 
@@ -270,12 +267,7 @@ export default function BoxManagementScreen() {
   const geocodeDebounceRef = useRef<any>(null);
   const [newPorts, setNewPorts] = useState("24");
   const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
-  const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([
-    "PLC Optical Splitter",
-    "Fiber Optic Adapters / Couplers",
-    "Splice Tray",
-    "IP65/IP66 Weatherproof Enclosure",
-  ]);
+  const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([]);
   const [isEquipmentDropdownOpen, setIsEquipmentDropdownOpen] = useState(false);
   const [customEquipmentInput, setCustomEquipmentInput] = useState("");
   const [equipmentCatalogFilter, setEquipmentCatalogFilter] =
@@ -752,12 +744,7 @@ export default function BoxManagementScreen() {
     setNewMountingType("Utility Pole");
     setNewPorts("24");
     setIsPortsDropdownOpen(false);
-    setNewSelectedEquipment([
-      "PLC Optical Splitter",
-      "Fiber Optic Adapters / Couplers",
-      "Splice Tray",
-      "IP65/IP66 Weatherproof Enclosure",
-    ]);
+    setNewSelectedEquipment([]);
     setIsEquipmentDropdownOpen(false);
     setCustomEquipmentInput("");
     setEquipmentCatalogFilter("ALL");
@@ -770,20 +757,8 @@ export default function BoxManagementScreen() {
     setIsPortsDropdownOpen(false);
     if (cat === "MAIN_BOX") {
       setNewPorts("48");
-      setNewSelectedEquipment([
-        "Fiber Optic Adapters / Couplers",
-        "Splice Tray",
-        "Mid-span Access Ports / Main Cable Entry",
-        "IP65/IP66 Weatherproof Enclosure",
-      ]);
     } else {
       setNewPorts("24");
-      setNewSelectedEquipment([
-        "PLC Optical Splitter",
-        "Fiber Optic Adapters / Couplers",
-        "Splice Tray",
-        "IP65/IP66 Weatherproof Enclosure",
-      ]);
     }
   };
 
@@ -905,18 +880,7 @@ export default function BoxManagementScreen() {
               status: "OPERATIONAL" as const,
             };
           })
-        : [
-            {
-              id: `eq-${Date.now()}-1`,
-              catalogId: newCategory === "MAIN_BOX" ? "cat-opt-2" : "cat-opt-1",
-              name:
-                newCategory === "MAIN_BOX"
-                  ? "Fiber Optic Adapters / Couplers"
-                  : "PLC Optical Splitter",
-              type: newCategory === "MAIN_BOX" ? "Adapter" : "Splitter",
-              status: "OPERATIONAL" as const,
-            },
-          ];
+        : [];
 
     const payload = {
       code: newCode.trim().toUpperCase(),
@@ -2737,7 +2701,10 @@ export default function BoxManagementScreen() {
                   {/* Expanded Dropdown Options Panel */}
                   {isPortsDropdownOpen && (
                     <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                      {["8", "16", "24", "32", "48"].map((port, idx, arr) => {
+                      {(newCategory === "SUB_BOX"
+                        ? ["8", "16", "24"]
+                        : ["8", "16", "24", "32", "48"]
+                      ).map((port, idx, arr) => {
                         const isSelected = newPorts === port;
                         return (
                           <TouchableOpacity
@@ -2795,12 +2762,14 @@ export default function BoxManagementScreen() {
                     <Text className="text-xs font-poppins-semibold text-[#475569]">
                       Hardware Equipment:
                     </Text>
-                    <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-md">
-                      <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
-                        {newSelectedEquipment.length} item
-                        {newSelectedEquipment.length === 1 ? "" : "s"} assigned
-                      </Text>
-                    </View>
+                    {newSelectedEquipment.length > 0 && (
+                      <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-md">
+                        <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
+                          {newSelectedEquipment.length} item
+                          {newSelectedEquipment.length === 1 ? "" : "s"} assigned
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Dropdown Toggle Trigger Button */}
@@ -2948,10 +2917,9 @@ export default function BoxManagementScreen() {
                     </Text>
 
                     {newSelectedEquipment.length === 0 ? (
-                      <View className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl items-center">
-                        <Text className="text-xs font-poppins text-[#94a3b8]">
-                          No hardware assigned yet. Click dropdown above to
-                          select.
+                      <View className="py-3.5 px-4 bg-[#f8fafc] border border-dashed border-slate-300 rounded-2xl items-center justify-center">
+                        <Text className="text-xs font-poppins text-[#94a3b8] text-center">
+                          No hardware assigned yet. Click dropdown above to select.
                         </Text>
                       </View>
                     ) : (

@@ -42,17 +42,17 @@ export default function UserProfileScreen() {
       return `${user.firstName || ""} ${user.lastName || ""}`.trim();
     }
     if (user?.name) return user.name;
-    return "Field Technician";
+    return "User";
   }, [user]);
 
   const email = useMemo(() => {
-    return user?.email || "technician@multifactors.com";
+    return user?.email || "user@multifactors.com";
   }, [user]);
 
   const roleLabel = useMemo(() => {
     return user?.role?.toLowerCase() === "admin"
       ? "Network Administrator"
-      : "Field Technician";
+      : "Users";
   }, [user]);
 
   // Technician On-Duty Status (Persisted in AsyncStorage)
@@ -459,7 +459,7 @@ export default function UserProfileScreen() {
                       Sign Out
                     </Text>
                     <Text className="text-[10px] font-poppins-medium text-[#64748b] mt-0.5">
-                      Log out of field technician session
+                      Log out of user session
                     </Text>
                   </View>
                 </View>

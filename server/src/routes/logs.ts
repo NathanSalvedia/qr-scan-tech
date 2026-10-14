@@ -480,6 +480,14 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       })
       .returning();
 
+    // Automatically synchronize box status when an audit changes it
+    if (boxStatusAtScan && (boxStatusAtScan === 'ACTIVE' || boxStatusAtScan === 'ISSUE' || boxStatusAtScan === 'NEEDS_TAG')) {
+      await db
+        .update(distributionBoxes)
+        .set({ status: boxStatusAtScan, updatedAt: new Date() })
+        .where(eq(distributionBoxes.id, targetBoxId));
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Scan audit record saved successfully',

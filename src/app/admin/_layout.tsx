@@ -5,9 +5,12 @@ import { useAuth } from '@/services/auth-state';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function AdminLayout() {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, isHydrated } = useAuth();
 
   useEffect(() => {
+    // Wait until storage hydration completes before deciding whether to redirect
+    if (!isHydrated) return;
+
     // 1. If not authenticated at all -> redirect to sign in
     if (!isAuthenticated) {
       if (Platform.OS === 'web') {
@@ -28,10 +31,10 @@ export default function AdminLayout() {
       }
       router.replace('/user/dashboard');
     }
-  }, [isAuthenticated, isAdmin]);
+  }, [isAuthenticated, isAdmin, isHydrated]);
 
-  // Guard view: If unauthenticated or non-admin, render loading / access check state
-  if (!isAuthenticated || !isAdmin) {
+  // Guard view: If not hydrated yet, unauthenticated or non-admin, render loading / access check state
+  if (!isHydrated || !isAuthenticated || !isAdmin) {
     return (
       <View className="flex-1 bg-[#f0f3f6] items-center justify-center p-6">
         <View className="bg-white p-8 rounded-3xl items-center shadow-lg max-w-sm w-full border border-slate-200">

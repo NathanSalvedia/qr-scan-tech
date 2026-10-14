@@ -84,6 +84,27 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         equipList.length > 0
           ? equipList.map((e) => e.name)
           : ['Optical Splitter', 'Terminal Block', 'Surge Protector'];
+      const issueScan =
+        scanRows.find(
+          (s) =>
+            s.boxId === box.id &&
+            (s.boxStatusAtScan === 'ISSUE' || s.boxStatusAtScan === 'WARNING')
+        ) || (box.status === 'ISSUE' ? latestScan : null);
+      const latestIssue =
+        box.status === 'ISSUE' && issueScan
+          ? {
+              notes:
+                issueScan.auditNotes ||
+                'Hardware issue reported during field inspection',
+              reportedBy:
+                userMap.get(issueScan.technicianId) || 'Field Technician',
+              reportedAt: new Date(issueScan.createdAt).toLocaleDateString(
+                'en-US',
+                { month: 'short', day: '2-digit', year: 'numeric' }
+              ),
+              padlockVerified: issueScan.padlockVerified,
+            }
+          : null;
 
       return {
         ...box,
@@ -104,6 +125,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestIssue,
       };
     });
 
@@ -194,15 +216,36 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       (box.status === 'ISSUE' ? '42.5 °C (High)' : '31.2 °C');
     const circuitBreaker = box.category === 'MAIN_BOX' ? '63A 2P MCB' : '20A 1P MCB';
     const voltage = box.status === 'ISSUE' ? '219.2 V (Low)' : '228.4 V';
-    const lastScannedBy = latestScan ? (userMap.get(latestScan.technicianId) || 'Field Technician') : 'Unverified';
-    const lastScannedAt = latestScan
-      ? new Date(latestScan.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
-      : 'Pending Field Audit';
+    const activePorts = mappedClients.filter(
+      (c) => c.status === 'CONNECTED' || c.status === 'ACTIVE'
+    ).length;
     const equipmentItems =
       equipList.length > 0
         ? equipList.map((e) => e.name)
         : ['Optical Splitter', 'Terminal Block', 'Surge Protector'];
-    const activePorts = mappedClients.filter((c) => c.status === 'CONNECTED' || c.status === 'ACTIVE').length;
+    const lastScannedBy = latestScan ? (userMap.get(latestScan.technicianId) || 'Field Technician') : 'Unverified';
+    const lastScannedAt = latestScan
+      ? new Date(latestScan.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
+      : 'Pending Field Audit';
+    const issueScan =
+      scanRows.find(
+        (s) => s.boxStatusAtScan === 'ISSUE' || s.boxStatusAtScan === 'WARNING'
+      ) || (box.status === 'ISSUE' ? latestScan : null);
+    const latestIssue =
+      box.status === 'ISSUE' && issueScan
+        ? {
+            notes:
+              issueScan.auditNotes ||
+              'Hardware issue reported during field inspection',
+            reportedBy:
+              userMap.get(issueScan.technicianId) || 'Field Technician',
+            reportedAt: new Date(issueScan.createdAt).toLocaleDateString(
+              'en-US',
+              { month: 'short', day: '2-digit', year: 'numeric' }
+            ),
+            padlockVerified: issueScan.padlockVerified,
+          }
+        : null;
 
     return res.json({
       success: true,
@@ -225,6 +268,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestIssue,
       },
     });
   } catch (error: any) {

@@ -4,15 +4,16 @@ import { View, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/services/auth-state';
 
 export default function UserLayout() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isHydrated } = useAuth();
 
   useEffect(() => {
+    if (!isHydrated) return;
     if (!isAuthenticated) {
       router.replace('/auth/sign-in');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isHydrated]);
 
-  if (!isAuthenticated) {
+  if (!isHydrated || !isAuthenticated) {
     return (
       <View className="flex-1 bg-[#f8fafc] items-center justify-center">
         <ActivityIndicator size="small" color="#4d6029" />

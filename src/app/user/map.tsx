@@ -5,7 +5,6 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -40,6 +39,11 @@ export interface UserMapPin {
   temperature: string;
   lastScannedBy?: string | null;
   lastScannedAt?: string | null;
+  latestIssue?: {
+    notes: string;
+    reportedBy?: string;
+    reportedAt?: string;
+  } | null;
 }
 
 type FilterType = "ALL" | "ACTIVE" | "NEEDS_TAG" | "ISSUE";
@@ -104,6 +108,7 @@ export default function UserMapScreen() {
           lastScannedAt: b.lastScannedAt
             ? String(b.lastScannedAt)
             : "Pending Field Audit",
+          latestIssue: b.latestIssue || null,
         }));
         return { boxes: mapped, error: null };
       }
@@ -475,21 +480,6 @@ export default function UserMapScreen() {
     `;
   };
 
-  const openDirections = (pin: UserMapPin) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${pin.latitude},${pin.longitude}&travelmode=driving`;
-    if (isWeb) {
-      if (typeof window !== "undefined") {
-        window.open(url, "_blank");
-      }
-    } else {
-      Linking.openURL(url).catch(() => {
-        Linking.openURL(
-          `geo:${pin.latitude},${pin.longitude}?q=${pin.latitude},${pin.longitude}(${pin.code})`,
-        );
-      });
-    }
-  };
-
   return (
     <SafeAreaView className="flex-1 bg-[#f8fafc]">
       <StatusBar style="dark" />
@@ -731,54 +721,9 @@ export default function UserMapScreen() {
               <Text className="text-xs font-poppins-bold text-[#0f172a] mb-0.5">
                 {selectedPin.siteName}
               </Text>
-              <Text className="text-[11px] font-poppins text-[#64748b] mb-3">
+              <Text className="text-[11px] font-poppins text-[#64748b] mb-3.5">
                 {selectedPin.address} · {selectedPin.zone}
               </Text>
-
-              {/* Telecom Quick Metrics */}
-              <View className="flex-row bg-slate-50 border border-slate-100 rounded-xl p-2.5 mb-3 justify-between">
-                <View className="items-center flex-1">
-                  <Text className="text-[10px] font-poppins text-[#64748b]">
-                    Ports
-                  </Text>
-                  <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {selectedPin.portsUsed}/{selectedPin.totalPorts}
-                  </Text>
-                </View>
-                <View className="w-px bg-slate-200 h-full" />
-                <View className="items-center flex-1">
-                  <Text className="text-[10px] font-poppins text-[#64748b]">
-                    Loss
-                  </Text>
-                  <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {(selectedPin.opticalLoss || "-18.5").split(" ")[0]}
-                  </Text>
-                </View>
-                <View className="w-px bg-slate-200 h-full" />
-                <View className="items-center flex-1">
-                  <Text className="text-[10px] font-poppins text-[#64748b]">
-                    Breaker
-                  </Text>
-                  <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {(selectedPin.circuitBreaker || "20A").split(" ")[0]}
-                  </Text>
-                </View>
-                <View className="w-px bg-slate-200 h-full" />
-                <View className="items-center flex-1">
-                  <Text className="text-[10px] font-poppins text-[#64748b]">
-                    Temp
-                  </Text>
-                  <Text
-                    className={`text-xs font-mono font-bold ${
-                      selectedPin.status === "ISSUE"
-                        ? "text-rose-600"
-                        : "text-[#0f172a]"
-                    }`}
-                  >
-                    {(selectedPin.temperature || "30").split(" ")[0]}°C
-                  </Text>
-                </View>
-              </View>
 
               {/* Action Buttons */}
               <View className="flex-row gap-2">
@@ -793,16 +738,6 @@ export default function UserMapScreen() {
                   />
                   <Text className="text-xs font-poppins-bold text-white ml-1.5">
                     Scan Box QR
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => openDirections(selectedPin)}
-                  className="bg-sky-600 py-2.5 px-3.5 rounded-xl flex-row items-center justify-center active:opacity-90"
-                >
-                  <Ionicons name="navigate" size={14} color="#ffffff" />
-                  <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                    Directions
                   </Text>
                 </TouchableOpacity>
 
@@ -862,6 +797,28 @@ export default function UserMapScreen() {
                   className="flex-1 my-3"
                   showsVerticalScrollIndicator={false}
                 >
+                  {/* Active Hardware Issue Alert */}
+                  {selectedPin.status === "ISSUE" && (
+                    <View className="bg-rose-50 border border-rose-200 rounded-2xl p-3 mb-3">
+                      <View className="flex-row items-center mb-1">
+                        <Ionicons name="warning" size={15} color="#dc2626" />
+                        <Text className="text-xs font-poppins-bold text-rose-900 ml-1.5">
+                          Active Hardware Issue Reported
+                        </Text>
+                      </View>
+                      <Text className="text-[11px] font-poppins text-rose-700">
+                        {selectedPin.latestIssue?.notes ||
+                          "Physical damage or component fault observed during field inspection. Inspection/repair required."}
+                      </Text>
+                      {selectedPin.latestIssue?.reportedBy && (
+                        <Text className="text-[10px] font-poppins text-rose-500 mt-1">
+                          Reported by {selectedPin.latestIssue.reportedBy} ·{" "}
+                          {selectedPin.latestIssue.reportedAt}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
                   {/* Location & Parent */}
                   <View className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 mb-3">
                     <Text className="text-[10px] font-poppins-bold text-[#64748b] uppercase tracking-wider mb-1">
@@ -982,27 +939,15 @@ export default function UserMapScreen() {
                     setShowDetailModal(false);
                     router.push("/user/scanner");
                   }}
-                  className="flex-1 bg-[#4d6029] py-3 rounded-xl flex-row items-center justify-center shadow-xs"
+                  className="w-full bg-[#4d6029] py-3 rounded-xl flex-row items-center justify-center shadow-xs active:opacity-90"
                 >
                   <MaterialCommunityIcons
                     name="qrcode-scan"
-                    size={15}
+                    size={16}
                     color="#ffffff"
                   />
-                  <Text className="text-xs font-poppins-bold text-white ml-2">
+                  <Text className="text-sm font-poppins-bold text-white ml-2">
                     Launch QR Scanner
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    if (selectedPin) openDirections(selectedPin);
-                  }}
-                  className="bg-sky-600 py-3 px-4 rounded-xl flex-row items-center justify-center"
-                >
-                  <Ionicons name="navigate" size={15} color="#ffffff" />
-                  <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                    Navigate
                   </Text>
                 </TouchableOpacity>
               </View>

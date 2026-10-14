@@ -33,13 +33,16 @@ const getGreeting = (date: Date = new Date()): string => {
 
 const getScanBadge = (scan: RecentScanItem) => {
   if (scan.isAlarm || scan.boxStatus === "ISSUE") {
+    const match = scan.auditNote?.match(/^\[(.*?)\]/);
+    const label = match ? match[1] : (scan.isAlarm ? "Alarm" : "Issue");
     return {
-      label: scan.isAlarm ? "Alarm" : "Issue",
+      label,
       icon: "alert-circle" as const,
       iconColor: "#e11d48",
       iconBg: "bg-rose-50 border-rose-100",
-      pillBg: "bg-rose-100",
-      pillText: "text-rose-800",
+      pillStyle: { backgroundColor: "#ffe4e6", borderColor: "#fecdd3" },
+      textStyle: { color: "#9f1239" },
+      dotColor: "#e11d48",
     };
   }
   if (scan.boxStatus === "NEEDS_TAG") {
@@ -48,17 +51,19 @@ const getScanBadge = (scan: RecentScanItem) => {
       icon: "tag-outline" as const,
       iconColor: "#d97706",
       iconBg: "bg-amber-50 border-amber-100",
-      pillBg: "bg-amber-100",
-      pillText: "text-amber-800",
+      pillStyle: { backgroundColor: "#fef3c7", borderColor: "#fde68a" },
+      textStyle: { color: "#92400e" },
+      dotColor: "#d97706",
     };
   }
   return {
     label: "Operational",
     icon: "cube" as const,
     iconColor: "#4d6029",
-    iconBg: "bg-emerald-50 border-emerald-100",
-    pillBg: "bg-emerald-100",
-    pillText: "text-emerald-800",
+    iconBg: "bg-[#4d6029]/10 border-[#4d6029]/20",
+    pillStyle: { backgroundColor: "#AEAC7820", borderColor: "#AEAC7840" },
+    textStyle: { color: "#5c5b36" },
+    dotColor: "#AEAC78",
   };
 };
 
@@ -421,11 +426,16 @@ export default function UserDashboardScreen() {
               return (
                 <TouchableOpacity
                   key={scan.id}
-                  onPress={() => router.replace("/user/boxes")}
-                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/user/box-details",
+                      params: { code: scan.boxCode, id: scan.boxId },
+                    })
+                  }
+                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center active:bg-slate-50"
                   activeOpacity={0.75}
                 >
-                  <View className="flex-row items-center flex-1 pr-3">
+                  <View className="flex-row items-center flex-1">
                     <View
                       className={`w-10 h-10 rounded-xl items-center justify-center mr-3 border ${badge.iconBg}`}
                     >
@@ -441,10 +451,17 @@ export default function UserDashboardScreen() {
                           {scan.boxCode}
                         </Text>
                         <View
-                          className={`px-2 py-0.5 rounded-full ${badge.pillBg}`}
+                          style={badge.pillStyle}
+                          className="px-2.5 py-0.5 rounded-full flex-row items-center border"
                         >
+                          <View
+                            style={{ backgroundColor: badge.dotColor }}
+                            className="w-1.5 h-1.5 rounded-full mr-1.5"
+                          />
                           <Text
-                            className={`text-[10px] font-poppins-semibold ${badge.pillText}`}
+                            style={badge.textStyle}
+                            className="text-[10px] font-poppins-semibold"
+                            numberOfLines={1}
                           >
                             {badge.label}
                           </Text>
@@ -458,7 +475,6 @@ export default function UserDashboardScreen() {
                       </Text>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
                 </TouchableOpacity>
               );
             })

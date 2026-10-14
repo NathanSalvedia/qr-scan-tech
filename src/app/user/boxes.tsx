@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type BoxFilter = "ALL" | "MAIN_BOX" | "SUB_BOX";
+type BoxFilter = "ALL" | "ISSUE" | "MAIN_BOX" | "SUB_BOX";
 
 export default function UserBoxesScreen() {
   const [scans, setScans] = useState<RecentScanItem[]>([]);
@@ -96,6 +96,8 @@ export default function UserBoxesScreen() {
         matchesFilter = entry.category === "MAIN_BOX";
       } else if (activeFilter === "SUB_BOX") {
         matchesFilter = entry.category === "SUB_BOX";
+      } else if (activeFilter === "ISSUE") {
+        matchesFilter = entry.status === "ISSUE" || entry.boxStatus === "ISSUE";
       }
 
       return matchesSearch && matchesFilter;
@@ -177,7 +179,7 @@ export default function UserBoxesScreen() {
     );
   };
 
-  const getStatusPill = (status: string) => {
+  const getStatusPill = (status: string, auditNotes?: string) => {
     if (status === "ACTIVE") {
       return (
         <View
@@ -198,11 +200,17 @@ export default function UserBoxesScreen() {
       );
     }
     if (status === "ISSUE") {
+      const match = auditNotes?.match(/^\[(.*?)\]/);
+      const issueLabel = match ? match[1] : "Hardware Issue";
+
       return (
-        <View className="bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full flex-row items-center">
-          <View className="w-1.5 h-1.5 rounded-full bg-rose-600 mr-1.5" />
-          <Text className="text-[10px] font-poppins-semibold text-rose-800">
-            Signal Loss
+        <View className="bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full flex-row items-center max-w-[150px]">
+          <View className="w-1.5 h-1.5 rounded-full bg-rose-600 mr-1.5 shrink-0" />
+          <Text
+            numberOfLines={1}
+            className="text-[10px] font-poppins-semibold text-rose-800"
+          >
+            {issueLabel}
           </Text>
         </View>
       );
@@ -216,6 +224,18 @@ export default function UserBoxesScreen() {
       </View>
     );
   };
+
+  const issuesCount = useMemo(() => {
+    return scans.filter((b) => b.status === "ISSUE" || b.boxStatus === "ISSUE").length;
+  }, [scans]);
+
+  const mainBoxesCount = useMemo(() => {
+    return scans.filter((b) => b.category === "MAIN_BOX").length;
+  }, [scans]);
+
+  const subBoxesCount = useMemo(() => {
+    return scans.filter((b) => b.category === "SUB_BOX").length;
+  }, [scans]);
 
   const todayScans = filteredHistory.filter(
     (item) => getScanDateGroup(item.createdAt, item.dateGroup) === "TODAY"
@@ -273,6 +293,7 @@ export default function UserBoxesScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingRight: 12 }}
           >
+            {/* Filter: All */}
             <TouchableOpacity
               onPress={() => setActiveFilter("ALL")}
               className={`px-3 py-1.5 rounded-full mr-2 border ${
@@ -287,6 +308,42 @@ export default function UserBoxesScreen() {
                 }`}
               >
                 All ({scans.length})
+              </Text>
+            </TouchableOpacity>
+
+            {/* Filter: Reported Issues */}
+            <TouchableOpacity
+              onPress={() => setActiveFilter("ISSUE")}
+              className={`px-3 py-1.5 rounded-full mr-2 border flex-row items-center ${
+                activeFilter === "ISSUE"
+                  ? "bg-rose-600 border-rose-600"
+                  : issuesCount > 0
+                  ? "bg-rose-50 border-rose-300"
+                  : "bg-white border-slate-200"
+              }`}
+            >
+              <Ionicons
+                name="alert-circle"
+                size={12}
+                color={
+                  activeFilter === "ISSUE"
+                    ? "#ffffff"
+                    : issuesCount > 0
+                    ? "#e11d48"
+                    : "#64748b"
+                }
+                style={{ marginRight: 4 }}
+              />
+              <Text
+                className={`text-[11px] font-poppins-semibold ${
+                  activeFilter === "ISSUE"
+                    ? "text-white"
+                    : issuesCount > 0
+                    ? "text-rose-700"
+                    : "text-[#64748b]"
+                }`}
+              >
+                Issues ({issuesCount})
               </Text>
             </TouchableOpacity>
 
@@ -310,9 +367,7 @@ export default function UserBoxesScreen() {
                   activeFilter === "MAIN_BOX" ? "text-white" : "text-[#64748b]"
                 }`}
               >
-                Main Boxes (
-                {scans.filter((b) => b.category === "MAIN_BOX").length}
-                )
+                Main Boxes ({mainBoxesCount})
               </Text>
             </TouchableOpacity>
 
@@ -336,9 +391,7 @@ export default function UserBoxesScreen() {
                   activeFilter === "SUB_BOX" ? "text-white" : "text-[#64748b]"
                 }`}
               >
-                Sub-Boxes (
-                {scans.filter((b) => b.category === "SUB_BOX").length}
-                )
+                Sub-Boxes ({subBoxesCount})
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -372,7 +425,9 @@ export default function UserBoxesScreen() {
                 No Scans Found
               </Text>
               <Text className="text-xs font-poppins-medium text-[#64748b] text-center mt-1">
-                {searchQuery || activeFilter !== "ALL"
+                {activeFilter === "ISSUE"
+                  ? "Great job! No hardware issues or alarms reported."
+                  : searchQuery || activeFilter !== "ALL"
                   ? "Try adjusting your search query or filter tags."
                   : "Scan a distribution box with the QR scanner to see it here."}
               </Text>
@@ -425,7 +480,7 @@ export default function UserBoxesScreen() {
                               </Text>
                             </View>
                           </View>
-                          {getStatusPill(status)}
+                          {getStatusPill(status, item.auditNote)}
                         </View>
 
                         {/* Technical Specs Row */}
@@ -503,7 +558,7 @@ export default function UserBoxesScreen() {
                               </Text>
                             </View>
                           </View>
-                          {getStatusPill(status)}
+                          {getStatusPill(status, item.auditNote)}
                         </View>
 
                         <View className="flex-row items-center justify-between bg-[#f8fafc] rounded-xl p-2.5 my-1.5 border border-slate-100">

@@ -47,6 +47,13 @@ export interface DistributionBox {
   lastScannedBy?: string;
   lastScannedAt?: string;
   notes?: string;
+  latestIssue?: {
+    notes: string;
+    reportedBy?: string;
+    reportedAt?: string;
+    padlockVerified?: boolean;
+    issueType?: string;
+  } | null;
 }
 
 export interface BoxesApiResponse {
@@ -56,17 +63,21 @@ export interface BoxesApiResponse {
   message?: string;
 }
 
+const getAuthHeaders = async () => {
+  await authState.ensureHydrated();
+  const token = authState.getToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
 export const boxService = {
   // 1. Get All Boxes
   getAll: async (): Promise<BoxesApiResponse> => {
     try {
-      const token = authState.getToken();
-      const res = await apiFetch(`${API_URL}/boxes`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const headers = await getAuthHeaders();
+      const res = await apiFetch(`${API_URL}/boxes`, { headers });
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to fetch boxes.' };
@@ -76,13 +87,8 @@ export const boxService = {
   // 2. Get Single Box
   getById: async (id: string): Promise<BoxesApiResponse> => {
     try {
-      const token = authState.getToken();
-      const res = await apiFetch(`${API_URL}/boxes/${id}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const headers = await getAuthHeaders();
+      const res = await apiFetch(`${API_URL}/boxes/${id}`, { headers });
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to fetch box.' };
