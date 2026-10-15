@@ -64,16 +64,12 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         });
 
       const parentCode = box.parentBoxId ? boxCodeMap.get(box.parentBoxId) || null : null;
-      const zoneName = (box.zoneId ? zoneMap.get(box.zoneId) : null) || box.address.split(',')[1]?.trim() || 'Iligan City';
+      const zoneName = box.address.split(',')[1]?.trim() || 'Iligan City';
       const tier = box.category === 'MAIN_BOX' ? 'Tier 1 · Main Feeder' : 'Tier 2 · Sub-Distribution';
       const latestScan = scanRows.find((s) => s.boxId === box.id);
 
-      const opticalLoss =
-        latestScan?.measuredSignal ||
-        (box.status === 'ISSUE' ? '-26.8 dBm (Degraded)' : '-18.5 dBm');
-      const temperature =
-        latestScan?.measuredTemp ||
-        (box.status === 'ISSUE' ? '42.5 °C (High)' : '31.2 °C');
+      const opticalLoss = box.status === 'ISSUE' ? 'Degraded' : 'Nominal';
+      const temperature = box.status === 'ISSUE' ? 'Elevated' : 'Normal';
       const circuitBreaker = box.category === 'MAIN_BOX' ? '63A 2P MCB' : '20A 1P MCB';
       const voltage = box.status === 'ISSUE' ? '219.2 V (Low)' : '228.4 V';
       const lastScannedBy = latestScan ? (userMap.get(latestScan.technicianId) || 'Field Technician') : 'Unverified';
@@ -202,18 +198,13 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     const parentBox = box.parentBoxId ? allBoxes.find((b) => b.id === box.parentBoxId) : null;
     const parentCode = parentBox ? parentBox.code : null;
-    const zoneMatch = box.zoneId ? zoneRows.find((z) => z.id === box.zoneId) : null;
-    const zoneName = zoneMatch?.name || box.address.split(',')[1]?.trim() || 'Iligan City';
+    const zoneName = box.address.split(',')[1]?.trim() || 'Iligan City';
     const tier = box.category === 'MAIN_BOX' ? 'Tier 1 · Main Feeder' : 'Tier 2 · Sub-Distribution';
     const latestScan = scanRows[0];
     const userMap = new Map(userRows.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
 
-    const opticalLoss =
-      latestScan?.measuredSignal ||
-      (box.status === 'ISSUE' ? '-26.8 dBm (Degraded)' : '-18.5 dBm');
-    const temperature =
-      latestScan?.measuredTemp ||
-      (box.status === 'ISSUE' ? '42.5 °C (High)' : '31.2 °C');
+    const opticalLoss = box.status === 'ISSUE' ? 'Degraded' : 'Nominal';
+    const temperature = box.status === 'ISSUE' ? 'Elevated' : 'Normal';
     const circuitBreaker = box.category === 'MAIN_BOX' ? '63A 2P MCB' : '20A 1P MCB';
     const voltage = box.status === 'ISSUE' ? '219.2 V (Low)' : '228.4 V';
     const activePorts = mappedClients.filter(
@@ -290,7 +281,6 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
       siteName,
       address,
       mountingType,
-      poleNumber,
       latitude,
       longitude,
       totalPorts,
@@ -343,7 +333,6 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
         siteName: siteName.trim(),
         address: address.trim(),
         mountingType: mountingType || 'Utility Pole',
-        poleNumber: poleNumber ? poleNumber.trim() : null,
         latitude: String(latitude || 8.232),
         longitude: String(longitude || 124.248),
         status: 'NEEDS_TAG',
@@ -454,7 +443,6 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       siteName,
       address,
       mountingType,
-      poleNumber,
       latitude,
       longitude,
       totalPorts,
@@ -471,7 +459,6 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     if (siteName) updatePayload.siteName = siteName.trim();
     if (address) updatePayload.address = address.trim();
     if (mountingType) updatePayload.mountingType = mountingType;
-    if (poleNumber !== undefined) updatePayload.poleNumber = poleNumber ? poleNumber.trim() : null;
     if (latitude !== undefined) updatePayload.latitude = String(latitude);
     if (longitude !== undefined) updatePayload.longitude = String(longitude);
     if (totalPorts !== undefined) updatePayload.totalPorts = Number(totalPorts);

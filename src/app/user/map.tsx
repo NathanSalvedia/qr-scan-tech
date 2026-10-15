@@ -398,12 +398,6 @@ export default function UserMapScreen() {
             attribution: 'Imagery &copy; Google'
           });
 
-          // OpenStreetMap Fallback Layer
-          var osmStandard = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-          });
-
           var activeMode = '${mapMode}';
           if (activeMode === 'SATELLITE') {
             googleHybrid.addTo(map);
@@ -413,8 +407,7 @@ export default function UserMapScreen() {
 
           var baseLayers = {
             "Google Streets": googleStreet,
-            "Google Satellite": googleHybrid,
-            "OpenStreetMap": osmStandard
+            "Google Satellite": googleHybrid
           };
           L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
 
@@ -460,7 +453,7 @@ export default function UserMapScreen() {
 
           function fitMarkers() {
             if (pins.length > 0) {
-              map.fitBounds(markerGroup.getBounds().pad(0.18));
+              map.fitBounds(markerGroup.getBounds().pad(0.18), { maxZoom: 17 });
             }
           }
 
@@ -849,14 +842,6 @@ export default function UserMapScreen() {
                     <View className="space-y-1.5">
                       <View className="flex-row justify-between">
                         <Text className="text-xs font-poppins text-[#64748b]">
-                          Optical Loss:
-                        </Text>
-                        <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                          {selectedPin.opticalLoss}
-                        </Text>
-                      </View>
-                      <View className="flex-row justify-between">
-                        <Text className="text-xs font-poppins text-[#64748b]">
                           Port Capacity:
                         </Text>
                         <Text className="text-xs font-mono font-bold text-[#0f172a]">
@@ -878,20 +863,6 @@ export default function UserMapScreen() {
                         </Text>
                         <Text className="text-xs font-mono font-bold text-[#0f172a]">
                           {selectedPin.voltage}
-                        </Text>
-                      </View>
-                      <View className="flex-row justify-between">
-                        <Text className="text-xs font-poppins text-[#64748b]">
-                          Operating Temp:
-                        </Text>
-                        <Text
-                          className={`text-xs font-mono font-bold ${
-                            selectedPin.status === "ISSUE"
-                              ? "text-rose-600"
-                              : "text-[#0f172a]"
-                          }`}
-                        >
-                          {selectedPin.temperature}
                         </Text>
                       </View>
                     </View>

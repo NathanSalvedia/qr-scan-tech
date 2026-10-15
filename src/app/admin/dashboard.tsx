@@ -6,6 +6,7 @@ import {
   ScrollView,
   Platform,
   Modal,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -25,6 +26,7 @@ export default function AdminDashboardScreen() {
   const [selectedBoxForQR, setSelectedBoxForQR] = useState<BoxData | null>(null);
   const [mapMode, setMapMode] = useState<'STREET_PINS' | 'SATELLITE'>('STREET_PINS');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMapFullScreen, setIsMapFullScreen] = useState(false);
 
   const isWeb = Platform.OS === 'web';
 
@@ -36,6 +38,19 @@ export default function AdminDashboardScreen() {
     if (activeFilter === 'ISSUE') return pin.status === 'ISSUE';
     return true;
   });
+
+  // Listen for Escape key on web to exit fullscreen
+  useEffect(() => {
+    if (isWeb && typeof window !== 'undefined') {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' && isMapFullScreen) {
+          setIsMapFullScreen(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isWeb, isMapFullScreen]);
 
   // Listen for pin clicks from the embedded map iframe
   useEffect(() => {
@@ -245,12 +260,6 @@ export default function AdminDashboardScreen() {
             attribution: 'Imagery &copy; Google'
           });
 
-          // OpenStreetMap Fallback Layer
-          var osmStandard = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-          });
-
           var activeMode = '${mapMode}';
           if (activeMode === 'SATELLITE') {
             googleHybrid.addTo(map);
@@ -260,8 +269,7 @@ export default function AdminDashboardScreen() {
 
           var baseLayers = {
             "Google Streets": googleStreet,
-            "Google Satellite": googleHybrid,
-            "OpenStreetMap": osmStandard
+            "Google Satellite": googleHybrid
           };
           L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
 
@@ -308,7 +316,7 @@ export default function AdminDashboardScreen() {
           // Auto-fit to markers with padding
           function fitMarkers() {
             if (pins.length > 0) {
-              map.fitBounds(markerGroup.getBounds().pad(0.18));
+              map.fitBounds(markerGroup.getBounds().pad(0.18), { maxZoom: 17 });
             }
           }
 
@@ -455,12 +463,12 @@ export default function AdminDashboardScreen() {
                     </Text>
                     <View className="bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
                       <Text className="text-[10px] font-poppins-bold text-rose-700">
-                        {stats?.highTempAlerts ?? 0} High Temp
+                        {(stats?.issuesCount ?? 0) > 0 ? "Requires Attention" : "All Nominal"}
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]" numberOfLines={1}>
-                    {stats?.portDegraded ?? 0} Port degraded
+                    Active Maintenance Reports
                   </Text>
                 </View>
               </View>
@@ -598,6 +606,20 @@ export default function AdminDashboardScreen() {
                       color={loading ? "#94a3b8" : "#475569"}
                     />
                   </TouchableOpacity>
+
+                  {/* Fullscreen Map Button */}
+                  <TouchableOpacity
+                    onPress={() => setIsMapFullScreen(true)}
+                    className="ml-1 px-2.5 py-1.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 flex-row items-center shadow-xs"
+                    activeOpacity={0.8}
+                    accessibilityLabel="Fullscreen Map"
+                  >
+                    <Ionicons
+                      name="expand-outline"
+                      size={13}
+                      color="#475569"
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -639,6 +661,19 @@ export default function AdminDashboardScreen() {
                     }}
                   />
                 )}
+
+                {/* Floating Fullscreen Action Button on Map */}
+                <TouchableOpacity
+                  onPress={() => setIsMapFullScreen(true)}
+                  className="absolute bottom-5 right-5 z-20 bg-white/95 hover:bg-white px-3 py-2 rounded-xl shadow-lg border border-slate-200/80 flex-row items-center"
+                  activeOpacity={0.85}
+                  accessibilityLabel="Fullscreen Map"
+                >
+                  <Ionicons name="expand" size={14} color="#0f172a" />
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                    Fullscreen
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -786,9 +821,17 @@ export default function AdminDashboardScreen() {
                   </Text>
                 </View>
 
-                {/* QR Code Graphic */}
+                {/* Real Scannable QR Code */}
                 <View className="w-36 h-36 bg-[#f8fafc] border border-slate-200 rounded-2xl items-center justify-center p-2 mb-3 shadow-inner">
-                  <MaterialCommunityIcons name="qrcode" size={110} color="#0f172a" />
+                  <Image
+                    source={{
+                      uri: `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(
+                        selectedBoxForQR.qrToken || selectedBoxForQR.code
+                      )}`,
+                    }}
+                    className="w-32 h-32"
+                    resizeMode="contain"
+                  />
                 </View>
 
                 <Text className="text-lg font-poppins-bold text-[#0f172a]">
@@ -830,6 +873,128 @@ export default function AdminDashboardScreen() {
           </View>
         </Modal>
       )}
+
+      {/* FULLSCREEN MAP MODAL */}
+      <Modal
+        visible={isMapFullScreen}
+        animationType="fade"
+        transparent={false}
+        statusBarTranslucent={true}
+        onRequestClose={() => setIsMapFullScreen(false)}
+      >
+        <View className="flex-1 w-full h-full bg-[#0f172a] relative">
+          <StatusBar style="light" />
+
+          {/* Minimal Floating Exit Button */}
+          <TouchableOpacity
+            onPress={() => setIsMapFullScreen(false)}
+            className="absolute top-3.5 right-14 z-50 bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-lg shadow-md border border-slate-300/80 flex-row items-center"
+            activeOpacity={0.85}
+            accessibilityLabel="Exit Fullscreen"
+          >
+            <Ionicons name="contract" size={15} color="#0f172a" />
+            <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1">
+              Exit
+            </Text>
+          </TouchableOpacity>
+
+          {/* Fullscreen Map Canvas */}
+          <View className="flex-1 w-full h-full">
+            {isWeb ? (
+              <iframe
+                key={`map-fullscreen-${activeFilter}-${mapMode}`}
+                title="Fullscreen Iligan Distribution Box Network Map"
+                srcDoc={generateMapHtml()}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 0,
+                }}
+              />
+            ) : (
+              <WebView
+                key={`admin-map-webview-fullscreen-${activeFilter}-${mapMode}`}
+                originWhitelist={['*']}
+                source={{ html: generateMapHtml() }}
+                style={{ flex: 1 }}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                onMessage={(event) => {
+                  try {
+                    const data = JSON.parse(event.nativeEvent.data);
+                    if (data.type === 'SELECT_PIN') {
+                      const found = boxes.find((p) => p.id === data.pinId);
+                      if (found) setSelectedPin(found);
+                    }
+                  } catch {
+                    // Fallback
+                  }
+                }}
+              />
+            )}
+          </View>
+
+          {/* Floating Drawer if a Pin is Selected in Fullscreen */}
+          {selectedPin && (
+            <View className="absolute bottom-5 left-4 right-4 max-w-2xl mx-auto z-50 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/80 p-4 shadow-2xl">
+              <View className="flex-row items-center justify-between pb-2 border-b border-slate-100 mb-2">
+                <View className="flex-row items-center">
+                  <View
+                    className={`px-2.5 py-1 rounded-lg ${
+                      getStatusColor(selectedPin.status).badgeClass
+                    }`}
+                  >
+                    <Text className="text-xs font-poppins-bold text-white">
+                      {selectedPin.code}
+                    </Text>
+                  </View>
+                  <Text className="text-sm font-poppins-bold text-[#0f172a] ml-2">
+                    {selectedPin.siteName}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedPin(null)}
+                  className="p-1 rounded-full bg-slate-100 hover:bg-slate-200"
+                >
+                  <Ionicons name="close" size={16} color="#475569" />
+                </TouchableOpacity>
+              </View>
+              <Text className="text-xs font-poppins-medium text-[#475569] mb-2" numberOfLines={1}>
+                📍 {selectedPin.address}
+              </Text>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-poppins-semibold text-[#0f172a]">
+                  {selectedPin.clientsCount} Accounts Connected
+                </Text>
+                <View className="flex-row items-center gap-2">
+                  <TouchableOpacity
+                    onPress={() => setSelectedBoxForQR(selectedPin)}
+                    className="bg-[#4d6029] px-3 py-1.5 rounded-lg flex-row items-center shadow-xs"
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons name="qrcode-scan" size={13} color="#ffffff" />
+                    <Text className="text-white text-[11px] font-poppins-bold ml-1">
+                      Print QR
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsMapFullScreen(false);
+                      router.push('/admin/box-management' as any);
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg"
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-[#334155] text-[11px] font-poppins-bold">
+                      View Box Details →
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

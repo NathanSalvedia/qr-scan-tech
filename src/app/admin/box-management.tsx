@@ -1,14 +1,15 @@
 import { SidebarNavigation } from "@/components/sidebar-navigation";
-import {
-  STANDARD_HARDWARE_CATALOG,
-} from "@/constants/distribution-boxes";
+import { STANDARD_HARDWARE_CATALOG } from "@/constants/distribution-boxes";
+import { boxService } from "@/services/boxes";
+import { SubscriberRecord, subscriberService } from "@/services/subscribers";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -18,8 +19,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { boxService } from "@/services/boxes";
-import { subscriberService, SubscriberRecord } from "@/services/subscribers";
 
 export interface EquipmentItem {
   id: string;
@@ -264,10 +263,11 @@ export default function BoxManagementScreen() {
   const [newLongitude, setNewLongitude] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodingStatus, setGeocodingStatus] = useState<string | null>(null);
-  const geocodeDebounceRef = useRef<any>(null);
   const [newPorts, setNewPorts] = useState("24");
   const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
-  const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>([]);
+  const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>(
+    [],
+  );
   const [isEquipmentDropdownOpen, setIsEquipmentDropdownOpen] = useState(false);
   const [customEquipmentInput, setCustomEquipmentInput] = useState("");
   const [equipmentCatalogFilter, setEquipmentCatalogFilter] =
@@ -278,15 +278,19 @@ export default function BoxManagementScreen() {
   const [newClientPort, setNewClientPort] = useState("");
   const [newClientAccount, setNewClientAccount] = useState("");
   const [newClientName, setNewClientName] = useState("");
-  const [newClientType, setNewClientType] = useState<"Residential" | "Commercial">("Residential");
-  const [isClientTypeDropdownOpen, setIsClientTypeDropdownOpen] = useState(false);
+  const [newClientType, setNewClientType] = useState<
+    "Residential" | "Commercial"
+  >("Residential");
+  const [isClientTypeDropdownOpen, setIsClientTypeDropdownOpen] =
+    useState(false);
   const [newClientPlan, setNewClientPlan] = useState("100 Mbps Fiber Plan");
-  const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] = useState(false);
-  const [subscriberPlanFilter, setSubscriberPlanFilter] = useState<string>("ALL");
+  const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] =
+    useState(false);
+  const [subscriberPlanFilter, setSubscriberPlanFilter] =
+    useState<string>("ALL");
   const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
     useState(false);
-  const [matchedSubscriber, setMatchedSubscriber] =
-    useState<any | null>(null);
+  const [matchedSubscriber, setMatchedSubscriber] = useState<any | null>(null);
   const [liveDirectory, setLiveDirectory] = useState<SubscriberRecord[]>([]);
   const [isSubscriberDirectoryOpen, setIsSubscriberDirectoryOpen] =
     useState(false);
@@ -329,7 +333,11 @@ export default function BoxManagementScreen() {
       const cat = matched.subscriberType || matched.category;
       if (cat === "Commercial" || cat === "Residential") {
         setNewClientType(cat);
-      } else if (cat === "Enterprise" || cat === "Government" || cat === "Academic") {
+      } else if (
+        cat === "Enterprise" ||
+        cat === "Government" ||
+        cat === "Academic"
+      ) {
         setNewClientType("Commercial");
       }
       const planName = matched.servicePlan || matched.plan;
@@ -367,14 +375,20 @@ export default function BoxManagementScreen() {
   };
 
   const handleSelectFromDirectory = (sub: any) => {
-    const acc = String(sub.accountNumber).replace(/\D/g, "").slice(0, 10) || sub.accountNumber;
+    const acc =
+      String(sub.accountNumber).replace(/\D/g, "").slice(0, 10) ||
+      sub.accountNumber;
     setNewClientAccount(acc);
     setNewClientName(sub.customerName || sub.name);
     setMatchedSubscriber(sub);
     const cat = sub.subscriberType || sub.category;
     if (cat === "Commercial" || cat === "Residential") {
       setNewClientType(cat);
-    } else if (cat === "Enterprise" || cat === "Government" || cat === "Academic") {
+    } else if (
+      cat === "Enterprise" ||
+      cat === "Government" ||
+      cat === "Academic"
+    ) {
       setNewClientType("Commercial");
     }
     const planName = sub.servicePlan || sub.plan;
@@ -406,7 +420,11 @@ export default function BoxManagementScreen() {
     // Fetch live subscribers directory from backend in background for live matching & browsing
     try {
       const dirRes = await subscriberService.getAllSubscribers();
-      if (dirRes.success && dirRes.subscribers && dirRes.subscribers.length > 0) {
+      if (
+        dirRes.success &&
+        dirRes.subscribers &&
+        dirRes.subscribers.length > 0
+      ) {
         setLiveDirectory(dirRes.subscribers);
       }
     } catch (e) {
@@ -591,143 +609,93 @@ export default function BoxManagementScreen() {
     return `${prefix}${nextNum < 10 ? "0" : ""}${nextNum}`;
   };
 
-  const performGeocodeLookup = async (addr: string) => {
-    const rawAddress = addr.trim();
-    if (rawAddress.length < 3) {
-      setGeocodingStatus(null);
+  const handleAutoDetectCoordinates = async () => {
+    const site = newSiteName.trim();
+    const addr = newAddress.trim();
+
+    if (!site && !addr) {
+      setGeocodingStatus("Please enter a Site Name or Street Address first");
       return;
     }
 
     setIsGeocoding(true);
-    setGeocodingStatus("Detecting coordinates from address...");
+    setGeocodingStatus("Searching Iligan landmarks & address...");
 
-    // Iligan City known barangays list for intelligent fallback
-    const iliganBarangays = [
-      "Mahayahay",
-      "Tubod",
-      "Suarez",
-      "Pala-o",
-      "Tibanga",
-      "Hinaplanon",
-      "Poblacion",
-      "Buru-un",
-      "Del Carmen",
-      "Kiwalan",
-      "Dalipuga",
-      "Ditucalan",
-      "Tambacan",
-      "Ubaldo Laya",
-      "Saray",
-      "San Roque",
-      "Santa Elena",
-      "Santa Filomena",
-      "Santiago",
-      "Santo Rosario",
-      "Tipanoy",
-      "Tomas L. Cabili",
-      "Tominobo",
-      "Luinab",
-      "Mandulog",
-      "Maria Cristina",
-      "Upper Hinaplanon",
-      "Villa Verde",
-      "Acmac",
-      "Bagong Silang",
-      "Bonbonon",
-      "Bunawan",
-      "Digkilaan",
-      "Dulag",
-      "Hindang",
-      "Kabacsanan",
-      "Kalilangan",
-      "Lanipao",
-      "Mainit",
-      "Panoroganan",
-      "Puga-an",
-      "Rogongon",
-      "Abuno",
-    ];
-
-    const lower = rawAddress.toLowerCase();
-    const matchedBarangay = iliganBarangays.find((b) =>
-      lower.includes(b.toLowerCase())
-    );
-
-    const normalizedAddress = rawAddress
+    const normalizedAddress = addr
       .replace(/\bbro\b\.?/gi, "Brother")
       .replace(/\bst\b\.?/gi, "Street")
       .replace(/\bave\b\.?/gi, "Avenue")
       .replace(/\brd\b\.?/gi, "Road");
 
+    const searchQueries: string[] = [];
+    if (site && addr) {
+      searchQueries.push(`${site}, ${normalizedAddress}, Iligan City, Philippines`);
+    }
+    if (site) {
+      searchQueries.push(`${site}, Iligan City, Philippines`);
+    }
+    if (addr) {
+      searchQueries.push(`${normalizedAddress}, Iligan City, Philippines`);
+    }
+
     try {
-      // 1. First attempt: Search the street address directly within Iligan City
-      const queryWithCity = `${normalizedAddress}, Iligan City, Philippines`;
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        queryWithCity
-      )}&viewbox=124.15,8.35,124.40,8.12&bounded=0&countrycodes=ph&limit=1`;
+      let matchedResult: { lat: string; lon: string; name: string } | null = null;
 
-      const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-      });
-      const data = await response.json();
-
-      if (Array.isArray(data) && data.length > 0) {
-        const found = data[0];
-        const lat = Number(found.lat).toFixed(6);
-        const lon = Number(found.lon).toFixed(6);
-        setNewLatitude(lat);
-        setNewLongitude(lon);
-        const matchedName =
-          found.name ||
-          (found.display_name ? found.display_name.split(",")[0] : rawAddress);
-        setGeocodingStatus(`Auto-detected: ${matchedName}`);
-        setIsGeocoding(false);
-        return;
-      }
-
-      // 2. Second attempt: If direct address search has no match (e.g. private compound or unmapped street)
-      // but contains a recognized barangay, fallback to that barangay center
-      if (matchedBarangay) {
-        const brgyUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          `${matchedBarangay}, Iligan City, Philippines`
+      for (const query of searchQueries) {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          query,
         )}&viewbox=124.15,8.35,124.40,8.12&bounded=0&countrycodes=ph&limit=1`;
 
-        const brgyRes = await fetch(brgyUrl, {
-          headers: { Accept: "application/json" },
-        });
-        const brgyData = await brgyRes.json();
-
-        if (Array.isArray(brgyData) && brgyData.length > 0) {
-          const found = brgyData[0];
-          const lat = Number(found.lat).toFixed(6);
-          const lon = Number(found.lon).toFixed(6);
-          setNewLatitude(lat);
-          setNewLongitude(lon);
-          setGeocodingStatus(`Auto-detected: Barangay ${matchedBarangay}`);
-          setIsGeocoding(false);
-          return;
+        try {
+          const response = await fetch(url, {
+            headers: { Accept: "application/json" },
+          });
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0) {
+            const found = data[0];
+            matchedResult = {
+              lat: Number(found.lat).toFixed(6),
+              lon: Number(found.lon).toFixed(6),
+              name: found.name || (found.display_name ? found.display_name.split(",")[0] : query.split(",")[0]),
+            };
+            break;
+          }
+        } catch {
+          // Continue to next query
         }
       }
 
-      setGeocodingStatus(
-        "Address not found on map — please enter coordinates manually"
-      );
+      if (matchedResult) {
+        setNewLatitude(matchedResult.lat);
+        setNewLongitude(matchedResult.lon);
+        setGeocodingStatus(`Auto-detected: ${matchedResult.name}`);
+      } else {
+        setGeocodingStatus("⚠️ Location not found on map — please enter GPS coordinates manually");
+      }
     } catch (err) {
       console.warn("Geocoding lookup error:", err);
-      setGeocodingStatus("Lookup unavailable — please enter manually");
+      setGeocodingStatus("Lookup unavailable — please enter GPS coordinates manually");
     } finally {
       setIsGeocoding(false);
     }
   };
 
+  const handleLatitudeChange = (val: string) => {
+    // If user pastes "8.223293, 124.243392" or "8.223293 124.243392"
+    if (val.includes(",") || (val.includes(" ") && val.trim().split(/\s+/).length === 2)) {
+      const parts = val.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+      if (parts.length >= 2 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
+        setNewLatitude(parts[0]);
+        setNewLongitude(parts[1]);
+        setGeocodingStatus("Coordinates pasted and separated");
+        return;
+      }
+    }
+    setNewLatitude(val);
+  };
+
   const handleAddressChange = (text: string) => {
     setNewAddress(text);
-    if (geocodeDebounceRef.current) {
-      clearTimeout(geocodeDebounceRef.current);
-    }
-    geocodeDebounceRef.current = setTimeout(() => {
-      performGeocodeLookup(text);
-    }, 700);
   };
 
   const handleOpenRegisterModal = () => {
@@ -882,6 +850,18 @@ export default function BoxManagementScreen() {
           })
         : [];
 
+    const parsedLat = parseFloat(newLatitude);
+    const parsedLng = parseFloat(newLongitude);
+    if (!newLatitude.trim() || !newLongitude.trim() || isNaN(parsedLat) || isNaN(parsedLng)) {
+      const msg = "Please provide valid GPS Geolocation Coordinates (Latitude and Longitude) for this box. You can use Auto-Detect GPS or enter them manually.";
+      if (isWeb) {
+        window.alert(msg);
+      } else {
+        Alert.alert("GPS Coordinates Required", msg);
+      }
+      return;
+    }
+
     const payload = {
       code: newCode.trim().toUpperCase(),
       category: newCategory,
@@ -890,8 +870,8 @@ export default function BoxManagementScreen() {
       address: newAddress.trim(),
       mountingType: newMountingType,
       poleNumber: null,
-      latitude: parseFloat(newLatitude) || 8.227625,
-      longitude: parseFloat(newLongitude) || 124.238500,
+      latitude: parsedLat,
+      longitude: parsedLng,
       status: "NEEDS_TAG",
       totalPorts: parseInt(newPorts, 10) || 24,
       notes:
@@ -923,9 +903,7 @@ export default function BoxManagementScreen() {
           equipment: constructedEquipment,
           clients: [],
           qrToken:
-            res.box.qrToken ||
-            res.box.qr_token ||
-            `QRTECH-BOX-${res.box.code}`,
+            res.box.qrToken || res.box.qr_token || `QRTECH-BOX-${res.box.code}`,
           lastScanned: "Never (New Registration)",
           notes: res.box.notes || "",
         };
@@ -973,9 +951,7 @@ export default function BoxManagementScreen() {
   const subBoxesCount = boxes.filter((b) => b.category === "SUB_BOX").length;
   const taggedBoxesCount = boxes.filter((b) => b.status === "ACTIVE").length;
   const taggedPercentage =
-    totalBoxes > 0
-      ? ((taggedBoxesCount / totalBoxes) * 100).toFixed(1)
-      : "0";
+    totalBoxes > 0 ? ((taggedBoxesCount / totalBoxes) * 100).toFixed(1) : "0";
   const pendingTagCount = boxes.filter((b) => b.status === "NEEDS_TAG").length;
   const issuesCount = boxes.filter((b) => b.status === "ISSUE").length;
 
@@ -1044,7 +1020,11 @@ export default function BoxManagementScreen() {
                   {loading ? (
                     <ActivityIndicator size="small" color="#475569" />
                   ) : (
-                    <Ionicons name="refresh-outline" size={16} color="#475569" />
+                    <Ionicons
+                      name="refresh-outline"
+                      size={16}
+                      color="#475569"
+                    />
                   )}
                 </TouchableOpacity>
 
@@ -1189,7 +1169,9 @@ export default function BoxManagementScreen() {
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    {issuesCount > 0 ? `${issuesCount} enclosures need inspection` : "All systems operational"}
+                    {issuesCount > 0
+                      ? `${issuesCount} enclosures need inspection`
+                      : "All systems operational"}
                   </Text>
                 </View>
               </View>
@@ -1293,7 +1275,7 @@ export default function BoxManagementScreen() {
                   <View className="flex-row bg-[#f8fafc] border-b border-slate-200/80 px-6 py-3.5 items-center w-full">
                     <View className="flex-[1.4] min-w-[140px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
-                        Box Code 
+                        Box Code
                       </Text>
                     </View>
                     <View className="flex-[2.2] min-w-[210px] pr-3">
@@ -1356,208 +1338,213 @@ export default function BoxManagementScreen() {
                     </View>
                   ) : (
                     paginatedBoxes.map((box, index) => {
-                    const statusMeta = getStatusBadge(box.status);
-                    const capacityPercent = Math.round(
-                      (box.activePorts / box.totalPorts) * 100,
-                    );
+                      const statusMeta = getStatusBadge(box.status);
+                      const capacityPercent = Math.round(
+                        (box.activePorts / box.totalPorts) * 100,
+                      );
 
-                    return (
-                      <View
-                        key={box.id}
-                        className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
-                          index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
-                        }`}
-                      >
-                        {/* 1. Box Code & Tier */}
-                        <View className="flex-[1.4] min-w-[150px] pr-2">
-                          <View className="flex-row items-center">
-                            <View className="bg-[#0f172a] px-2.5 py-1 rounded-lg flex-row items-center">
-                              <MaterialCommunityIcons
-                                name={
+                      return (
+                        <View
+                          key={box.id}
+                          className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
+                            index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
+                          }`}
+                        >
+                          {/* 1. Box Code & Tier */}
+                          <View className="flex-[1.4] min-w-[150px] pr-2">
+                            <View className="flex-row items-center">
+                              <View className="bg-[#0f172a] px-2.5 py-1 rounded-lg flex-row items-center">
+                                <MaterialCommunityIcons
+                                  name={
+                                    box.category === "MAIN_BOX"
+                                      ? "server"
+                                      : "router-network"
+                                  }
+                                  size={12}
+                                  color="#ffffff"
+                                />
+                                <Text className="text-xs font-poppins-bold text-white ml-1.5">
+                                  {box.code}
+                                </Text>
+                              </View>
+                            </View>
+                            <View className="mt-1 flex-row items-center">
+                              <Text
+                                className={`text-[10px] font-poppins-bold uppercase ${
                                   box.category === "MAIN_BOX"
-                                    ? "server"
-                                    : "router-network"
-                                }
-                                size={12}
-                                color="#ffffff"
+                                    ? "text-[#4d6029]"
+                                    : "text-sky-700"
+                                }`}
+                              >
+                                {box.category === "MAIN_BOX"
+                                  ? "Main Feeder"
+                                  : "Sub-Box"}
+                              </Text>
+                              {box.parentCode && (
+                                <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
+                                  ↳ {box.parentCode}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+
+                          {/* 2. Site Location & Address */}
+                          <View className="flex-[2.2] min-w-[220px] pr-3">
+                            <Text
+                              className="text-xs font-poppins-bold text-[#0f172a]"
+                              numberOfLines={1}
+                            >
+                              {box.siteName}
+                            </Text>
+                            <View className="flex-row items-center mt-0.5">
+                              <Ionicons
+                                name="location-outline"
+                                size={11}
+                                color="#64748b"
                               />
-                              <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                                {box.code}
+                              <Text
+                                className="text-[11px] font-poppins text-[#64748b] ml-1 flex-1"
+                                numberOfLines={1}
+                              >
+                                {box.address}
                               </Text>
                             </View>
                           </View>
-                          <View className="mt-1 flex-row items-center">
-                            <Text
-                              className={`text-[10px] font-poppins-bold uppercase ${
-                                box.category === "MAIN_BOX"
-                                  ? "text-[#4d6029]"
-                                  : "text-sky-700"
-                              }`}
+
+                          {/* 3. Status Badge */}
+                          <View className="flex-[1.2] min-w-[130px] px-2 items-center justify-center">
+                            <View
+                              className={`inline-flex self-center px-2.5 py-1 rounded-lg flex-row items-center ${statusMeta.bg}`}
                             >
-                              {box.category === "MAIN_BOX"
-                                ? "Main Feeder"
-                                : "Sub-Box"}
-                            </Text>
-                            {box.parentCode && (
-                              <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
-                                ↳ {box.parentCode}
+                              <View
+                                className={`w-1.5 h-1.5 rounded-full mr-1.5 ${statusMeta.dot}`}
+                              />
+                              <Text
+                                className={`text-[10px] font-poppins-bold ${statusMeta.text}`}
+                              >
+                                {statusMeta.label}
                               </Text>
-                            )}
+                            </View>
                           </View>
-                        </View>
 
-                        {/* 2. Site Location & Address */}
-                        <View className="flex-[2.2] min-w-[220px] pr-3">
-                          <Text
-                            className="text-xs font-poppins-bold text-[#0f172a]"
-                            numberOfLines={1}
-                          >
-                            {box.siteName}
-                          </Text>
-                          <View className="flex-row items-center mt-0.5">
-                            <Ionicons
-                              name="location-outline"
-                              size={11}
-                              color="#64748b"
-                            />
+                          {/* 4. Mounting Type */}
+                          <View className="flex-[1.5] min-w-[150px] px-2 items-center justify-center">
+                            <View className="inline-flex self-center bg-slate-100/90 border border-slate-200/80 px-2.5 py-1 rounded-lg flex-row items-center">
+                              <Ionicons
+                                name={
+                                  (box.mountingType || "Utility Pole") ===
+                                  "Utility Pole"
+                                    ? "git-commit-outline"
+                                    : (box.mountingType || "Utility Pole") ===
+                                        "Wall Mount"
+                                      ? "business-outline"
+                                      : "cube-outline"
+                                }
+                                size={12}
+                                color="#4d6029"
+                              />
+                              <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-1.5">
+                                {box.mountingType || "Utility Pole"}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* 5. Port Usage */}
+                          <View className="flex-[1.2] min-w-[120px] pr-3">
+                            <View className="flex-row items-baseline justify-between mb-1">
+                              <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                                {box.activePorts}/{box.totalPorts}
+                              </Text>
+                              <Text className="text-[10px] font-poppins-bold text-[#64748b]">
+                                {capacityPercent}%
+                              </Text>
+                            </View>
+                            <View className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                              <View
+                                className={`h-full rounded-full ${
+                                  capacityPercent > 85
+                                    ? "bg-amber-500"
+                                    : "bg-[#4d6029]"
+                                }`}
+                                style={{ width: `${capacityPercent}%` }}
+                              />
+                            </View>
+                          </View>
+
+                          {/* 6. Latitude & Longitude */}
+                          <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="navigate-outline"
+                                size={12}
+                                color="#4d6029"
+                              />
+                              <Text
+                                className="text-xs font-mono font-poppins-bold text-[#0f172a] ml-1 text-center"
+                                numberOfLines={1}
+                              >
+                                {box.latitude !== undefined &&
+                                box.latitude !== null
+                                  ? Number(box.latitude).toFixed(6)
+                                  : "0.000000"}
+                                ,{" "}
+                                {box.longitude !== undefined &&
+                                box.longitude !== null
+                                  ? Number(box.longitude).toFixed(6)
+                                  : "0.000000"}
+                              </Text>
+                            </View>
                             <Text
-                              className="text-[11px] font-poppins text-[#64748b] ml-1 flex-1"
+                              className="text-[10px] font-poppins text-[#64748b] mt-0.5 text-center"
                               numberOfLines={1}
                             >
-                              {box.address}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* 3. Status Badge */}
-                        <View className="flex-[1.2] min-w-[130px] px-2 items-center justify-center">
-                          <View
-                            className={`inline-flex self-center px-2.5 py-1 rounded-lg flex-row items-center ${statusMeta.bg}`}
-                          >
-                            <View
-                              className={`w-1.5 h-1.5 rounded-full mr-1.5 ${statusMeta.dot}`}
-                            />
-                            <Text
-                              className={`text-[10px] font-poppins-bold ${statusMeta.text}`}
-                            >
-                              {statusMeta.label}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* 4. Mounting Type */}
-                        <View className="flex-[1.5] min-w-[150px] px-2 items-center justify-center">
-                          <View className="inline-flex self-center bg-slate-100/90 border border-slate-200/80 px-2.5 py-1 rounded-lg flex-row items-center">
-                            <Ionicons
-                              name={
-                                (box.mountingType || "Utility Pole") ===
-                                "Utility Pole"
-                                  ? "git-commit-outline"
-                                  : (box.mountingType || "Utility Pole") ===
-                                      "Wall Mount"
-                                    ? "business-outline"
-                                    : "cube-outline"
-                              }
-                              size={12}
-                              color="#4d6029"
-                            />
-                            <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-1.5">
-                              {box.mountingType || "Utility Pole"}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* 5. Port Usage */}
-                        <View className="flex-[1.2] min-w-[120px] pr-3">
-                          <View className="flex-row items-baseline justify-between mb-1">
-                            <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                              {box.activePorts}/{box.totalPorts}
-                            </Text>
-                            <Text className="text-[10px] font-poppins-bold text-[#64748b]">
-                              {capacityPercent}%
-                            </Text>
-                          </View>
-                          <View className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                            <View
-                              className={`h-full rounded-full ${
-                                capacityPercent > 85
-                                  ? "bg-amber-500"
-                                  : "bg-[#4d6029]"
-                              }`}
-                              style={{ width: `${capacityPercent}%` }}
-                            />
-                          </View>
-                        </View>
-
-                        {/* 6. Latitude & Longitude */}
-                        <View className="flex-[2.1] min-w-[200px] px-2 items-center justify-center">
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="navigate-outline"
-                              size={12}
-                              color="#4d6029"
-                            />
-                            <Text
-                              className="text-xs font-mono font-poppins-bold text-[#0f172a] ml-1 text-center"
-                              numberOfLines={1}
-                            >
-                              {box.latitude !== undefined && box.latitude !== null
-                                ? Number(box.latitude).toFixed(6)
-                                : "0.000000"}
+                              {box.latitude !== undefined &&
+                              box.latitude !== null
+                                ? `${Number(box.latitude).toFixed(4)}° N`
+                                : ""}
                               ,{" "}
-                              {box.longitude !== undefined && box.longitude !== null
-                                ? Number(box.longitude).toFixed(6)
-                                : "0.000000"}
+                              {box.longitude !== undefined &&
+                              box.longitude !== null
+                                ? `${Number(box.longitude).toFixed(4)}° E`
+                                : ""}
                             </Text>
                           </View>
-                          <Text
-                            className="text-[10px] font-poppins text-[#64748b] mt-0.5 text-center"
-                            numberOfLines={1}
-                          >
-                            {box.latitude !== undefined && box.latitude !== null
-                              ? `${Number(box.latitude).toFixed(4)}° N`
-                              : ""}
-                            ,{" "}
-                            {box.longitude !== undefined && box.longitude !== null
-                              ? `${Number(box.longitude).toFixed(4)}° E`
-                              : ""}
-                          </Text>
-                        </View>
 
-                        {/* 7. Actions */}
-                        <View className="w-[110px] min-w-[110px] flex-row items-center justify-end space-x-1.5">
-                          <TouchableOpacity
-                            onPress={() => setSelectedBoxForQR(box)}
-                            className="w-7 h-7 rounded-lg bg-[#4d6029]/10 hover:bg-[#4d6029]/20 border border-[#4d6029]/30 items-center justify-center mr-1"
-                            accessibilityLabel="Print QR"
-                          >
-                            <MaterialCommunityIcons
-                              name="qrcode-scan"
-                              size={13}
-                              color="#4d6029"
-                            />
-                          </TouchableOpacity>
+                          {/* 7. Actions */}
+                          <View className="w-[110px] min-w-[110px] flex-row items-center justify-end space-x-1.5">
+                            <TouchableOpacity
+                              onPress={() => setSelectedBoxForQR(box)}
+                              className="w-7 h-7 rounded-lg bg-[#4d6029]/10 hover:bg-[#4d6029]/20 border border-[#4d6029]/30 items-center justify-center mr-1"
+                              accessibilityLabel="Print QR"
+                            >
+                              <MaterialCommunityIcons
+                                name="qrcode-scan"
+                                size={13}
+                                color="#4d6029"
+                              />
+                            </TouchableOpacity>
 
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedBoxForDetails(box);
-                              setActiveDetailsTab("CLIENTS");
-                            }}
-                            className="bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-lg flex-row items-center shadow-xs"
-                          >
-                            <Ionicons
-                              name="folder-open-outline"
-                              size={11}
-                              color="#ffffff"
-                            />
-                            <Text className="text-[10px] font-poppins-bold text-white ml-1">
-                              Inspect
-                            </Text>
-                          </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setSelectedBoxForDetails(box);
+                                setActiveDetailsTab("CLIENTS");
+                              }}
+                              className="bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-lg flex-row items-center shadow-xs"
+                            >
+                              <Ionicons
+                                name="folder-open-outline"
+                                size={11}
+                                color="#ffffff"
+                              />
+                              <Text className="text-[10px] font-poppins-bold text-white ml-1">
+                                Inspect
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
-                      </View>
-                    );
-                  }))}
+                      );
+                    })
+                  )}
                 </View>
               </ScrollView>
 
@@ -2073,19 +2060,25 @@ export default function BoxManagementScreen() {
                                       {client.clientType && (
                                         <View
                                           className={`px-1.5 py-0.2 rounded border ${
-                                            client.clientType.toUpperCase().includes("COMMERCIAL")
+                                            client.clientType
+                                              .toUpperCase()
+                                              .includes("COMMERCIAL")
                                               ? "bg-blue-50 border-blue-200"
                                               : "bg-emerald-50 border-emerald-200"
                                           }`}
                                         >
                                           <Text
                                             className={`text-[9px] font-poppins-bold ${
-                                              client.clientType.toUpperCase().includes("COMMERCIAL")
+                                              client.clientType
+                                                .toUpperCase()
+                                                .includes("COMMERCIAL")
                                                 ? "text-blue-700"
                                                 : "text-emerald-700"
                                             }`}
                                           >
-                                            {client.clientType.toUpperCase().includes("COMMERCIAL")
+                                            {client.clientType
+                                              .toUpperCase()
+                                              .includes("COMMERCIAL")
                                               ? "Commercial"
                                               : "Residential"}
                                           </Text>
@@ -2238,7 +2231,8 @@ export default function BoxManagementScreen() {
                             Mounting Architecture
                           </Text>
                           <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                            {selectedBoxForDetails.mountingType || "Utility Pole"}
+                            {selectedBoxForDetails.mountingType ||
+                              "Utility Pole"}
                           </Text>
                         </View>
                       </View>
@@ -2254,7 +2248,11 @@ export default function BoxManagementScreen() {
                       <View className="flex-row items-center justify-between mb-2">
                         <View className="flex-row items-center">
                           <View className="w-10 h-10 rounded-xl bg-emerald-100 items-center justify-center mr-3">
-                            <Ionicons name="navigate" size={18} color="#059669" />
+                            <Ionicons
+                              name="navigate"
+                              size={18}
+                              color="#059669"
+                            />
                           </View>
                           <View>
                             <Text className="text-[11px] font-poppins-medium text-[#64748b]">
@@ -2301,7 +2299,11 @@ export default function BoxManagementScreen() {
                       <View className="flex-row items-center justify-between mb-2">
                         <View className="flex-row items-center">
                           <View className="w-9 h-9 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
-                            <Ionicons name="qr-code" size={18} color="#4d6029" />
+                            <Ionicons
+                              name="qr-code"
+                              size={18}
+                              color="#4d6029"
+                            />
                           </View>
                           <View>
                             <Text className="text-xs font-poppins-bold text-[#0f172a]">
@@ -2322,28 +2324,6 @@ export default function BoxManagementScreen() {
                       <View className="bg-white p-3 rounded-xl border border-slate-200 mt-1">
                         <Text className="text-xs font-mono font-poppins-semibold text-[#4d6029] select-all">
                           {selectedBoxForDetails.qrToken}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
-                      <View className="flex-row items-center mb-1.5">
-                        <View className="w-8 h-8 rounded-lg bg-blue-100 items-center justify-center mr-2.5">
-                          <Ionicons name="time-outline" size={16} color="#2563eb" />
-                        </View>
-                        <View>
-                          <Text className="text-xs font-poppins-bold text-[#0f172a]">
-                            Last Technician Scan
-                          </Text>
-                          <Text className="text-[10px] font-poppins text-[#64748b]">
-                            Recorded physical inspection timestamp
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="bg-white px-3 py-2.5 rounded-xl border border-slate-200 mt-1">
-                        <Text className="text-xs font-poppins-medium text-[#334155]">
-                          {selectedBoxForDetails.lastScanned ||
-                            "No scan recorded yet"}
                         </Text>
                       </View>
                     </View>
@@ -2591,22 +2571,38 @@ export default function BoxManagementScreen() {
                 <View className="mt-3 bg-slate-50 border border-slate-200/90 rounded-2xl p-3">
                   <View className="flex-row items-center justify-between mb-2">
                     <View className="flex-row items-center">
-                      <Ionicons name="navigate-outline" size={15} color="#4d6029" />
+                      <Ionicons
+                        name="navigate-outline"
+                        size={15}
+                        color="#4d6029"
+                      />
                       <Text className="text-xs font-poppins-semibold text-[#334155] ml-1.5">
                         GPS Geolocation Coordinates:
                       </Text>
                     </View>
                     <View className="flex-row items-center">
-                      {isGeocoding && (
-                        <View className="flex-row items-center mr-2">
-                          <ActivityIndicator size="small" color="#4d6029" />
-                          <Text className="text-[10px] font-poppins text-[#4d6029] ml-1">
-                            Detecting...
-                          </Text>
-                        </View>
-                      )}
+                      <TouchableOpacity
+                        onPress={handleAutoDetectCoordinates}
+                        disabled={isGeocoding}
+                        className="bg-[#4d6029]/10 hover:bg-[#4d6029]/20 border border-[#4d6029]/30 px-2.5 py-1 rounded-lg flex-row items-center mr-2"
+                        activeOpacity={0.7}
+                        accessibilityLabel="Auto-detect GPS coordinates from site name and street address"
+                      >
+                        {isGeocoding ? (
+                          <ActivityIndicator
+                            size="small"
+                            color="#4d6029"
+                            style={{ transform: [{ scale: 0.7 }] }}
+                          />
+                        ) : (
+                          <Ionicons name="search" size={11} color="#4d6029" />
+                        )}
+                        <Text className="text-[10px] font-poppins-bold text-[#4d6029] ml-1">
+                          {isGeocoding ? "Detecting..." : "Auto-Detect GPS"}
+                        </Text>
+                      </TouchableOpacity>
                       <Text className="text-[10px] font-poppins text-slate-500">
-                        WGS84 6-Decimal
+                        WGS84
                       </Text>
                     </View>
                   </View>
@@ -2615,22 +2611,22 @@ export default function BoxManagementScreen() {
                     <View className="flex-row items-center mb-2 px-1">
                       <Ionicons
                         name={
-                          geocodingStatus.startsWith("Auto-detected")
+                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
                             ? "checkmark-circle"
                             : "information-circle-outline"
                         }
                         size={12}
                         color={
-                          geocodingStatus.startsWith("Auto-detected")
+                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
                             ? "#16a34a"
-                            : "#64748b"
+                            : (geocodingStatus.includes("⚠️") ? "#d97706" : "#64748b")
                         }
                       />
                       <Text
                         className={`text-[10px] font-poppins ml-1 ${
-                          geocodingStatus.startsWith("Auto-detected")
+                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
                             ? "text-emerald-700 font-poppins-medium"
-                            : "text-[#64748b]"
+                            : (geocodingStatus.includes("⚠️") ? "text-amber-700 font-poppins-medium" : "text-[#64748b]")
                         }`}
                         numberOfLines={1}
                       >
@@ -2645,10 +2641,10 @@ export default function BoxManagementScreen() {
                         Latitude (°N):
                       </Text>
                       <TextInput
-                        placeholder="e.g. 8.227625"
+                        placeholder="e.g. 8.225210"
                         placeholderTextColor="#94a3b8"
                         value={newLatitude}
-                        onChangeText={setNewLatitude}
+                        onChangeText={handleLatitudeChange}
                         keyboardType="numeric"
                         className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
                       />
@@ -2658,7 +2654,7 @@ export default function BoxManagementScreen() {
                         Longitude (°E):
                       </Text>
                       <TextInput
-                        placeholder="e.g. 124.238500"
+                        placeholder="e.g. 124.239519"
                         placeholderTextColor="#94a3b8"
                         value={newLongitude}
                         onChangeText={setNewLongitude}
@@ -2766,7 +2762,8 @@ export default function BoxManagementScreen() {
                       <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-md">
                         <Text className="text-[10px] font-poppins-bold text-[#2d3416]">
                           {newSelectedEquipment.length} item
-                          {newSelectedEquipment.length === 1 ? "" : "s"} assigned
+                          {newSelectedEquipment.length === 1 ? "" : "s"}{" "}
+                          assigned
                         </Text>
                       </View>
                     )}
@@ -2919,7 +2916,8 @@ export default function BoxManagementScreen() {
                     {newSelectedEquipment.length === 0 ? (
                       <View className="py-3.5 px-4 bg-[#f8fafc] border border-dashed border-slate-300 rounded-2xl items-center justify-center">
                         <Text className="text-xs font-poppins text-[#94a3b8] text-center">
-                          No hardware assigned yet. Click dropdown above to select.
+                          No hardware assigned yet. Click dropdown above to
+                          select.
                         </Text>
                       </View>
                     ) : (
@@ -3056,12 +3054,16 @@ export default function BoxManagementScreen() {
                   </Text>
                 </View>
 
-                {/* QR Code Graphic with High Error Correction Pattern */}
+                {/* Real Scannable QR Code */}
                 <View className="w-36 h-36 bg-[#f8fafc] border border-slate-200 rounded-2xl items-center justify-center p-2 mb-3 shadow-inner">
-                  <MaterialCommunityIcons
-                    name="qrcode"
-                    size={110}
-                    color="#0f172a"
+                  <Image
+                    source={{
+                      uri: `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(
+                        selectedBoxForQR.qrToken || selectedBoxForQR.code,
+                      )}`,
+                    }}
+                    className="w-32 h-32"
+                    resizeMode="contain"
                   />
                 </View>
 
@@ -3099,7 +3101,10 @@ export default function BoxManagementScreen() {
                     setSelectedBoxForQR(null);
                     // Asynchronously log dispatch to PostgreSQL qr_dispatches table
                     try {
-                      await boxService.recordDispatch(currentBox.id, "50x50mm Door Placard");
+                      await boxService.recordDispatch(
+                        currentBox.id,
+                        "50x50mm Door Placard",
+                      );
                     } catch (err) {
                       console.warn("Failed to record qr_dispatch:", err);
                     }
@@ -3352,7 +3357,8 @@ export default function BoxManagementScreen() {
                         <>
                           <View className="flex-row items-center justify-between mb-2">
                             <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
-                              Central Subscribers Directory ({liveDirectory.length} records)
+                              Central Subscribers Directory (
+                              {liveDirectory.length} records)
                             </Text>
                             <Text className="text-[10px] font-poppins text-[#64748b]">
                               Tap to auto-fill
@@ -3388,11 +3394,27 @@ export default function BoxManagementScreen() {
                           >
                             {liveDirectory
                               .filter((s: any) => {
-                                const q = directorySearchQuery.toLowerCase().trim();
-                                const sName = (s.customerName || s.name || "").toLowerCase();
-                                const sAcc = (s.accountNumber || "").toLowerCase();
-                                const sPlan = (s.servicePlan || s.plan || "").toLowerCase();
-                                const sCat = (s.subscriberType || s.category || "").toLowerCase();
+                                const q = directorySearchQuery
+                                  .toLowerCase()
+                                  .trim();
+                                const sName = (
+                                  s.customerName ||
+                                  s.name ||
+                                  ""
+                                ).toLowerCase();
+                                const sAcc = (
+                                  s.accountNumber || ""
+                                ).toLowerCase();
+                                const sPlan = (
+                                  s.servicePlan ||
+                                  s.plan ||
+                                  ""
+                                ).toLowerCase();
+                                const sCat = (
+                                  s.subscriberType ||
+                                  s.category ||
+                                  ""
+                                ).toLowerCase();
                                 return (
                                   q === "" ||
                                   sName.includes(q) ||
@@ -3405,11 +3427,16 @@ export default function BoxManagementScreen() {
                                 const isCurrentlySelected =
                                   newClientAccount === sub.accountNumber ||
                                   newClientAccount ===
-                                    String(sub.accountNumber).replace(/\D/g, "");
+                                    String(sub.accountNumber).replace(
+                                      /\D/g,
+                                      "",
+                                    );
                                 return (
                                   <TouchableOpacity
                                     key={sub.accountNumber}
-                                    onPress={() => handleSelectFromDirectory(sub)}
+                                    onPress={() =>
+                                      handleSelectFromDirectory(sub)
+                                    }
                                     className={`p-2 rounded-xl border flex-row items-center justify-between mb-1 ${
                                       isCurrentlySelected
                                         ? "bg-[#FCF0DA] border-[#edd5a6]"
@@ -3433,7 +3460,8 @@ export default function BoxManagementScreen() {
                                         className="text-[10px] font-poppins text-[#64748b]"
                                         numberOfLines={1}
                                       >
-                                        {sub.subscriberType || sub.category} · {sub.servicePlan || sub.plan}
+                                        {sub.subscriberType || sub.category} ·{" "}
+                                        {sub.servicePlan || sub.plan}
                                       </Text>
                                     </View>
                                     <View className="bg-slate-100 px-2 py-0.5 rounded">
@@ -3500,9 +3528,7 @@ export default function BoxManagementScreen() {
                     </View>
                     <Ionicons
                       name={
-                        isClientTypeDropdownOpen
-                          ? "chevron-up"
-                          : "chevron-down"
+                        isClientTypeDropdownOpen ? "chevron-up" : "chevron-down"
                       }
                       size={16}
                       color="#64748b"
@@ -3595,9 +3621,7 @@ export default function BoxManagementScreen() {
                     </View>
                     <Ionicons
                       name={
-                        isClientPlanDropdownOpen
-                          ? "chevron-up"
-                          : "chevron-down"
+                        isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
                       }
                       size={16}
                       color="#64748b"
@@ -3621,11 +3645,7 @@ export default function BoxManagementScreen() {
                           paddingVertical: 2,
                         }}
                       >
-                        {[
-                          "ALL",
-                          "Residential",
-                          "Commercial",
-                        ].map((cat) => (
+                        {["ALL", "Residential", "Commercial"].map((cat) => (
                           <TouchableOpacity
                             key={cat}
                             onPress={() => setSubscriberPlanFilter(cat)}

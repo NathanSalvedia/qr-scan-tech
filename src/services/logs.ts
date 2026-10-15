@@ -14,7 +14,7 @@ export interface AuditLogItem {
   timestamp: string;
   relativeTime: string;
   category: EventCategory;
-  actorType: 'TECHNICIAN' | 'ADMIN' | 'SYSTEM';
+  actorType: 'TECHNICIAN' | 'USER' | 'ADMIN' | 'SYSTEM';
   actorName: string;
   actorId?: string;
   targetBoxCode: string;
@@ -38,10 +38,7 @@ export interface RecordScanPayload {
   boxCode?: string;
   scanType?: string;
   padlockVerified?: boolean;
-  measuredSignal?: string;
-  measuredTemp?: string;
   auditNotes?: string;
-  photoUrl?: string;
   boxStatusAtScan?: string;
 }
 
@@ -55,9 +52,6 @@ export interface RecentScanItem {
   status?: 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE' | string;
   boxStatus: 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE' | string;
   isAlarm: boolean;
-  opticalLoss?: string;
-  measuredSignal?: string | null;
-  measuredTemp?: string | null;
   portsUsed?: number;
   totalPorts?: number;
   timeLabel?: string;

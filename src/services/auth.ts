@@ -120,7 +120,16 @@ export const authService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data: AuthResponse = await res.json();
+      const text = await res.text();
+      let data: AuthResponse;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return {
+          success: false,
+          message: `Server returned an unexpected response (Status: ${res.status}). Please verify your backend server and tunnel are active. (Attempted to connect to: ${API_URL})`,
+        };
+      }
       if (data.success && data.user) {
         authState.setUser(data.user, data.token || null);
       }

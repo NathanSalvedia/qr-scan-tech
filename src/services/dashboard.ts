@@ -42,6 +42,7 @@ export interface BoxData {
   voltage?: string;
   lastScannedBy?: string | null;
   lastScannedAt?: string | null;
+  qrToken?: string;
 }
 
 export interface BoxesResponse {

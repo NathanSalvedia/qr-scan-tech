@@ -168,9 +168,11 @@ export default function UserDashboardScreen() {
   const displayName =
     user?.name?.trim() ||
     `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() ||
-    "Technician";
+    "User";
 
   const isWeb = Platform.OS === "web";
+  // Item limit: 5 latest items only
+  const displayedScans = recentScans.slice(0, 5);
 
   return (
     <SafeAreaView className="flex-1 bg-[#f8fafc]">
@@ -379,7 +381,7 @@ export default function UserDashboardScreen() {
           </View>
         </View>
 
-        {/* Recent Scanned Boxes (Clean, Address-free) */}
+        {/* Recent Scanned Boxes (Top 5 Vertical Cards) */}
         <View className="mb-2">
           <View className="flex-row items-center justify-between mb-3.5">
             <Text className="text-sm font-poppins-bold text-[#0f172a] uppercase tracking-wider">
@@ -417,7 +419,7 @@ export default function UserDashboardScreen() {
               </Text>
             </View>
           ) : (
-            recentScans.map((scan) => {
+            displayedScans.map((scan) => {
               const badge = getScanBadge(scan);
               const details = [scan.siteName, scan.relativeTime]
                 .filter(Boolean)

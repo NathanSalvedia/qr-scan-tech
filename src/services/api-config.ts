@@ -25,8 +25,8 @@ export const getApiBaseUrl = (): string => {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // Default fallback URL for standalone mobile builds (HTTPS tunnel)
-  const DEFAULT_REMOTE_URL = 'https://qr-scan-tech-api.loca.lt/api';
+  // Default fallback URL for standalone mobile builds (HTTPS Cloudflare tunnel)
+  const DEFAULT_REMOTE_URL = 'https://besides-output-math-attitudes.trycloudflare.com/api';
 
   // 2. Automatically resolve host machine IP from Expo bundler
   const hostUri = Constants.expoConfig?.hostUri;

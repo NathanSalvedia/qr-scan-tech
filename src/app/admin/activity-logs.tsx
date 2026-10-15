@@ -483,7 +483,7 @@ export default function ActivityLogsScreen() {
               <View className="flex-1 flex-row items-center bg-[#f8fafc] border border-slate-200/80 rounded-2xl px-3.5 py-2.5">
                 <Ionicons name="search" size={17} color="#64748b" />
                 <TextInput
-                  placeholder="Search by box code (e.g. DB-MN-01), technician name, or action keyword..."
+                  placeholder="Search by box code (e.g. DB-MN-01), user name, or action keyword..."
                   placeholderTextColor="#94a3b8"
                   value={searchQuery}
                   onChangeText={(text) => {
@@ -582,7 +582,7 @@ export default function ActivityLogsScreen() {
                     </View>
                     <View className="flex-[1.8] min-w-[180px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
-                        Actor / Technician
+                        Actor / User
                       </Text>
                     </View>
                     <View className="flex-[1.8] min-w-[180px] pr-2">
@@ -691,7 +691,7 @@ export default function ActivityLogsScreen() {
                             </View>
                           </View>
 
-                          {/* 3. Actor / Technician */}
+                          {/* 3. Actor / User */}
                           <View className="flex-[1.8] min-w-[180px] pr-2">
                             <Text
                               className="text-xs font-poppins-bold text-[#0f172a]"
@@ -703,7 +703,7 @@ export default function ActivityLogsScreen() {
                               className="text-[10px] font-poppins text-[#64748b]"
                               numberOfLines={1}
                             >
-                              {item.actorId || item.actorType}
+                              {(item.actorId || item.actorType || "").replace(/technician/gi, "User")}
                             </Text>
                           </View>
 
@@ -981,7 +981,7 @@ export default function ActivityLogsScreen() {
                     <Text className="text-[10px] font-poppins-semibold text-[#64748b]">
                       {selectedLogForDetails.category === "USER_REGISTER"
                         ? "Registered User"
-                        : "Actor / Operator"}
+                        : "Actor / User"}
                     </Text>
                     <Text className="text-xs font-poppins-bold text-[#0f172a] mt-0.5">
                       {selectedLogForDetails.actorName}
@@ -990,8 +990,8 @@ export default function ActivityLogsScreen() {
                       className="text-[10px] font-poppins text-[#64748b]"
                       numberOfLines={1}
                     >
-                      {selectedLogForDetails.actorId ||
-                        selectedLogForDetails.actorType}
+                      {(selectedLogForDetails.actorId ||
+                        selectedLogForDetails.actorType || "").replace(/technician/gi, "User")}
                     </Text>
                   </View>
                 </View>

@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://qr-scan-tech-api.loca.lt/api"
+        "EXPO_PUBLIC_API_URL": "https://besides-output-math-attitudes.trycloudflare.com/api"
       }
     },
     "production": {}

@@ -6,8 +6,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Modal,
-  TextInput,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -33,10 +31,6 @@ export default function UserScannerScreen() {
   // Dynamic boxes cache from database
   const [boxes, setBoxes] = useState<DistributionBox[]>([]);
 
-  // Dynamic Simulate Box Scan Modal state
-  const [isSimulateModalOpen, setIsSimulateModalOpen] = useState(false);
-  const [simulateSearch, setSimulateSearch] = useState('');
-  const [manualCodeInput, setManualCodeInput] = useState('');
 
   // Toast notifications
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -258,12 +252,10 @@ export default function UserScannerScreen() {
         scanType,
         padlockVerified: true,
         boxStatusAtScan: finalStatus,
-        measuredSignal: (box as any).opticalLoss || undefined,
-        measuredTemp: (box as any).temperature || undefined,
         auditNotes:
           scanType === 'CAMERA_QR'
             ? `Field audit scan of ${box.code} at ${box.siteName}`
-            : `Simulated scan test of ${box.code} via dynamic box picker`,
+            : `Scan test of ${box.code}`,
       });
     } catch (err) {
       console.error('Failed to submit scan audit log:', err);
@@ -321,71 +313,6 @@ export default function UserScannerScreen() {
     processBoxScan(result.data || '', 'CAMERA_QR');
   };
 
-  const handleSimulateSelect = (boxCode: string) => {
-    setIsSimulateModalOpen(false);
-    setTimeout(() => {
-      processBoxScan(boxCode, 'MANUAL_SEARCH');
-    }, 250);
-  };
-
-  const handleManualCodeSubmit = () => {
-    if (!manualCodeInput.trim()) return;
-    const code = manualCodeInput.trim();
-    setManualCodeInput('');
-    setIsSimulateModalOpen(false);
-    setTimeout(() => {
-      processBoxScan(code, 'MANUAL_SEARCH');
-    }, 250);
-  };
-
-  const getSimulateStatusPill = (status: string) => {
-    switch (status) {
-      case 'ACTIVE':
-        return {
-          bg: 'bg-emerald-50',
-          border: 'border-emerald-200',
-          text: 'text-emerald-700',
-          dot: 'bg-emerald-500',
-          label: 'Active',
-        };
-      case 'NEEDS_TAG':
-        return {
-          bg: 'bg-amber-50',
-          border: 'border-amber-200',
-          text: 'text-amber-700',
-          dot: 'bg-amber-500',
-          label: 'Needs Tag',
-        };
-      case 'ISSUE':
-        return {
-          bg: 'bg-rose-50',
-          border: 'border-rose-200',
-          text: 'text-rose-700',
-          dot: 'bg-rose-500',
-          label: 'Issue',
-        };
-      default:
-        return {
-          bg: 'bg-slate-50',
-          border: 'border-slate-200',
-          text: 'text-slate-700',
-          dot: 'bg-slate-500',
-          label: status,
-        };
-    }
-  };
-
-  // Filter boxes for simulate modal
-  const filteredSimulateBoxes = boxes.filter((b) => {
-    if (!simulateSearch.trim()) return true;
-    const q = simulateSearch.toLowerCase().trim();
-    return (
-      (b.code || '').toLowerCase().includes(q) ||
-      (b.siteName || '').toLowerCase().includes(q) ||
-      (b.address || '').toLowerCase().includes(q) ||
-      (b.zone || '').toLowerCase().includes(q)
-    );
-  });
 
   return (
     <View className="flex-1 bg-black">
@@ -568,26 +495,10 @@ export default function UserScannerScreen() {
               </View>
             </View>
 
-            {/* 3. BOTTOM CONTROLS & DYNAMIC SIMULATE BOX BUTTON */}
-            <View className="pb-6 items-center px-6 w-full max-w-sm self-center">
-              <TouchableOpacity
-                onPress={() => setIsSimulateModalOpen(true)}
-                className="bg-black/65 border border-white/25 px-5 py-2.5 rounded-2xl flex-row items-center shadow-lg active:bg-black/85 mb-2"
-                activeOpacity={0.8}
-              >
-                <MaterialCommunityIcons name="cube-scan" size={17} color="#84cc16" />
-                <Text className="text-xs font-poppins-bold text-white ml-2">
-                  Simulate Box Scan
-                </Text>
-                <View className="ml-2 px-1.5 py-0.5 rounded-md bg-[#84cc16]/20 border border-[#84cc16]/40">
-                  <Text className="text-[9px] font-poppins-bold text-lime-400">
-                    DYNAMIC
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <Text className="text-[10px] font-poppins text-white/50 text-center tracking-wide">
-                Point camera at physical QR sticker, or tap above to simulate a live box scan
+            {/* 3. BOTTOM HELPER TEXT */}
+            <View className="pb-8 items-center px-6 w-full max-w-sm self-center">
+              <Text className="text-xs font-poppins-medium text-white/75 text-center tracking-wide">
+                Point camera at physical distribution box QR sticker
               </Text>
             </View>
           </SafeAreaView>
@@ -598,6 +509,7 @@ export default function UserScannerScreen() {
       <Modal
         visible={Boolean(tagModalBox)}
         transparent
+        statusBarTranslucent
         animationType="fade"
         onRequestClose={() => {
           setTagModalBox(null);
@@ -678,158 +590,6 @@ export default function UserScannerScreen() {
                 Cancel Scan
               </Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 5. MODAL: DYNAMIC BOX SCAN SIMULATOR */}
-      <Modal
-        visible={isSimulateModalOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsSimulateModalOpen(false)}
-      >
-        <View className="flex-1 bg-black/75 justify-end">
-          <View className="bg-white rounded-t-3xl max-h-[85%] p-5 shadow-2xl border-t border-slate-200">
-            {/* Drag Handle */}
-            <View className="w-12 h-1 bg-slate-300 rounded-full self-center mb-3" />
-
-            {/* Header */}
-            <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3">
-              <View className="flex-row items-center flex-1 mr-2">
-                <View className="w-9 h-9 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
-                  <MaterialCommunityIcons name="cube-scan" size={20} color="#4d6029" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-base font-poppins-bold text-[#0f172a]">
-                    Simulate QR Scan
-                  </Text>
-                  <Text className="text-[11px] font-poppins text-[#64748b]">
-                    Live PostgreSQL Distribution Boxes ({boxes.length})
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setIsSimulateModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
-              >
-                <Ionicons name="close" size={18} color="#475569" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Search Filter */}
-            <View className="bg-slate-100 rounded-2xl px-3.5 py-2.5 flex-row items-center mb-2.5 border border-slate-200/80">
-              <Ionicons name="search" size={16} color="#64748b" />
-              <TextInput
-                placeholder="Search box code, site name, or zone..."
-                placeholderTextColor="#94a3b8"
-                value={simulateSearch}
-                onChangeText={setSimulateSearch}
-                className="flex-1 ml-2 text-xs font-poppins text-[#0f172a]"
-              />
-              {simulateSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setSimulateSearch('')}>
-                  <Ionicons name="close-circle" size={16} color="#94a3b8" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Manual Code / Token Entry */}
-            <View className="bg-slate-50 border border-slate-200 rounded-2xl p-2 mb-3 flex-row items-center">
-              <TextInput
-                placeholder="Or enter custom code / token..."
-                placeholderTextColor="#94a3b8"
-                value={manualCodeInput}
-                onChangeText={setManualCodeInput}
-                className="flex-1 px-2.5 text-xs font-mono text-[#0f172a]"
-                autoCapitalize="characters"
-              />
-              <TouchableOpacity
-                onPress={handleManualCodeSubmit}
-                disabled={!manualCodeInput.trim()}
-                className={`px-3 py-2 rounded-xl flex-row items-center ${
-                  manualCodeInput.trim() ? 'bg-[#4d6029]' : 'bg-slate-300'
-                }`}
-              >
-                <Ionicons name="scan" size={13} color="#ffffff" />
-                <Text className="text-[11px] font-poppins-bold text-white ml-1">
-                  Test
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Dynamic Box List */}
-            <ScrollView className="max-h-96" showsVerticalScrollIndicator={false}>
-              {filteredSimulateBoxes.length === 0 ? (
-                <View className="py-8 items-center justify-center">
-                  <Ionicons name="cube-outline" size={32} color="#94a3b8" />
-                  <Text className="text-xs font-poppins-bold text-[#0f172a] mt-2">
-                    No matching distribution boxes
-                  </Text>
-                  <Text className="text-[11px] font-poppins text-[#64748b] text-center mt-0.5">
-                    {`No boxes found matching "${simulateSearch}".`}
-                  </Text>
-                </View>
-              ) : (
-                filteredSimulateBoxes.map((item) => {
-                  const statusPill = getSimulateStatusPill(item.status);
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      onPress={() => handleSimulateSelect(item.code)}
-                      className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 mb-2.5 flex-row items-center justify-between active:bg-slate-100"
-                    >
-                      <View className="flex-row items-center flex-1 mr-3">
-                        <View className="w-10 h-10 rounded-xl bg-white border border-slate-200 items-center justify-center mr-3 shadow-xs">
-                          <MaterialCommunityIcons
-                            name="qrcode"
-                            size={20}
-                            color="#4d6029"
-                          />
-                        </View>
-                        <View className="flex-1">
-                          <View className="flex-row items-center gap-1.5">
-                            <Text className="text-sm font-mono font-bold text-[#0f172a]">
-                              {item.code}
-                            </Text>
-                            <View className="px-1.5 py-0.5 rounded bg-slate-200">
-                              <Text className="text-[9px] font-poppins-bold text-[#475569]">
-                                {item.category === 'MAIN_BOX' ? 'MAIN' : 'SUB'}
-                              </Text>
-                            </View>
-                          </View>
-                          <Text
-                            className="text-xs font-poppins text-[#475569] mt-0.5"
-                            numberOfLines={1}
-                          >
-                            {item.siteName}
-                          </Text>
-                          <Text className="text-[10px] font-poppins text-[#94a3b8]">
-                            Zone: {item.zone || 'Iligan'} · Ports: {item.portsUsed || 0}/{item.totalPorts}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Status Badge */}
-                      <View className="items-end">
-                        <View
-                          className={`px-2 py-0.5 rounded-lg flex-row items-center border ${statusPill.bg} ${statusPill.border} mb-1`}
-                        >
-                          <View className={`w-1.5 h-1.5 rounded-full mr-1 ${statusPill.dot}`} />
-                          <Text className={`text-[10px] font-poppins-bold ${statusPill.text}`}>
-                            {statusPill.label}
-                          </Text>
-                        </View>
-                        <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
-                          Simulate Scan →
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
           </View>
         </View>
       </Modal>

@@ -235,8 +235,8 @@ export default function BoxDetailsScreen() {
       } else if (!fullNotes) {
         fullNotes =
           auditStatus === "ACTIVE"
-            ? "Field audit passed. Enclosure & hardware operational."
-            : "Field audit complete. Pending QR placard affixing.";
+            ? "Field inspection passed. Enclosure & hardware operational."
+            : "Field inspection complete. Pending QR placard affixing.";
       }
 
       const res = await logsService.recordScan({
@@ -256,15 +256,15 @@ export default function BoxDetailsScreen() {
         showToast(
           auditStatus === "ISSUE"
             ? `Hardware issue logged for ${box.code}`
-            : `Audit for ${box.code} recorded successfully!`
+            : `Inspection for ${box.code} recorded successfully!`
         );
         fetchBoxDetails(true);
       } else {
-        throw new Error(res.message || "Failed to record audit");
+        throw new Error(res.message || "Failed to record inspection");
       }
     } catch (err: any) {
-      console.error("Error submitting audit:", err);
-      showToast(err.message || "Failed to submit audit.", "error");
+      console.error("Error submitting inspection:", err);
+      showToast(err.message || "Failed to submit inspection.", "error");
     } finally {
       setIsSubmittingAudit(false);
     }
@@ -489,27 +489,14 @@ export default function BoxDetailsScreen() {
         </View>
 
         {/* Header Action Buttons */}
-        <View className="flex-row items-center gap-2">
-          <TouchableOpacity
-            onPress={() => fetchBoxDetails(true)}
-            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center active:bg-white/30"
-            accessibilityLabel="Refresh"
-            disabled={refreshing}
-          >
-            {refreshing ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Ionicons name="refresh-outline" size={18} color="#ffffff" />
-            )}
-          </TouchableOpacity>
-
+        <View className="flex-row items-center">
           <TouchableOpacity
             onPress={handleOpenAuditModal}
             className="bg-white/25 border border-white/30 px-3 py-1.5 rounded-xl flex-row items-center active:bg-white/35"
           >
             <Ionicons name="shield-checkmark" size={14} color="#ffffff" />
             <Text className="text-[11px] font-poppins-bold text-white ml-1.5">
-              Audit
+              Inspect
             </Text>
           </TouchableOpacity>
         </View>
@@ -637,14 +624,13 @@ export default function BoxDetailsScreen() {
                   {box.address}
                 </Text>
                 <Text className="text-[11px] font-poppins text-slate-500 mt-1">
-                  Zone:{" "}
-                  <Text className="font-poppins-bold text-[#0f172a]">
-                    {box.zone || "Iligan"}
+                  Latitude:{" "}
+                  <Text className="font-mono text-[#0f172a]">
+                    {Number(box.latitude).toFixed(4)}
                   </Text>
                   {" · "}
-                  GPS:{" "}
+                  Longitude:{" "}
                   <Text className="font-mono text-[#0f172a]">
-                    {Number(box.latitude).toFixed(4)},{" "}
                     {Number(box.longitude).toFixed(4)}
                   </Text>
                 </Text>
@@ -883,10 +869,11 @@ export default function BoxDetailsScreen() {
         <Modal
           visible={isAuditModalOpen}
           transparent
+          statusBarTranslucent
           animationType="fade"
           onRequestClose={() => setIsAuditModalOpen(false)}
         >
-          <View className="flex-1 bg-black/60 items-center justify-center p-4">
+          <View className="flex-1 bg-black/75 items-center justify-center p-4">
             <View className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100">
               <View className="flex-row items-center justify-between pb-3.5 border-b border-slate-100 mb-4">
                 <View className="flex-row items-center">
@@ -898,7 +885,7 @@ export default function BoxDetailsScreen() {
                     />
                   </View>
                   <Text className="text-base font-poppins-bold text-[#0f172a]">
-                    Audit {box.code}
+                    Inspect {box.code}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -915,7 +902,7 @@ export default function BoxDetailsScreen() {
                   onPress={() => setPadlockVerified(!padlockVerified)}
                   className={`p-3.5 rounded-2xl border flex-row items-center justify-between mb-3 ${
                     padlockVerified
-                      ? "bg-emerald-50/70 border-emerald-200"
+                      ? "bg-[#AEAC78]/20 border-[#AEAC78]/70"
                       : "bg-rose-50/70 border-rose-200"
                   }`}
                   activeOpacity={0.8}
@@ -924,7 +911,7 @@ export default function BoxDetailsScreen() {
                     <Ionicons
                       name={padlockVerified ? "lock-closed" : "lock-open"}
                       size={18}
-                      color={padlockVerified ? "#059669" : "#dc2626"}
+                      color={padlockVerified ? "#4d6029" : "#dc2626"}
                     />
                     <View className="ml-2.5 flex-1">
                       <Text className="text-xs font-poppins-bold text-[#0f172a]">
@@ -938,15 +925,15 @@ export default function BoxDetailsScreen() {
                     </View>
                   </View>
                   <View
-                    className={`px-2 py-0.5 rounded-lg ${
+                    className={`px-2 py-0.5 rounded-lg border ${
                       padlockVerified
-                        ? "bg-emerald-100 border border-emerald-300"
+                        ? "bg-[#AEAC78]/30 border-[#AEAC78]/80"
                         : "bg-rose-100 border border-rose-300"
                     }`}
                   >
                     <Text
                       className={`text-[10px] font-poppins-bold ${
-                        padlockVerified ? "text-emerald-800" : "text-rose-800"
+                        padlockVerified ? "text-[#4d6029]" : "text-rose-800"
                       }`}
                     >
                       {padlockVerified ? "VERIFIED" : "ISSUE"}
@@ -967,7 +954,7 @@ export default function BoxDetailsScreen() {
                         className={`flex-1 py-2 rounded-xl items-center border ${
                           auditStatus === st
                             ? st === "ACTIVE"
-                              ? "bg-emerald-600 border-emerald-700"
+                              ? "bg-[#4d6029] border-[#3e4e20]"
                               : st === "NEEDS_TAG"
                                 ? "bg-amber-600 border-amber-700"
                                 : "bg-rose-600 border-rose-700"
@@ -1052,13 +1039,13 @@ export default function BoxDetailsScreen() {
                     </View>
                   </View>
                 ) : (
-                  <View className="mb-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3 flex-row items-center">
+                  <View className="mb-3 bg-[#AEAC78]/20 border border-[#AEAC78]/70 rounded-2xl p-3 flex-row items-center">
                     <Ionicons
                       name="checkmark-circle"
                       size={18}
-                      color="#059669"
+                      color="#4d6029"
                     />
-                    <Text className="text-[11px] font-poppins text-emerald-800 ml-2 flex-1">
+                    <Text className="text-[11px] font-poppins text-[#4d6029] ml-2 flex-1">
                       All optical ports, enclosure, and hardware verified operational on-site.
                     </Text>
                   </View>
@@ -1093,8 +1080,8 @@ export default function BoxDetailsScreen() {
                       handleSubmitAudit();
                     } else {
                       Alert.alert(
-                        "Submit Field Audit",
-                        `Confirm audit submission for ${box.code}?`,
+                        "Submit Field Inspection",
+                        `Confirm inspection submission for ${box.code}?`,
                         [
                           { text: "Cancel", style: "cancel" },
                           { text: "Submit", onPress: handleSubmitAudit },
@@ -1115,7 +1102,7 @@ export default function BoxDetailsScreen() {
                         color="#ffffff"
                       />
                       <Text className="text-white text-xs font-poppins-bold ml-1.5">
-                        Submit Audit Report
+                        Submit Inspection Report
                       </Text>
                     </>
                   )}

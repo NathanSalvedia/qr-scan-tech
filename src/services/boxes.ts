@@ -25,7 +25,6 @@ export interface DistributionBox {
   siteName: string;
   address: string;
   mountingType?: 'Utility Pole' | 'Wall Mount' | 'Cabinet';
-  poleNumber?: string;
   latitude: number;
   longitude: number;
   status: 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE';

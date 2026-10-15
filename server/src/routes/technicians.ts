@@ -144,7 +144,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             audit.auditNotes ||
             `Physical inspection performed. Padlock verified: ${
               audit.padlockVerified ? 'Yes' : 'No'
-            }. Signal: ${audit.measuredSignal || 'Nominal'}.`,
+            }.`,
         };
       });
 

@@ -25,7 +25,7 @@ export interface AuditLogItem {
   timestamp: string;
   relativeTime: string;
   category: EventCategory;
-  actorType: 'TECHNICIAN' | 'ADMIN' | 'SYSTEM';
+  actorType: 'TECHNICIAN' | 'USER' | 'ADMIN' | 'SYSTEM';
   actorName: string;
   actorId?: string;
   targetBoxCode: string;
@@ -104,8 +104,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       const tech = userMap.get(scan.technicianId);
       const isAlarm =
         scan.boxStatusAtScan === 'ISSUE' ||
-        scan.boxStatusAtScan === 'WARNING' ||
-        (scan.measuredTemp && scan.measuredTemp.toLowerCase().includes('high'));
+        scan.boxStatusAtScan === 'WARNING';
 
       const scanDate = new Date(scan.createdAt);
       const actorName = tech ? `${tech.firstName} ${tech.lastName}`.trim() : 'Field Technician';
@@ -116,8 +115,6 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         'Scan Type': scan.scanType || 'CAMERA_QR',
         'Cabinet Status': scan.padlockVerified ? 'Closed & Padlocked' : 'Padlock Unlatched',
       };
-      if (scan.measuredSignal) metadata['Signal Quality'] = scan.measuredSignal;
-      if (scan.measuredTemp) metadata['Cabinet Temp'] = scan.measuredTemp;
       if (box?.qrToken) metadata['QR Token Read'] = box.qrToken;
 
       aggregatedLogs.push({
@@ -125,9 +122,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         timestamp: formatTimestamp(scanDate),
         relativeTime: formatRelativeTime(scanDate),
         category: isAlarm ? 'ALARM' : 'SCAN',
-        actorType: 'TECHNICIAN',
+        actorType: 'USER',
         actorName,
-        actorId: tech?.role === 'user' ? 'Technician' : 'Staff',
+        actorId: tech?.role === 'user' ? 'User' : 'Staff',
         targetBoxCode: boxCode,
         targetBoxName: boxName,
         title: isAlarm
@@ -249,17 +246,17 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       const regDate = new Date(user.createdAt);
       const fullName = `${user.firstName} ${user.lastName}`.trim() || 'New User';
       const isTech = user.role === 'user';
-      const roleLabel = isTech ? 'Field Technician' : 'System Administrator';
+      const roleLabel = isTech ? 'User' : 'System Administrator';
 
       aggregatedLogs.push({
         id: `LOG-USR-${user.id.slice(0, 8)}`,
         timestamp: formatTimestamp(regDate),
         relativeTime: formatRelativeTime(regDate),
         category: 'USER_REGISTER',
-        actorType: isTech ? 'TECHNICIAN' : 'ADMIN',
+        actorType: isTech ? 'USER' : 'ADMIN',
         actorName: fullName,
-        actorId: isTech ? 'Technician' : 'Administrator',
-        targetBoxCode: isTech ? 'FIELD-TECH' : 'SYS-ADMIN',
+        actorId: isTech ? 'User' : 'Administrator',
+        targetBoxCode: isTech ? 'USER' : 'SYS-ADMIN',
         targetBoxName: roleLabel,
         title: `New User Registered (${fullName})`,
         description: `New ${roleLabel} account registered with email ${user.email}.${
@@ -351,8 +348,7 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
       const scanDate = new Date(scan.createdAt);
       const isAlarm =
         scan.boxStatusAtScan === 'ISSUE' ||
-        scan.boxStatusAtScan === 'WARNING' ||
-        Boolean(scan.measuredTemp && scan.measuredTemp.toLowerCase().includes('high'));
+        scan.boxStatusAtScan === 'WARNING';
 
       const scanDateStr = scanDate.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
       const dateGroup =
@@ -383,9 +379,6 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
         status: (box?.status || scan.boxStatusAtScan || 'ACTIVE') as 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE',
         boxStatus: box?.status || scan.boxStatusAtScan || 'ACTIVE',
         isAlarm,
-        opticalLoss: scan.measuredSignal || (box?.status === 'ISSUE' ? '-24.8 dBm' : '-18.5 dBm'),
-        measuredSignal: scan.measuredSignal || (box?.status === 'ISSUE' ? '-24.8 dBm' : '-18.5 dBm'),
-        measuredTemp: scan.measuredTemp || '31.2 °C',
         portsUsed,
         totalPorts,
         timeLabel,
@@ -424,10 +417,7 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       boxCode,
       scanType = 'CAMERA_QR',
       padlockVerified = true,
-      measuredSignal,
-      measuredTemp,
       auditNotes,
-      photoUrl,
       boxStatusAtScan = 'ACTIVE',
     } = req.body;
 
@@ -472,10 +462,7 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
         technicianId,
         scanType: safeScanType,
         padlockVerified: Boolean(padlockVerified),
-        measuredSignal: measuredSignal ? String(measuredSignal) : null,
-        measuredTemp: measuredTemp ? String(measuredTemp) : null,
         auditNotes: auditNotes ? String(auditNotes) : null,
-        photoUrl: photoUrl ? String(photoUrl) : null,
         boxStatusAtScan: String(boxStatusAtScan),
       })
       .returning();
