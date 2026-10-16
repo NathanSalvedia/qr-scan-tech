@@ -1,4 +1,8 @@
 import { UserBottomNavigation } from "@/components/user-bottom-navigation";
+import { authService } from "@/services/auth";
+import { useAuth } from "@/services/auth-state";
+import { boxService } from "@/services/boxes";
+import { settingsService } from "@/services/settings";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
@@ -16,10 +20,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { authService } from "@/services/auth";
-import { useAuth } from "@/services/auth-state";
-import { boxService } from "@/services/boxes";
-import { settingsService } from "@/services/settings";
 
 export default function UserProfileScreen() {
   const router = useRouter();
@@ -136,7 +136,7 @@ export default function UserProfileScreen() {
         const nowIso = new Date().toISOString();
         setLastSyncTime(settingsService.formatLastSyncTime(nowIso));
         setSyncToast(
-          `Successfully synced ${res.boxes.length} box records for offline use!`
+          `Successfully synced ${res.boxes.length} box records for offline use!`,
         );
       } else {
         setSyncToast("Sync failed: Could not load distribution boxes.");
@@ -157,28 +157,40 @@ export default function UserProfileScreen() {
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert("Password Mismatch", "New password and confirmation do not match.");
+      Alert.alert(
+        "Password Mismatch",
+        "New password and confirmation do not match.",
+      );
       return;
     }
     if (newPassword.length < 6) {
       Alert.alert(
         "Password Too Short",
-        "New password must be at least 6 characters long."
+        "New password must be at least 6 characters long.",
       );
       return;
     }
 
     setIsSavingPassword(true);
     try {
-      const res = await authService.changePassword(currentPassword, newPassword);
+      const res = await authService.changePassword(
+        currentPassword,
+        newPassword,
+      );
       if (res.success) {
         setShowPasswordModal(false);
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
-        Alert.alert("Success", res.message || "Your password has been successfully updated.");
+        Alert.alert(
+          "Success",
+          res.message || "Your password has been successfully updated.",
+        );
       } else {
-        Alert.alert("Update Failed", res.message || "Current password may be incorrect.");
+        Alert.alert(
+          "Update Failed",
+          res.message || "Current password may be incorrect.",
+        );
       }
     } catch (e: any) {
       Alert.alert("Network Error", e.message || "Failed to update password.");
@@ -403,7 +415,11 @@ export default function UserProfileScreen() {
                   activeOpacity={0.8}
                 >
                   {isSyncing ? (
-                    <ActivityIndicator size="small" color="#4d6029" style={{ marginRight: 4 }} />
+                    <ActivityIndicator
+                      size="small"
+                      color="#4d6029"
+                      style={{ marginRight: 4 }}
+                    />
                   ) : (
                     <Ionicons
                       name="refresh-outline"
@@ -470,9 +486,6 @@ export default function UserProfileScreen() {
 
           {/* Footer Metadata */}
           <View className="items-center justify-center pt-3">
-            <Text className="text-[10px] font-poppins-semibold text-[#94a3b8]">
-              MultiFactors Network Infrastructure
-            </Text>
             <Text className="text-[9px] font-poppins-medium text-[#cbd5e1] mt-0.5">
               QR Box Management · Version {appVersion}
             </Text>

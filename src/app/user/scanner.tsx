@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Modal,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -19,6 +20,18 @@ import { logsService } from '@/services/logs';
 import { settingsService } from '@/services/settings';
 import { playScanConfirmationBeep } from '@/services/sound';
 
+const FOCUS_REQUIRED_MS = 850;
+const FOCUS_LOST_TIMEOUT_MS = 950;
+const MIN_ALIGNED_FRAMES = 2;
+const RETICLE_SIZE = 288; // w-72 h-72 = 288dp
+
+interface RectBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export default function UserScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [torchEnabled, setTorchEnabled] = useState(false);
@@ -28,9 +41,29 @@ export default function UserScannerScreen() {
   const [scanned, setScanned] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Focus & Alignment state before opening box-details
+  const [focusState, setFocusState] = useState<'idle' | 'off_center' | 'focusing' | 'locked'>('idle');
+  const [focusProgress, setFocusProgress] = useState(0);
+  const [detectedQrBounds, setDetectedQrBounds] = useState<RectBounds | null>(null);
+
+  // Layout refs for accurate reticle frame alignment check
+  const cameraContainerRef = useRef<View>(null);
+  const reticleViewRef = useRef<View>(null);
+  const containerWindowRef = useRef<RectBounds>({ x: 0, y: 0, width: 0, height: 0 });
+  const reticleBoundsRef = useRef<RectBounds>({ x: 0, y: 0, width: RETICLE_SIZE, height: RETICLE_SIZE });
+
+  // Focus tracking refs
+  const focusStartTimeRef = useRef<number | null>(null);
+  const lastAlignedTimeRef = useRef<number>(0);
+  const alignedFrameCountRef = useRef<number>(0);
+  const focusedDataRef = useRef<string | null>(null);
+  const focusResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLockingRef = useRef<boolean>(false);
+  const [reticleScaleAnim] = useState(() => new Animated.Value(1));
+
   // Dynamic boxes cache from database
   const [boxes, setBoxes] = useState<DistributionBox[]>([]);
-
 
   // Toast notifications
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -39,6 +72,30 @@ export default function UserScannerScreen() {
   // Tag affixing confirmation modal (for boxes with NEEDS_TAG status)
   const [tagModalBox, setTagModalBox] = useState<DistributionBox | null>(null);
   const [isUpdatingTag, setIsUpdatingTag] = useState(false);
+
+  const resetScannerFocus = useCallback(() => {
+    if (focusResetTimerRef.current) {
+      clearTimeout(focusResetTimerRef.current);
+      focusResetTimerRef.current = null;
+    }
+    if (focusLockTimerRef.current) {
+      clearTimeout(focusLockTimerRef.current);
+      focusLockTimerRef.current = null;
+    }
+    focusStartTimeRef.current = null;
+    lastAlignedTimeRef.current = 0;
+    alignedFrameCountRef.current = 0;
+    focusedDataRef.current = null;
+    isLockingRef.current = false;
+    setFocusState('idle');
+    setFocusProgress(0);
+    setDetectedQrBounds(null);
+    Animated.spring(reticleScaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 7,
+    }).start();
+  }, [reticleScaleAnim]);
 
   useEffect(() => {
     let isMounted = true;
@@ -70,10 +127,14 @@ export default function UserScannerScreen() {
     };
   }, []);
 
-  // Sync autoFlashlight preference on screen focus
+  // Sync autoFlashlight preference & reset focus on screen focus
   useFocusEffect(
     useCallback(() => {
       let isCurrent = true;
+      setScanned(false);
+      setIsProcessing(false);
+      resetScannerFocus();
+
       settingsService.getScannerPreferences().then((prefs) => {
         if (isCurrent && prefs.autoFlashlight) {
           setTorchEnabled(true);
@@ -81,9 +142,44 @@ export default function UserScannerScreen() {
       });
       return () => {
         isCurrent = false;
+        resetScannerFocus();
       };
-    }, [])
+    }, [resetScannerFocus])
   );
+
+  // Smooth progress ticker while actively focusing on a QR code inside the reticle
+  useEffect(() => {
+    if (focusState !== 'focusing') return;
+
+    const interval = setInterval(() => {
+      if (!focusStartTimeRef.current || isLockingRef.current) return;
+      const elapsed = Date.now() - focusStartTimeRef.current;
+      const rawProgress = Math.min(95, Math.round((elapsed / FOCUS_REQUIRED_MS) * 100));
+      setFocusProgress(rawProgress);
+    }, 60);
+
+    return () => clearInterval(interval);
+  }, [focusState]);
+
+  const updateMeasuredBounds = useCallback(() => {
+    if (cameraContainerRef.current && reticleViewRef.current) {
+      cameraContainerRef.current.measureInWindow((cx, cy, cWidth, cHeight) => {
+        if (cWidth > 0 && cHeight > 0) {
+          containerWindowRef.current = { x: cx, y: cy, width: cWidth, height: cHeight };
+        }
+        reticleViewRef.current?.measureInWindow((rx, ry, rWidth, rHeight) => {
+          if (rWidth > 0 && rHeight > 0) {
+            reticleBoundsRef.current = {
+              x: rx - (cx || 0),
+              y: ry - (cy || 0),
+              width: rWidth,
+              height: rHeight,
+            };
+          }
+        });
+      });
+    }
+  }, []);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToastMessage(msg);
@@ -200,6 +296,7 @@ export default function UserScannerScreen() {
       setIsProcessing(false);
       showToast(`Unregistered Box: "${identifier || rawData}" not found in database`, 'error');
       setTimeout(() => {
+        resetScannerFocus();
         setScanned(false);
       }, 2500);
       return;
@@ -266,6 +363,7 @@ export default function UserScannerScreen() {
         params: { code: box.code, id: box.id },
       });
       setTimeout(() => {
+        resetScannerFocus();
         setScanned(false);
       }, 1500);
     }
@@ -308,11 +406,194 @@ export default function UserScannerScreen() {
     await executeScanAuditAndNavigate(currentBox, 'CAMERA_QR', 'NEEDS_TAG');
   };
 
-  const handleBarcodeScanned = (result: BarcodeScanningResult) => {
-    if (scanned || isProcessing) return;
-    processBoxScan(result.data || '', 'CAMERA_QR');
+  /**
+   * Extract QR bounding box in CameraView logical coordinates (dp)
+   */
+  const extractQrBounds = (result: BarcodeScanningResult): RectBounds | null => {
+    const b = result.bounds;
+    if (b && b.size && b.size.width > 5 && b.size.height > 5) {
+      return {
+        x: b.origin.x,
+        y: b.origin.y,
+        width: b.size.width,
+        height: b.size.height,
+      };
+    }
+
+    const pts = result.cornerPoints;
+    if (Array.isArray(pts) && pts.length >= 3) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of pts) {
+        if (typeof p.x === 'number' && typeof p.y === 'number') {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+      if (maxX - minX > 5 && maxY - minY > 5) {
+        return {
+          x: minX,
+          y: minY,
+          width: maxX - minX,
+          height: maxY - minY,
+        };
+      }
+    }
+
+    return null;
   };
 
+  /**
+   * Check whether the detected QR code is centered/aligned inside the viewfinder reticle frame
+   */
+  const isQrAlignedInReticle = (qr: RectBounds): boolean => {
+    const reticle = reticleBoundsRef.current;
+    if (reticle.width <= 0 || reticle.height <= 0) return true;
+
+    const qrCenterX = qr.x + qr.width / 2;
+    const qrCenterY = qr.y + qr.height / 2;
+
+    // 1. Center of QR must be inside the reticle frame (with a small inner margin)
+    const innerMargin = 12;
+    const isCenterInside =
+      qrCenterX >= reticle.x + innerMargin &&
+      qrCenterX <= reticle.x + reticle.width - innerMargin &&
+      qrCenterY >= reticle.y + innerMargin &&
+      qrCenterY <= reticle.y + reticle.height - innerMargin;
+
+    if (!isCenterInside) {
+      return false;
+    }
+
+    // 2. At least 60% of the QR code area (or reticle area if very close) must overlap the reticle
+    const tolerance = 18;
+    const overlapLeft = Math.max(qr.x, reticle.x - tolerance);
+    const overlapTop = Math.max(qr.y, reticle.y - tolerance);
+    const overlapRight = Math.min(qr.x + qr.width, reticle.x + reticle.width + tolerance);
+    const overlapBottom = Math.min(qr.y + qr.height, reticle.y + reticle.height + tolerance);
+
+    const overlapW = Math.max(0, overlapRight - overlapLeft);
+    const overlapH = Math.max(0, overlapBottom - overlapTop);
+    const overlapArea = overlapW * overlapH;
+
+    const qrArea = Math.max(1, qr.width * qr.height);
+    const reticleArea = Math.max(1, reticle.width * reticle.height);
+    const referenceArea = Math.min(qrArea, reticleArea);
+
+    return overlapArea / referenceArea >= 0.6;
+  };
+
+  /**
+   * Step-by-step QR Focus & Alignment Handler:
+   * 1. Requires QR code to be aligned inside the viewfinder reticle frame
+   * 2. Focuses & locks onto the QR code steadily before opening box-details
+   */
+  const handleBarcodeScanned = (result: BarcodeScanningResult) => {
+    if (scanned || isProcessing || isLockingRef.current) return;
+
+    const rawData = (result.data || '').trim();
+    if (!rawData) return;
+
+    // Schedule focus reset if QR leaves the camera view
+    if (focusResetTimerRef.current) {
+      clearTimeout(focusResetTimerRef.current);
+    }
+    focusResetTimerRef.current = setTimeout(() => {
+      if (!isLockingRef.current && !scanned && !isProcessing) {
+        resetScannerFocus();
+      }
+    }, FOCUS_LOST_TIMEOUT_MS);
+
+    const qrBounds = extractQrBounds(result);
+    if (qrBounds) {
+      setDetectedQrBounds(qrBounds);
+
+      // Check if QR code is aligned inside the center reticle frame
+      if (!isQrAlignedInReticle(qrBounds)) {
+        focusStartTimeRef.current = null;
+        alignedFrameCountRef.current = 0;
+        focusedDataRef.current = null;
+        setFocusState('off_center');
+        setFocusProgress(0);
+        return;
+      }
+    } else {
+      setDetectedQrBounds(null);
+    }
+
+    const now = Date.now();
+
+    // Start focusing if this is a new QR target or focus hasn't begun
+    if (focusedDataRef.current !== rawData || focusStartTimeRef.current === null) {
+      focusedDataRef.current = rawData;
+      focusStartTimeRef.current = now;
+      lastAlignedTimeRef.current = now;
+      alignedFrameCountRef.current = 1;
+      setFocusState('focusing');
+      setFocusProgress(20);
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      Animated.spring(reticleScaleAnim, {
+        toValue: 0.94,
+        useNativeDriver: true,
+        friction: 6,
+      }).start();
+      return;
+    }
+
+    // Continue focusing on the aligned QR code
+    lastAlignedTimeRef.current = now;
+    alignedFrameCountRef.current += 1;
+
+    const elapsed = now - focusStartTimeRef.current;
+    const progress = Math.min(100, Math.round((elapsed / FOCUS_REQUIRED_MS) * 100));
+    setFocusProgress(progress);
+
+    // Require both focus time and multiple aligned frames before locking & opening box-details
+    if (elapsed >= FOCUS_REQUIRED_MS && alignedFrameCountRef.current >= MIN_ALIGNED_FRAMES) {
+      isLockingRef.current = true;
+      if (focusResetTimerRef.current) {
+        clearTimeout(focusResetTimerRef.current);
+        focusResetTimerRef.current = null;
+      }
+
+      setFocusState('locked');
+      setFocusProgress(100);
+
+      Animated.spring(reticleScaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+      }).start();
+
+      // Brief visual lock confirmation on the focused QR code before opening box-details
+      focusLockTimerRef.current = setTimeout(() => {
+        processBoxScan(rawData, 'CAMERA_QR');
+      }, 280);
+    }
+  };
+
+  const cornerBorderColor =
+    focusState === 'locked'
+      ? 'border-emerald-400'
+      : focusState === 'focusing'
+      ? 'border-lime-300'
+      : focusState === 'off_center'
+      ? 'border-amber-400'
+      : 'border-[#84cc16]';
+
+  const frameBorderColor =
+    focusState === 'locked'
+      ? 'border-emerald-400/90'
+      : focusState === 'focusing'
+      ? 'border-lime-400/90'
+      : focusState === 'off_center'
+      ? 'border-amber-400/80'
+      : 'border-[#4d6029]/80';
 
   return (
     <View className="flex-1 bg-black">
@@ -359,16 +640,65 @@ export default function UserScannerScreen() {
         </SafeAreaView>
       ) : (
         /* Full Screen Live Camera View with Overlaid Close Button */
-        <View style={StyleSheet.absoluteFill} className="w-full h-full relative">
+        <View
+          ref={cameraContainerRef}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width > 0 && height > 0) {
+              reticleBoundsRef.current = {
+                x: (width - RETICLE_SIZE) / 2,
+                y: (height - RETICLE_SIZE) / 2 - 20,
+                width: RETICLE_SIZE,
+                height: RETICLE_SIZE,
+              };
+            }
+            updateMeasuredBounds();
+          }}
+          style={StyleSheet.absoluteFill}
+          className="w-full h-full relative"
+        >
           <CameraView
             style={StyleSheet.absoluteFill}
             facing={facing}
             enableTorch={torchEnabled}
+            autofocus="on"
             barcodeScannerSettings={{
               barcodeTypes: ['qr'],
             }}
             onBarcodeScanned={scanned || isProcessing ? undefined : handleBarcodeScanned}
           />
+
+          {/* Dynamic QR Focus Target Overlay on Detected QR Code */}
+          {detectedQrBounds && !scanned && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: detectedQrBounds.x - 6,
+                top: detectedQrBounds.y - 6,
+                width: Math.max(44, detectedQrBounds.width + 12),
+                height: Math.max(44, detectedQrBounds.height + 12),
+                zIndex: 15,
+              }}
+              className={`rounded-2xl border-2 items-center justify-center ${
+                focusState === 'locked'
+                  ? 'border-emerald-400 bg-emerald-400/20'
+                  : focusState === 'focusing'
+                  ? 'border-lime-300 bg-lime-300/15'
+                  : 'border-amber-400/80 bg-amber-400/10'
+              }`}
+            >
+              <View
+                className={`w-2.5 h-2.5 rounded-full ${
+                  focusState === 'locked'
+                    ? 'bg-emerald-400'
+                    : focusState === 'focusing'
+                    ? 'bg-lime-300'
+                    : 'bg-amber-400'
+                }`}
+              />
+            </View>
+          )}
 
           {/* Transparent Overlay with Overlaid Close Button & Reticle */}
           <SafeAreaView className="flex-1 justify-between z-20">
@@ -384,9 +714,23 @@ export default function UserScannerScreen() {
               </TouchableOpacity>
 
               <View className="bg-black/50 border border-white/20 px-3 py-1.5 rounded-full flex-row items-center">
-                <View className="w-2 h-2 rounded-full bg-emerald-400 mr-2" />
+                <View
+                  className={`w-2 h-2 rounded-full mr-2 ${
+                    focusState === 'locked'
+                      ? 'bg-emerald-400'
+                      : focusState === 'focusing'
+                      ? 'bg-lime-400'
+                      : focusState === 'off_center'
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                  }`}
+                />
                 <Text className="text-[10px] font-poppins-semibold text-white/90">
-                  Live Scanner
+                  {focusState === 'focusing'
+                    ? 'Focusing QR...'
+                    : focusState === 'locked'
+                    ? 'QR Locked'
+                    : 'Live Scanner'}
                 </Text>
               </View>
             </View>
@@ -427,15 +771,65 @@ export default function UserScannerScreen() {
             {/* 2. CENTER RETICLE & CAMERA CONTROLS */}
             <View className="items-center justify-center">
               {/* Viewfinder Reticle Frame */}
-              <View className="w-72 h-72 border-2 border-[#4d6029]/80 rounded-3xl relative items-center justify-center shadow-2xl bg-transparent">
+              <Animated.View
+                ref={reticleViewRef}
+                onLayout={updateMeasuredBounds}
+                style={{ transform: [{ scale: reticleScaleAnim }] }}
+                className={`w-72 h-72 border-2 ${frameBorderColor} rounded-3xl relative items-center justify-center shadow-2xl bg-transparent`}
+              >
                 {/* 4 Corner Crosshairs */}
-                <View className="absolute top-2 left-2 w-8 h-8 border-t-4 border-l-4 border-[#84cc16] rounded-tl-xl" />
-                <View className="absolute top-2 right-2 w-8 h-8 border-t-4 border-r-4 border-[#84cc16] rounded-tr-xl" />
-                <View className="absolute bottom-2 left-2 w-8 h-8 border-b-4 border-l-4 border-[#84cc16] rounded-bl-xl" />
-                <View className="absolute bottom-2 right-2 w-8 h-8 border-b-4 border-r-4 border-[#84cc16] rounded-br-xl" />
+                <View
+                  className={`absolute top-2 left-2 w-8 h-8 border-t-4 border-l-4 ${cornerBorderColor} rounded-tl-xl`}
+                />
+                <View
+                  className={`absolute top-2 right-2 w-8 h-8 border-t-4 border-r-4 ${cornerBorderColor} rounded-tr-xl`}
+                />
+                <View
+                  className={`absolute bottom-2 left-2 w-8 h-8 border-b-4 border-l-4 ${cornerBorderColor} rounded-bl-xl`}
+                />
+                <View
+                  className={`absolute bottom-2 right-2 w-8 h-8 border-b-4 border-r-4 ${cornerBorderColor} rounded-br-xl`}
+                />
 
-                {/* Laser Sweep Line */}
-                <View className="w-full h-0.5 bg-[#84cc16] shadow-lg shadow-[#84cc16] absolute" />
+                {/* Center Focus Reticle Ring when Focusing / Locked */}
+                {(focusState === 'focusing' || focusState === 'locked') && (
+                  <View
+                    className={`w-20 h-20 rounded-2xl border-2 items-center justify-center ${
+                      focusState === 'locked'
+                        ? 'border-emerald-400 bg-emerald-500/20'
+                        : 'border-lime-300/90 bg-lime-400/10'
+                    }`}
+                  >
+                    <Ionicons
+                      name={focusState === 'locked' ? 'checkmark-circle' : 'scan-outline'}
+                      size={30}
+                      color={focusState === 'locked' ? '#34d399' : '#bef264'}
+                    />
+                  </View>
+                )}
+
+                {/* Laser Sweep Line (shown when idle or off_center) */}
+                {focusState !== 'focusing' && focusState !== 'locked' && (
+                  <View
+                    className={`w-full h-0.5 absolute ${
+                      focusState === 'off_center'
+                        ? 'bg-amber-400 shadow-lg shadow-amber-400'
+                        : 'bg-[#84cc16] shadow-lg shadow-[#84cc16]'
+                    }`}
+                  />
+                )}
+
+                {/* Focus Progress Bar inside frame */}
+                {(focusState === 'focusing' || focusState === 'locked') && (
+                  <View className="w-44 h-1.5 bg-black/50 rounded-full overflow-hidden absolute bottom-14 border border-white/20">
+                    <View
+                      style={{ width: `${focusProgress}%` }}
+                      className={`h-full rounded-full ${
+                        focusState === 'locked' ? 'bg-emerald-400' : 'bg-lime-400'
+                      }`}
+                    />
+                  </View>
+                )}
 
                 {/* Scanning Prompt Badge */}
                 <View className="bg-white/95 px-3.5 py-1.5 rounded-full border border-slate-200 shadow-md flex-row items-center absolute bottom-4">
@@ -446,16 +840,42 @@ export default function UserScannerScreen() {
                         Verifying Network Database...
                       </Text>
                     </>
+                  ) : focusState === 'locked' || scanned ? (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color="#10b981"
+                        style={{ marginRight: 5 }}
+                      />
+                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
+                        QR Focused! Opening Details...
+                      </Text>
+                    </>
+                  ) : focusState === 'focusing' ? (
+                    <>
+                      <View className="w-2 h-2 rounded-full bg-lime-500 mr-2" />
+                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
+                        Focusing QR Code... Hold Steady
+                      </Text>
+                    </>
+                  ) : focusState === 'off_center' ? (
+                    <>
+                      <View className="w-2 h-2 rounded-full bg-amber-500 mr-2" />
+                      <Text className="text-[11px] font-poppins-semibold text-amber-900">
+                        Center QR inside frame to focus
+                      </Text>
+                    </>
                   ) : (
                     <>
                       <View className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
                       <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
-                        {scanned ? 'Opening Box Details...' : 'Align QR inside frame'}
+                        Align QR inside frame
                       </Text>
                     </>
                   )}
                 </View>
-              </View>
+              </Animated.View>
 
               {/* Camera Control Floating Pill (Torch & Flip) */}
               <View className="flex-row items-center gap-3 mt-6">
@@ -498,7 +918,11 @@ export default function UserScannerScreen() {
             {/* 3. BOTTOM HELPER TEXT */}
             <View className="pb-8 items-center px-6 w-full max-w-sm self-center">
               <Text className="text-xs font-poppins-medium text-white/75 text-center tracking-wide">
-                Point camera at physical distribution box QR sticker
+                {focusState === 'off_center'
+                  ? 'Move camera so the QR code is centered inside the frame'
+                  : focusState === 'focusing'
+                  ? 'Keep camera steady while focusing on QR code...'
+                  : 'Point camera at physical distribution box QR sticker'}
               </Text>
             </View>
           </SafeAreaView>
@@ -513,6 +937,7 @@ export default function UserScannerScreen() {
         animationType="fade"
         onRequestClose={() => {
           setTagModalBox(null);
+          resetScannerFocus();
           setScanned(false);
         }}
       >
@@ -581,6 +1006,7 @@ export default function UserScannerScreen() {
             <TouchableOpacity
               onPress={() => {
                 setTagModalBox(null);
+                resetScannerFocus();
                 setScanned(false);
               }}
               disabled={isUpdatingTag}
