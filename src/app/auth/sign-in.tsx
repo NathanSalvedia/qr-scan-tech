@@ -1,11 +1,12 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -15,6 +16,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { authService } from "@/services/auth";
+import {
+  API_BASE_URL,
+  getActiveApiBaseUrl,
+  loadCustomApiUrl,
+  setCustomApiUrl,
+} from "@/services/api-config";
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
@@ -22,6 +29,60 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Server URL settings state
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState("");
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+
+  useEffect(() => {
+    loadCustomApiUrl().then((custom) => {
+      setServerUrlInput(custom || API_BASE_URL);
+    });
+  }, []);
+
+  const handleTestConnection = async () => {
+    const urlToTest = (serverUrlInput.trim() || API_BASE_URL).replace(/\/+$/, "");
+    setTestStatus("testing");
+    setTestMessage("Testing connection...");
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`${urlToTest}/auth/check-availability`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Bypass-Tunnel-Reminder": "true" },
+        body: JSON.stringify({ email: "healthcheck@test.com" }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok || res.status === 200 || res.status === 400 || res.status === 404) {
+        setTestStatus("success");
+        setTestMessage("Connected to server successfully!");
+      } else {
+        setTestStatus("error");
+        setTestMessage(`Server returned HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      setTestStatus("error");
+      setTestMessage(err.message || "Failed to connect to host.");
+    }
+  };
+
+  const handleSaveServerUrl = async () => {
+    const clean = serverUrlInput.trim().replace(/\/+$/, "");
+    await setCustomApiUrl(clean === API_BASE_URL ? null : clean);
+    setShowServerModal(false);
+    showAlert("Server Updated", `Active backend URL:\n${clean}`);
+  };
+
+  const handleResetServerUrl = async () => {
+    await setCustomApiUrl(null);
+    setServerUrlInput(API_BASE_URL);
+    setTestStatus("idle");
+    setTestMessage("");
+    showAlert("Server Reset", `Reset to default:\n${API_BASE_URL}`);
+  };
 
   const isWeb = Platform.OS === "web";
 
@@ -89,6 +150,26 @@ export default function SignInScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#f0f3f6]">
       <StatusBar style="dark" />
+
+      {/* Top Header with Server Settings Button */}
+      <View className="flex-row justify-end px-5 pt-1 pb-1">
+        <TouchableOpacity
+          onPress={() => {
+            setServerUrlInput(getActiveApiBaseUrl());
+            setTestStatus("idle");
+            setTestMessage("");
+            setShowServerModal(true);
+          }}
+          className="flex-row items-center px-3 py-1.5 bg-white border border-slate-200/80 rounded-full shadow-sm"
+          activeOpacity={0.7}
+        >
+          <Ionicons name="server-outline" size={13} color="#475569" />
+          <Text className="text-[11px] text-slate-700 font-poppins-medium ml-1.5">
+            Server Settings
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -258,6 +339,121 @@ export default function SignInScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Backend Server Settings Modal */}
+      <Modal
+        visible={showServerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowServerModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1 bg-black/60 justify-center items-center px-5"
+        >
+          <View className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <Ionicons name="server" size={18} color="#4d6029" />
+                </View>
+                <Text className="text-base font-poppins-bold text-[#0f172a]">
+                  Server Settings
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowServerModal(false)}
+                className="p-1 rounded-full bg-slate-100"
+              >
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text className="text-xs text-[#64748b] font-poppins mb-3.5 leading-relaxed">
+              Configure backend API URL without rebuilding the app. Ideal for Cloudflare quick tunnels or local Wi-Fi.
+            </Text>
+
+            <Text className="text-[#1e293b] text-xs font-poppins-semibold mb-1.5">
+              Backend API Base URL:
+            </Text>
+            <TextInput
+              placeholder="https://...trycloudflare.com/api"
+              placeholderTextColor="#94a3b8"
+              value={serverUrlInput}
+              onChangeText={(text) => {
+                setServerUrlInput(text);
+                setTestStatus("idle");
+                setTestMessage("");
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+              className="w-full bg-[#f8fafc] border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-[#0f172a] font-poppins mb-3"
+            />
+
+            {testStatus !== "idle" && (
+              <View
+                className={`p-2.5 rounded-xl mb-3 flex-row items-center ${
+                  testStatus === "testing"
+                    ? "bg-slate-100 border border-slate-200"
+                    : testStatus === "success"
+                    ? "bg-emerald-50 border border-emerald-200"
+                    : "bg-rose-50 border border-rose-200"
+                }`}
+              >
+                {testStatus === "testing" && (
+                  <ActivityIndicator size="small" color="#4d6029" className="mr-2" />
+                )}
+                {testStatus === "success" && (
+                  <Ionicons name="checkmark-circle" size={16} color="#059669" className="mr-2" />
+                )}
+                {testStatus === "error" && (
+                  <Ionicons name="alert-circle" size={16} color="#e11d48" className="mr-2" />
+                )}
+                <Text
+                  className={`text-xs font-poppins-medium flex-1 ${
+                    testStatus === "testing"
+                      ? "text-slate-600"
+                      : testStatus === "success"
+                      ? "text-emerald-700"
+                      : "text-rose-700"
+                  }`}
+                >
+                  {testMessage}
+                </Text>
+              </View>
+            )}
+
+            <View className="flex-row gap-2 mb-3">
+              <TouchableOpacity
+                onPress={handleTestConnection}
+                disabled={testStatus === "testing"}
+                className="flex-1 bg-slate-100 border border-slate-200 py-2.5 rounded-xl items-center"
+              >
+                <Text className="text-slate-700 font-poppins-semibold text-xs">
+                  Test Connection
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleResetServerUrl}
+                className="bg-slate-100 border border-slate-200 px-3.5 py-2.5 rounded-xl items-center"
+              >
+                <Text className="text-slate-600 font-poppins text-xs">Reset</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={handleSaveServerUrl}
+              className="w-full bg-[#4d6029] py-3 rounded-xl items-center shadow-sm"
+              activeOpacity={0.85}
+            >
+              <Text className="text-white font-poppins-bold text-sm">
+                Save & Apply
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

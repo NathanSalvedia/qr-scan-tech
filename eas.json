@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://besides-output-math-attitudes.trycloudflare.com/api"
+        "EXPO_PUBLIC_API_URL": "https://reproduced-trunk-trips-librarian.trycloudflare.com/api"
       }
     },
     "production": {}

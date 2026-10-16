@@ -1,6 +1,49 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authState } from './auth-state';
+
+const STORAGE_KEY_CUSTOM_API_URL = 'qr_custom_backend_api_url';
+
+let memoryCustomApiUrl: string | null = null;
+let isStorageLoaded = false;
+
+export const loadCustomApiUrl = async (): Promise<string | null> => {
+  if (isStorageLoaded) return memoryCustomApiUrl;
+  try {
+    const saved = await AsyncStorage.getItem(STORAGE_KEY_CUSTOM_API_URL);
+    if (saved && saved.trim()) {
+      memoryCustomApiUrl = saved.trim().replace(/\/+$/, '');
+    }
+  } catch {
+    // ignore
+  } finally {
+    isStorageLoaded = true;
+  }
+  return memoryCustomApiUrl;
+};
+
+// Eager initialization on app launch
+loadCustomApiUrl();
+
+export const setCustomApiUrl = async (url: string | null): Promise<void> => {
+  try {
+    if (url && url.trim()) {
+      const cleanUrl = url.trim().replace(/\/+$/, '');
+      memoryCustomApiUrl = cleanUrl;
+      await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_API_URL, cleanUrl);
+    } else {
+      memoryCustomApiUrl = null;
+      await AsyncStorage.removeItem(STORAGE_KEY_CUSTOM_API_URL);
+    }
+  } catch (err) {
+    console.error('Error saving custom API URL:', err);
+  }
+};
+
+export const getCustomApiUrl = (): string | null => {
+  return memoryCustomApiUrl;
+};
 
 /**
  * Universal Backend API Base URL Resolver
@@ -26,7 +69,7 @@ export const getApiBaseUrl = (): string => {
   }
 
   // Default fallback URL for standalone mobile builds (HTTPS Cloudflare tunnel)
-  const DEFAULT_REMOTE_URL = 'https://besides-output-math-attitudes.trycloudflare.com/api';
+  const DEFAULT_REMOTE_URL = 'https://reproduced-trunk-trips-librarian.trycloudflare.com/api';
 
   // 2. Automatically resolve host machine IP from Expo bundler
   const hostUri = Constants.expoConfig?.hostUri;
@@ -57,12 +100,23 @@ export const getApiBaseUrl = (): string => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+export const getActiveApiBaseUrl = (): string => {
+  return memoryCustomApiUrl || API_BASE_URL;
+};
+
 /**
  * Universal Fetch wrapper with automatic tunnel bypass headers and persistent auth token injection
  */
 export const apiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
   await authState.ensureHydrated();
+  await loadCustomApiUrl();
   const token = authState.getToken();
+
+  const activeBase = getActiveApiBaseUrl();
+  let targetUrl = url;
+  if (activeBase && activeBase !== API_BASE_URL && url.startsWith(API_BASE_URL)) {
+    targetUrl = url.replace(API_BASE_URL, activeBase);
+  }
 
   const customHeaders: Record<string, string> = {
     'Bypass-Tunnel-Reminder': 'true',
@@ -80,5 +134,5 @@ export const apiFetch = async (url: string, options: RequestInit = {}): Promise<
     ...optionHeaders,
   };
 
-  return fetch(url, { ...options, headers: mergedHeaders });
+  return fetch(targetUrl, { ...options, headers: mergedHeaders });
 };
