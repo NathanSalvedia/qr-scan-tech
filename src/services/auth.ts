@@ -1,5 +1,5 @@
 import { authState, AuthUser } from './auth-state';
-import { API_BASE_URL as API_URL, apiFetch } from './api-config';
+import { API_BASE_URL as API_URL, apiFetch, getActiveApiBaseUrl } from './api-config';
 
 export interface RegisterPayload {
   firstName: string;
@@ -75,7 +75,7 @@ export const authService = {
     } catch (err: any) {
       return {
         success: false,
-        message: `${err.message} (Attempted to connect to: ${API_URL})`,
+        message: `${err.message} (Attempted to connect to: ${getActiveApiBaseUrl()})`,
       };
     }
   },
@@ -127,7 +127,7 @@ export const authService = {
       } catch {
         return {
           success: false,
-          message: `Server returned an unexpected response (Status: ${res.status}). Please verify your backend server and tunnel are active. (Attempted to connect to: ${API_URL})`,
+          message: `Server returned an unexpected response (Status: ${res.status}). Please verify your backend server and tunnel are active. (Attempted to connect to: ${getActiveApiBaseUrl()})`,
         };
       }
       if (data.success && data.user) {
@@ -137,7 +137,7 @@ export const authService = {
     } catch (err: any) {
       return {
         success: false,
-        message: `${err.message} (Attempted to connect to: ${API_URL})`,
+        message: `${err.message} (Attempted to connect to: ${getActiveApiBaseUrl()})`,
       };
     }
   },

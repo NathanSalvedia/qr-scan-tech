@@ -8,12 +8,22 @@ const STORAGE_KEY_CUSTOM_API_URL = 'qr_custom_backend_api_url';
 let memoryCustomApiUrl: string | null = null;
 let isStorageLoaded = false;
 
+export const normalizeApiUrl = (rawUrl: string): string => {
+  const cleaned = rawUrl.trim().replace(/\/+$/, '');
+  if (!cleaned) return '';
+  return cleaned.endsWith('/api') ? cleaned : `${cleaned}/api`;
+};
+
 export const loadCustomApiUrl = async (): Promise<string | null> => {
   if (isStorageLoaded) return memoryCustomApiUrl;
   try {
     const saved = await AsyncStorage.getItem(STORAGE_KEY_CUSTOM_API_URL);
     if (saved && saved.trim()) {
-      memoryCustomApiUrl = saved.trim().replace(/\/+$/, '');
+      const normalized = normalizeApiUrl(saved);
+      memoryCustomApiUrl = normalized;
+      if (normalized !== saved) {
+        await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_API_URL, normalized);
+      }
     }
   } catch {
     // ignore
@@ -29,7 +39,7 @@ loadCustomApiUrl();
 export const setCustomApiUrl = async (url: string | null): Promise<void> => {
   try {
     if (url && url.trim()) {
-      const cleanUrl = url.trim().replace(/\/+$/, '');
+      const cleanUrl = normalizeApiUrl(url);
       memoryCustomApiUrl = cleanUrl;
       await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_API_URL, cleanUrl);
     } else {
@@ -65,11 +75,11 @@ export const getApiBaseUrl = (): string => {
   // 1. Explicit EXPO_PUBLIC_API_URL takes highest priority (if not localhost)
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-    return envUrl.replace(/\/+$/, '');
+    return normalizeApiUrl(envUrl);
   }
 
   // Default fallback URL for standalone mobile builds (HTTPS Cloudflare tunnel)
-  const DEFAULT_REMOTE_URL = 'https://reproduced-trunk-trips-librarian.trycloudflare.com/api';
+  const DEFAULT_REMOTE_URL = 'https://sit-launches-photographer-senate.trycloudflare.com/api';
 
   // 2. Automatically resolve host machine IP from Expo bundler
   const hostUri = Constants.expoConfig?.hostUri;
@@ -101,7 +111,7 @@ export const getApiBaseUrl = (): string => {
 export const API_BASE_URL = getApiBaseUrl();
 
 export const getActiveApiBaseUrl = (): string => {
-  return memoryCustomApiUrl || API_BASE_URL;
+  return memoryCustomApiUrl ? normalizeApiUrl(memoryCustomApiUrl) : API_BASE_URL;
 };
 
 /**

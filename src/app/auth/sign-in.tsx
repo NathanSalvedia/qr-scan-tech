@@ -20,6 +20,7 @@ import {
   API_BASE_URL,
   getActiveApiBaseUrl,
   loadCustomApiUrl,
+  normalizeApiUrl,
   setCustomApiUrl,
 } from "@/services/api-config";
 
@@ -43,7 +44,8 @@ export default function SignInScreen() {
   }, []);
 
   const handleTestConnection = async () => {
-    const urlToTest = (serverUrlInput.trim() || API_BASE_URL).replace(/\/+$/, "");
+    const urlToTest = normalizeApiUrl(serverUrlInput.trim() || API_BASE_URL);
+    setServerUrlInput(urlToTest);
     setTestStatus("testing");
     setTestMessage("Testing connection...");
     try {
@@ -56,7 +58,7 @@ export default function SignInScreen() {
         signal: controller.signal,
       });
       clearTimeout(timer);
-      if (res.ok || res.status === 200 || res.status === 400 || res.status === 404) {
+      if (res.ok || res.status === 200 || res.status === 400) {
         setTestStatus("success");
         setTestMessage("Connected to server successfully!");
       } else {
@@ -70,7 +72,8 @@ export default function SignInScreen() {
   };
 
   const handleSaveServerUrl = async () => {
-    const clean = serverUrlInput.trim().replace(/\/+$/, "");
+    const clean = normalizeApiUrl(serverUrlInput.trim() || API_BASE_URL);
+    setServerUrlInput(clean);
     await setCustomApiUrl(clean === API_BASE_URL ? null : clean);
     setShowServerModal(false);
     showAlert("Server Updated", `Active backend URL:\n${clean}`);
