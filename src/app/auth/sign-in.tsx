@@ -348,6 +348,7 @@ export default function SignInScreen() {
         visible={showServerModal}
         transparent
         animationType="fade"
+        statusBarTranslucent={true}
         onRequestClose={() => setShowServerModal(false)}
       >
         <KeyboardAvoidingView

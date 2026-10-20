@@ -102,14 +102,29 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     for (const scan of allScans) {
       const box = boxMap.get(scan.boxId);
       const tech = userMap.get(scan.technicianId);
-      const isAlarm =
-        scan.boxStatusAtScan === 'ISSUE' ||
-        scan.boxStatusAtScan === 'WARNING';
-
       const scanDate = new Date(scan.createdAt);
       const actorName = tech ? `${tech.firstName} ${tech.lastName}`.trim() : 'Field Technician';
       const boxCode = box?.code || 'BOX';
       const boxName = box?.siteName || 'Distribution Node';
+
+      const isAlarm =
+        scan.boxStatusAtScan === 'ISSUE' ||
+        scan.boxStatusAtScan === 'WARNING';
+      const isTagAffixed = scan.scanType === 'TAG_AFFIXED';
+      const isUntaggedInspect = scan.scanType === 'UNTAGGED_INSPECT';
+
+      let logTitle = isAlarm
+        ? `Hardware Alarm on ${boxCode}`
+        : `Physical QR Scan & Verification`;
+      let logCategory: EventCategory = isAlarm ? 'ALARM' : 'SCAN';
+
+      if (isTagAffixed) {
+        logTitle = `Box Tagged & Activated (${boxCode})`;
+        logCategory = 'BOX_UPDATE';
+      } else if (isUntaggedInspect) {
+        logTitle = `Physical QR Placard Detected (${boxCode})`;
+        logCategory = 'SCAN';
+      }
 
       const metadata: Record<string, string> = {
         'Scan Type': scan.scanType || 'CAMERA_QR',
@@ -121,18 +136,20 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         id: `LOG-SCN-${scan.id.slice(0, 8)}`,
         timestamp: formatTimestamp(scanDate),
         relativeTime: formatRelativeTime(scanDate),
-        category: isAlarm ? 'ALARM' : 'SCAN',
+        category: logCategory,
         actorType: 'USER',
         actorName,
         actorId: tech?.role === 'user' ? 'User' : 'Staff',
         targetBoxCode: boxCode,
         targetBoxName: boxName,
-        title: isAlarm
-          ? `Hardware Alarm on ${boxCode}`
-          : `Physical QR Scan & Verification`,
+        title: logTitle,
         description:
           scan.auditNotes ||
-          (isAlarm
+          (isTagAffixed
+            ? `Physical QR placard affixed and ${boxCode} (${boxName}) activated on-site.`
+            : isUntaggedInspect
+            ? `Physical QR placard detected for ${boxCode} (${boxName}) - awaiting on-site tag affixing.`
+            : isAlarm
             ? `Alarm state (${scan.boxStatusAtScan}) observed during field inspection.`
             : `Conducted routine on-site inspection for ${boxCode}. Telemetry verified nominal.`),
         deviceOrIp: 'Mobile Scanner App',
@@ -315,7 +332,7 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
         .from(scanAuditLogs)
         .where(eq(scanAuditLogs.technicianId, technicianId))
         .orderBy(desc(scanAuditLogs.createdAt))
-        .limit(limit),
+        .limit(Math.max(limit * 5, 100)),
       db.select().from(distributionBoxes),
       db.select().from(clientConnections),
     ]);
@@ -326,7 +343,21 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
         .select()
         .from(scanAuditLogs)
         .orderBy(desc(scanAuditLogs.createdAt))
-        .limit(limit);
+        .limit(Math.max(limit * 5, 100));
+    }
+
+    // Deduplicate so each box appears only once with its most recent scan
+    const seenBoxIds = new Set<string>();
+    const uniqueScans: typeof scans = [];
+
+    for (const scan of scans) {
+      if (!seenBoxIds.has(scan.boxId)) {
+        seenBoxIds.add(scan.boxId);
+        uniqueScans.push(scan);
+        if (uniqueScans.length >= limit) {
+          break;
+        }
+      }
     }
 
     const boxMap = new Map(boxes.map((b) => [b.id, b]));
@@ -343,7 +374,7 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
     yesterday.setDate(now.getDate() - 1);
     const yesterdayStr = yesterday.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 
-    const recentScans = scans.map((scan) => {
+    const recentScans = uniqueScans.map((scan) => {
       const box = boxMap.get(scan.boxId);
       const scanDate = new Date(scan.createdAt);
       const isAlarm =
@@ -451,6 +482,8 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       safeScanType = 'ROUTINE_AUDIT';
     } else if (['MANUAL_SEARCH', 'SIMULATED_SCAN', 'SIMULATION', 'MANUAL'].includes(rawScanType)) {
       safeScanType = 'MANUAL_SEARCH';
+    } else if (['TAG_AFFIXED', 'UNTAGGED_INSPECT'].includes(rawScanType)) {
+      safeScanType = rawScanType;
     } else if (rawScanType === 'CAMERA_QR') {
       safeScanType = 'CAMERA_QR';
     }

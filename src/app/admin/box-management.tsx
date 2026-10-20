@@ -263,7 +263,7 @@ export default function BoxManagementScreen() {
   const [newLongitude, setNewLongitude] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodingStatus, setGeocodingStatus] = useState<string | null>(null);
-  const [newPorts, setNewPorts] = useState("24");
+  const [newPorts, setNewPorts] = useState("");
   const [isPortsDropdownOpen, setIsPortsDropdownOpen] = useState(false);
   const [newSelectedEquipment, setNewSelectedEquipment] = useState<string[]>(
     [],
@@ -279,15 +279,26 @@ export default function BoxManagementScreen() {
   const [newClientAccount, setNewClientAccount] = useState("");
   const [newClientName, setNewClientName] = useState("");
   const [newClientType, setNewClientType] = useState<
-    "Residential" | "Commercial"
-  >("Residential");
+    "Residential" | "Commercial" | ""
+  >("");
   const [isClientTypeDropdownOpen, setIsClientTypeDropdownOpen] =
     useState(false);
-  const [newClientPlan, setNewClientPlan] = useState("100 Mbps Fiber Plan");
+  const [newClientPlan, setNewClientPlan] = useState("");
   const [isClientPlanDropdownOpen, setIsClientPlanDropdownOpen] =
     useState(false);
+  const [customPlanSpeed, setCustomPlanSpeed] = useState("");
   const [subscriberPlanFilter, setSubscriberPlanFilter] =
     useState<string>("ALL");
+
+  const handleCustomPlanSpeedChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    setCustomPlanSpeed(clean);
+    if (clean) {
+      setNewClientPlan(`${clean} Mbps Fiber Plan`);
+    } else {
+      setNewClientPlan("");
+    }
+  };
   const [isClientPortDropdownOpen, setIsClientPortDropdownOpen] =
     useState(false);
   const [matchedSubscriber, setMatchedSubscriber] = useState<any | null>(null);
@@ -343,6 +354,12 @@ export default function BoxManagementScreen() {
       const planName = matched.servicePlan || matched.plan;
       if (planName) {
         setNewClientPlan(planName);
+        const match = planName.match(/(\d+)\s*Mbps/i);
+        if (match) {
+          setCustomPlanSpeed(match[1]);
+        } else {
+          setCustomPlanSpeed("");
+        }
       }
       return;
     }
@@ -362,7 +379,14 @@ export default function BoxManagementScreen() {
             setNewClientType("Commercial");
           }
           if (sub.servicePlan || sub.plan) {
-            setNewClientPlan(sub.servicePlan || sub.plan);
+            const planVal = sub.servicePlan || sub.plan;
+            setNewClientPlan(planVal);
+            const match = planVal.match(/(\d+)\s*Mbps/i);
+            if (match) {
+              setCustomPlanSpeed(match[1]);
+            } else {
+              setCustomPlanSpeed("");
+            }
           }
           return;
         }
@@ -394,6 +418,12 @@ export default function BoxManagementScreen() {
     const planName = sub.servicePlan || sub.plan;
     if (planName) {
       setNewClientPlan(planName);
+      const match = planName.match(/(\d+)\s*Mbps/i);
+      if (match) {
+        setCustomPlanSpeed(match[1]);
+      } else {
+        setCustomPlanSpeed("");
+      }
     }
     setIsSubscriberDirectoryOpen(false);
   };
@@ -435,8 +465,9 @@ export default function BoxManagementScreen() {
     setNewClientAccount("");
     setNewClientName("");
     setMatchedSubscriber(null);
-    setNewClientType("Residential");
-    setNewClientPlan("100 Mbps Fiber Plan");
+    setNewClientType("");
+    setNewClientPlan("");
+    setCustomPlanSpeed("");
 
     setIsClientPortDropdownOpen(false);
     setIsClientTypeDropdownOpen(false);
@@ -472,12 +503,44 @@ export default function BoxManagementScreen() {
       return;
     }
 
+    if (!newClientType) {
+      if (Platform.OS === "web") {
+        window.alert(
+          "Please select a Subscriber Type (Residential or Commercial).",
+        );
+      } else {
+        Alert.alert(
+          "Validation Error",
+          "Please select a Subscriber Type (Residential or Commercial).",
+        );
+      }
+      return;
+    }
+
+    const effectivePlan = customPlanSpeed.trim()
+      ? `${customPlanSpeed.trim()} Mbps Fiber Plan`
+      : newClientPlan;
+
+    if (!effectivePlan) {
+      if (Platform.OS === "web") {
+        window.alert(
+          "Please select a Subscriber Plan or enter a Custom Speed (Mbps).",
+        );
+      } else {
+        Alert.alert(
+          "Validation Error",
+          "Please select a Subscriber Plan or enter a Custom Speed (Mbps).",
+        );
+      }
+      return;
+    }
+
     const newClient: ClientConnection = {
       port: newClientPort,
       accountNumber: newClientAccount.trim().toUpperCase(),
       name: newClientName.trim(),
       clientType: newClientType,
-      plan: newClientPlan,
+      plan: effectivePlan,
       status: "CONNECTED",
     };
 
@@ -506,6 +569,9 @@ export default function BoxManagementScreen() {
     setIsAddClientModalOpen(false);
     setNewClientAccount("");
     setNewClientName("");
+    setNewClientType("");
+    setNewClientPlan("");
+    setCustomPlanSpeed("");
     setMatchedSubscriber(null);
 
     // Persist to backend
@@ -515,7 +581,7 @@ export default function BoxManagementScreen() {
         accountNumber: newClientAccount.trim().toUpperCase(),
         name: newClientName.trim(),
         clientType: newClientType,
-        plan: newClientPlan,
+        plan: effectivePlan,
       })
       .catch((err) => console.error("Error saving client:", err));
   };
@@ -524,6 +590,9 @@ export default function BoxManagementScreen() {
     setIsAddClientModalOpen(false);
     setNewClientAccount("");
     setNewClientName("");
+    setNewClientType("");
+    setNewClientPlan("");
+    setCustomPlanSpeed("");
     setMatchedSubscriber(null);
     setIsClientPortDropdownOpen(false);
     setIsClientTypeDropdownOpen(false);
@@ -710,7 +779,7 @@ export default function BoxManagementScreen() {
     setGeocodingStatus(null);
     setIsGeocoding(false);
     setNewMountingType("Utility Pole");
-    setNewPorts("24");
+    setNewPorts("");
     setIsPortsDropdownOpen(false);
     setNewSelectedEquipment([]);
     setIsEquipmentDropdownOpen(false);
@@ -723,11 +792,7 @@ export default function BoxManagementScreen() {
     setNewCategory(cat);
     setNewCode(getNextBoxCode(cat, boxes));
     setIsPortsDropdownOpen(false);
-    if (cat === "MAIN_BOX") {
-      setNewPorts("48");
-    } else {
-      setNewPorts("24");
-    }
+    setNewPorts("");
   };
 
   const handleToggleEquipment = (eqName: string) => {
@@ -834,6 +899,15 @@ export default function BoxManagementScreen() {
       return;
     }
 
+    if (!newPorts.trim()) {
+      if (isWeb) {
+        window.alert("Please select Total Optical / Terminal Ports.");
+      } else {
+        Alert.alert("Required Field", "Please select Total Optical / Terminal Ports.");
+      }
+      return;
+    }
+
     const constructedEquipment =
       newSelectedEquipment.length > 0
         ? newSelectedEquipment.map((eqName, idx) => {
@@ -916,7 +990,7 @@ export default function BoxManagementScreen() {
         setNewSiteName("");
         setNewAddress("");
         setNewMountingType("Utility Pole");
-        setNewPorts("24");
+        setNewPorts("");
         setIsPortsDropdownOpen(false);
         setNewSelectedEquipment([]);
         setIsEquipmentDropdownOpen(false);
@@ -1674,6 +1748,7 @@ export default function BoxManagementScreen() {
           visible={!!selectedBoxForDetails}
           transparent
           animationType="fade"
+          statusBarTranslucent={true}
           onRequestClose={() => {
             setSelectedBoxForDetails(null);
             setModalClientSearch("");
@@ -2369,6 +2444,7 @@ export default function BoxManagementScreen() {
           visible={isRegisterModalOpen}
           transparent
           animationType="fade"
+          statusBarTranslucent={true}
           onRequestClose={() => setIsRegisterModalOpen(false)}
         >
           <View className="flex-1 bg-black/60 items-center justify-center p-4">
@@ -2683,8 +2759,14 @@ export default function BoxManagementScreen() {
                         size={16}
                         color="#4d6029"
                       />
-                      <Text className="text-xs font-poppins-semibold text-[#0f172a] ml-2">
-                        {newPorts} Ports
+                      <Text
+                        className={`text-xs ml-2 ${
+                          newPorts
+                            ? "font-poppins-semibold text-[#0f172a]"
+                            : "font-poppins-medium text-[#0f172a]"
+                        }`}
+                      >
+                        {newPorts ? `${newPorts} Ports` : "+ Add or Select Port"}
                       </Text>
                     </View>
                     <Ionicons
@@ -3023,6 +3105,7 @@ export default function BoxManagementScreen() {
           visible={!!selectedBoxForQR}
           transparent
           animationType="fade"
+          statusBarTranslucent={true}
           onRequestClose={() => setSelectedBoxForQR(null)}
         >
           <View className="flex-1 bg-black/60 items-center justify-center p-4">
@@ -3137,10 +3220,14 @@ export default function BoxManagementScreen() {
           visible={isAddClientModalOpen}
           transparent
           animationType="fade"
+          statusBarTranslucent={true}
           onRequestClose={handleCloseAddClientModal}
         >
           <View className="flex-1 bg-black/60 items-center justify-center p-4">
-            <View className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh]">
+            <View
+              style={{ overflow: "visible" }}
+              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[90vh]"
+            >
               {/* Modal Header */}
               <View className="flex-row items-center justify-between pb-3.5 border-b border-slate-100">
                 <View className="flex-row items-center flex-1 mr-2">
@@ -3171,6 +3258,10 @@ export default function BoxManagementScreen() {
               {/* Modal Body */}
               <ScrollView
                 className="py-4 space-y-4"
+                style={{ zIndex: 50, overflow: "visible" }}
+                contentContainerStyle={{
+                  paddingBottom: isClientPlanDropdownOpen ? 140 : 16,
+                }}
                 showsVerticalScrollIndicator={false}
               >
                 {/* Box Context Card */}
@@ -3197,14 +3288,20 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* 1. Port Selection Dropdown */}
-                <View className="mb-3.5">
+                <View
+                  className="mb-3.5 relative"
+                  style={{ zIndex: isClientPortDropdownOpen ? 100 : 40 }}
+                >
                   <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
                     Assign Optical Port *
                   </Text>
                   <TouchableOpacity
-                    onPress={() =>
-                      setIsClientPortDropdownOpen(!isClientPortDropdownOpen)
-                    }
+                    onPress={() => {
+                      setIsClientPortDropdownOpen(!isClientPortDropdownOpen);
+                      setIsSubscriberDirectoryOpen(false);
+                      setIsClientTypeDropdownOpen(false);
+                      setIsClientPlanDropdownOpen(false);
+                    }}
                     className="flex-row items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5"
                     activeOpacity={0.75}
                   >
@@ -3227,9 +3324,19 @@ export default function BoxManagementScreen() {
                     />
                   </TouchableOpacity>
 
-                  {/* Available Port Grid Selector */}
+                  {/* Floating Available Port Grid Selector */}
                   {isClientPortDropdownOpen && (
-                    <View className="mt-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        zIndex: 100,
+                      }}
+                      className="p-3 bg-white rounded-2xl border border-slate-200"
+                    >
                       <View className="flex-row items-center justify-between mb-2">
                         <Text className="text-[11px] font-poppins-semibold text-[#64748b]">
                           Select an available port (
@@ -3276,15 +3383,21 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* 2. Account Number Input with Auto-Detection & Directory Picker */}
-                <View className="mb-3.5">
+                <View
+                  className="mb-3.5 relative"
+                  style={{ zIndex: isSubscriberDirectoryOpen ? 100 : 30 }}
+                >
                   <View className="flex-row items-center justify-between mb-1.5">
                     <Text className="text-xs font-poppins-bold text-[#0f172a]">
                       Subscriber Account Number (10 Digits) *
                     </Text>
                     <TouchableOpacity
-                      onPress={() =>
-                        setIsSubscriberDirectoryOpen(!isSubscriberDirectoryOpen)
-                      }
+                      onPress={() => {
+                        setIsSubscriberDirectoryOpen(!isSubscriberDirectoryOpen);
+                        setIsClientPortDropdownOpen(false);
+                        setIsClientTypeDropdownOpen(false);
+                        setIsClientPlanDropdownOpen(false);
+                      }}
                       className="flex-row items-center"
                     >
                       <Ionicons
@@ -3336,9 +3449,19 @@ export default function BoxManagementScreen() {
                     ) : null}
                   </View>
 
-                  {/* Expandable Directory Browser */}
+                  {/* Floating Expandable Directory Browser */}
                   {isSubscriberDirectoryOpen && (
-                    <View className="mt-2.5 p-3 bg-slate-50 rounded-2xl border border-slate-200 max-h-56">
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        zIndex: 100,
+                      }}
+                      className="p-3 bg-white rounded-2xl border border-slate-200 max-h-56"
+                    >
                       {liveDirectory.length === 0 ? (
                         <View className="py-5 items-center justify-center">
                           <Ionicons
@@ -3499,7 +3622,10 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* 4. Subscriber Type Dropdown (Commercial vs Residential) */}
-                <View className="mb-3.5">
+                <View
+                  className="mb-3.5 relative"
+                  style={{ zIndex: isClientTypeDropdownOpen ? 100 : 25 }}
+                >
                   <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
                     Subscriber Type (Classification) *
                   </Text>
@@ -3508,6 +3634,7 @@ export default function BoxManagementScreen() {
                       setIsClientTypeDropdownOpen(!isClientTypeDropdownOpen);
                       setIsClientPlanDropdownOpen(false);
                       setIsClientPortDropdownOpen(false);
+                      setIsSubscriberDirectoryOpen(false);
                     }}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
                     activeOpacity={0.8}
@@ -3517,13 +3644,21 @@ export default function BoxManagementScreen() {
                         name={
                           newClientType === "Commercial"
                             ? "business-outline"
-                            : "home-outline"
+                            : newClientType === "Residential"
+                              ? "home-outline"
+                              : "people-outline"
                         }
                         size={16}
-                        color="#4d6029"
+                        color={newClientType ? "#4d6029" : "#64748b"}
                       />
-                      <Text className="text-xs font-poppins-medium text-[#0f172a] ml-2">
-                        {newClientType}
+                      <Text
+                        className={`text-xs ml-2 ${
+                          newClientType
+                            ? "font-poppins-semibold text-[#0f172a]"
+                            : "font-poppins-medium text-[#94a3b8]"
+                        }`}
+                      >
+                        {newClientType || "+ Select Subscriber Type"}
                       </Text>
                     </View>
                     <Ionicons
@@ -3535,9 +3670,19 @@ export default function BoxManagementScreen() {
                     />
                   </TouchableOpacity>
 
-                  {/* Expanded Dropdown Panel matching Equipment Catalog */}
+                  {/* Floating Dropdown Panel for Subscriber Type */}
                   {isClientTypeDropdownOpen && (
-                    <View className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 shadow-xs">
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 6,
+                        zIndex: 100,
+                      }}
+                      className="bg-white border border-slate-200 rounded-2xl p-3"
+                    >
                       {[
                         {
                           type: "Residential" as const,
@@ -3593,134 +3738,200 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* 5. Subscriber Plan Dropdown */}
-                <View className="mb-3.5">
+                <View
+                  className="mb-3.5 relative"
+                  style={{ zIndex: isClientPlanDropdownOpen ? 100 : 20 }}
+                >
                   <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
                     Subscriber Plan *
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setIsClientPlanDropdownOpen(!isClientPlanDropdownOpen);
-                      setIsClientTypeDropdownOpen(false);
-                      setIsClientPortDropdownOpen(false);
-                    }}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
-                    activeOpacity={0.8}
-                  >
-                    <View className="flex-row items-center flex-1 mr-2">
-                      <MaterialCommunityIcons
-                        name="speedometer"
+                  <View className="relative" style={{ zIndex: 100 }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setIsClientPlanDropdownOpen(!isClientPlanDropdownOpen);
+                        setIsClientTypeDropdownOpen(false);
+                        setIsClientPortDropdownOpen(false);
+                        setIsSubscriberDirectoryOpen(false);
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                      activeOpacity={0.8}
+                    >
+                      <View className="flex-row items-center flex-1 mr-2">
+                        <MaterialCommunityIcons
+                          name="speedometer"
+                          size={16}
+                          color={newClientPlan ? "#4d6029" : "#64748b"}
+                        />
+                        <Text
+                          className={`text-xs ml-2 flex-1 ${
+                            newClientPlan
+                              ? "font-poppins-semibold text-[#0f172a]"
+                              : "font-poppins-medium text-[#94a3b8]"
+                          }`}
+                          numberOfLines={1}
+                        >
+                          {newClientPlan || "+ Add or Select Plan"}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={
+                          isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
+                        }
                         size={16}
-                        color="#4d6029"
+                        color="#64748b"
                       />
-                      <Text
-                        className="text-xs font-poppins-medium text-[#0f172a] ml-2 flex-1"
-                        numberOfLines={1}
-                      >
-                        {newClientPlan || "Select Plan from Catalog"}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={
-                        isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
-                      }
-                      size={16}
-                      color="#64748b"
-                    />
-                  </TouchableOpacity>
+                    </TouchableOpacity>
 
-                  {/* Expanded Dropdown Panel matching Equipment Catalog */}
-                  {isClientPlanDropdownOpen && (
-                    <View className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 shadow-xs">
-                      {/* Plan Category Filter Tabs */}
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        className="mb-3"
-                        contentContainerStyle={{
-                          flexDirection: "row",
-                          gap: 6,
-                          alignItems: "center",
-                          paddingLeft: 2,
-                          paddingRight: 20,
-                          paddingVertical: 2,
+                    {/* Floating Dropdown Panel for Subscriber Plan */}
+                    {isClientPlanDropdownOpen && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: 0,
+                          right: 0,
+                          marginTop: 6,
+                          zIndex: 100,
                         }}
+                        className="bg-white border border-slate-200 rounded-2xl p-3"
                       >
-                        {["ALL", "Residential", "Commercial"].map((cat) => (
-                          <TouchableOpacity
-                            key={cat}
-                            onPress={() => setSubscriberPlanFilter(cat)}
-                            className={`px-2.5 py-1 rounded-xl border ${
-                              subscriberPlanFilter === cat
-                                ? "bg-[#4d6029] border-[#4d6029] shadow-xs"
-                                : "bg-white border-slate-200 shadow-xs"
-                            }`}
-                            activeOpacity={0.7}
-                          >
-                            <Text
-                              className={`text-[11px] ${
-                                subscriberPlanFilter === cat
-                                  ? "text-white font-poppins-bold"
-                                  : "text-[#64748b] font-poppins-medium"
-                              }`}
-                            >
-                              {cat === "ALL" ? "All" : cat}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-
-                      {/* Plan Item Checklist */}
-                      <ScrollView
-                        className="max-h-56"
-                        contentContainerStyle={{ paddingVertical: 2 }}
-                        showsVerticalScrollIndicator={true}
-                        nestedScrollEnabled={true}
-                      >
-                        {AVAILABLE_SUBSCRIBER_PLANS.filter(
-                          (plan) =>
-                            subscriberPlanFilter === "ALL" ||
-                            plan.category === subscriberPlanFilter,
-                        ).map((plan) => {
-                          const isSelected = newClientPlan === plan.name;
-                          return (
+                        {/* Plan Category Filter Tabs */}
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          className="mb-3"
+                          contentContainerStyle={{
+                            flexDirection: "row",
+                            gap: 6,
+                            alignItems: "center",
+                            paddingLeft: 2,
+                            paddingRight: 20,
+                            paddingVertical: 2,
+                          }}
+                        >
+                          {["ALL", "Residential", "Commercial"].map((cat) => (
                             <TouchableOpacity
-                              key={`${plan.category}-${plan.name}`}
-                              onPress={() => {
-                                setNewClientPlan(plan.name);
-                                setIsClientPlanDropdownOpen(false);
-                              }}
-                              className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
+                              key={cat}
+                              onPress={() => setSubscriberPlanFilter(cat)}
+                              className={`px-2.5 py-1 rounded-xl border ${
+                                subscriberPlanFilter === cat
+                                  ? "bg-[#4d6029] border-[#4d6029] shadow-xs"
+                                  : "bg-white border-slate-200 shadow-xs"
+                              }`}
                               activeOpacity={0.7}
                             >
-                              <View className="flex-row items-center flex-1 mr-2">
-                                <Ionicons
-                                  name={
-                                    isSelected ? "checkbox" : "square-outline"
-                                  }
-                                  size={18}
-                                  color={isSelected ? "#4d6029" : "#94a3b8"}
-                                />
-                                <Text
-                                  className={`text-xs ml-2.5 font-poppins-medium ${
-                                    isSelected
-                                      ? "text-[#4d6029] font-poppins-semibold"
-                                      : "text-[#0f172a]"
-                                  }`}
-                                >
-                                  {plan.name}
-                                </Text>
-                              </View>
-                              <View className="bg-slate-100 px-2 py-0.5 rounded">
-                                <Text className="text-[9px] font-poppins text-[#64748b]">
-                                  {plan.category}
-                                </Text>
-                              </View>
+                              <Text
+                                className={`text-[11px] ${
+                                  subscriberPlanFilter === cat
+                                    ? "text-white font-poppins-bold"
+                                    : "text-[#64748b] font-poppins-medium"
+                                }`}
+                              >
+                                {cat === "ALL" ? "All" : cat}
+                              </Text>
                             </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                          ))}
+                        </ScrollView>
+
+                        {/* Plan Item Checklist */}
+                        <ScrollView
+                          className="max-h-56"
+                          contentContainerStyle={{ paddingVertical: 2 }}
+                          showsVerticalScrollIndicator={true}
+                          nestedScrollEnabled={true}
+                        >
+                          {AVAILABLE_SUBSCRIBER_PLANS.filter(
+                            (plan) =>
+                              subscriberPlanFilter === "ALL" ||
+                              plan.category === subscriberPlanFilter,
+                          ).map((plan) => {
+                            const isSelected = newClientPlan === plan.name;
+                            return (
+                              <TouchableOpacity
+                                key={`${plan.category}-${plan.name}`}
+                                onPress={() => {
+                                  setNewClientPlan(plan.name);
+                                  const match = plan.name.match(/(\d+)\s*Mbps/i);
+                                  if (match) {
+                                    setCustomPlanSpeed(match[1]);
+                                  } else {
+                                    setCustomPlanSpeed("");
+                                  }
+                                  setIsClientPlanDropdownOpen(false);
+                                }}
+                                className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
+                                activeOpacity={0.7}
+                              >
+                                <View className="flex-row items-center flex-1 mr-2">
+                                  <Ionicons
+                                    name={
+                                      isSelected ? "checkbox" : "square-outline"
+                                    }
+                                    size={18}
+                                    color={isSelected ? "#4d6029" : "#94a3b8"}
+                                  />
+                                  <Text
+                                    className={`text-xs ml-2.5 font-poppins-medium ${
+                                      isSelected
+                                        ? "text-[#4d6029] font-poppins-semibold"
+                                        : "text-[#0f172a]"
+                                    }`}
+                                  >
+                                    {plan.name}
+                                  </Text>
+                                </View>
+                                <View className="bg-slate-100 px-2 py-0.5 rounded">
+                                  <Text className="text-[9px] font-poppins text-[#64748b]">
+                                    {plan.category}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* 6. Custom Speed (Mbps) Input Field */}
+                <View className="mb-3.5">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                      Custom Speed (Mbps)
+                    </Text>
+                    <Text className="text-[10px] font-poppins text-[#64748b]">
+                      Direct Mbps speed input
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1">
+                    <MaterialCommunityIcons
+                      name="speedometer"
+                      size={16}
+                      color={customPlanSpeed ? "#4d6029" : "#64748b"}
+                    />
+                    <TextInput
+                      value={customPlanSpeed}
+                      onChangeText={handleCustomPlanSpeedChange}
+                      placeholder="e.g. 150, 250, 500"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="numeric"
+                      className="flex-1 ml-2 text-xs font-poppins-medium text-[#0f172a] py-2"
+                    />
+                    <View
+                      className={`px-2.5 py-1 rounded-lg ${
+                        customPlanSpeed ? "bg-[#4d6029]/15" : "bg-slate-200/60"
+                      }`}
+                    >
+                      <Text
+                        className={`text-xs font-poppins-bold ${
+                          customPlanSpeed ? "text-[#4d6029]" : "text-[#64748b]"
+                        }`}
+                      >
+                        Mbps
+                      </Text>
                     </View>
-                  )}
+                  </View>
                 </View>
               </ScrollView>
 

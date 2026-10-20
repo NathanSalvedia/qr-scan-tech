@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Modal,
   Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -14,16 +15,19 @@ import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
+import Svg, { Path } from 'react-native-svg';
 
 import { boxService, DistributionBox } from '@/services/boxes';
 import { logsService } from '@/services/logs';
 import { settingsService } from '@/services/settings';
 import { playScanConfirmationBeep } from '@/services/sound';
+import { useAdminToast } from '@/context/admin-toast-context';
+import { AdminRightToast } from '@/components/admin-right-toast';
 
 const FOCUS_REQUIRED_MS = 850;
 const FOCUS_LOST_TIMEOUT_MS = 950;
 const MIN_ALIGNED_FRAMES = 2;
-const RETICLE_SIZE = 288; // w-72 h-72 = 288dp
+const RETICLE_SIZE = 270; // 270x270dp calibrated viewfinder frame
 
 interface RectBounds {
   x: number;
@@ -33,6 +37,7 @@ interface RectBounds {
 }
 
 export default function UserScannerScreen() {
+  const { showToast: showRightToast } = useAdminToast();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
@@ -60,6 +65,29 @@ export default function UserScannerScreen() {
   const focusLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLockingRef = useRef<boolean>(false);
   const [reticleScaleAnim] = useState(() => new Animated.Value(1));
+  const [scanAnim] = useState(() => new Animated.Value(0));
+
+  // Animated laser sweep line (oscillates smoothly up and down)
+  useEffect(() => {
+    const sweep = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanAnim, {
+          toValue: 1,
+          duration: 2200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scanAnim, {
+          toValue: 0,
+          duration: 2200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    sweep.start();
+    return () => sweep.stop();
+  }, [scanAnim]);
 
   // Dynamic boxes cache from database
   const [boxes, setBoxes] = useState<DistributionBox[]>([]);
@@ -324,10 +352,47 @@ export default function UserScannerScreen() {
     if (matchedBox.status === 'NEEDS_TAG') {
       setIsProcessing(false);
       setTagModalBox(matchedBox);
+
+      // 1. Immediately trigger the Right Toast Notification on the device
+      showRightToast({
+        title: `Physical QR Placard Detected · ${matchedBox.code}`,
+        description: `Distribution box ${matchedBox.code} (${matchedBox.siteName}) was awaiting on-site physical tag affixing.`,
+        category: 'TAG_AFFIXED',
+        timestamp: 'Just now',
+        targetBoxCode: matchedBox.code,
+        actorName: 'Field Technician',
+      });
+
+      // 2. Immediately record the physical tag detection audit to database activity logs
+      logsService
+        .recordScan({
+          boxId: matchedBox.id,
+          boxCode: matchedBox.code,
+          scanType: 'UNTAGGED_INSPECT',
+          padlockVerified: true,
+          boxStatusAtScan: 'NEEDS_TAG',
+          auditNotes: `Physical QR placard detected on-site for ${matchedBox.code} (${matchedBox.siteName}). Awaiting physical tag affixing.`,
+        })
+        .then((res) => {
+          if (!res.success) {
+            console.warn('[Scanner] Failed to record placard audit:', res.message);
+          } else {
+            console.log('[Scanner] Placard audit recorded successfully in DB');
+          }
+        })
+        .catch((err) => console.error('Failed to log placard audit:', err));
+
       return;
     }
 
     // Standard flow for ACTIVE or ISSUE boxes: record scan & navigate
+    showRightToast({
+      title: `Box Scanned · ${matchedBox.code}`,
+      description: `Routine inspection scan for ${matchedBox.code} at ${matchedBox.siteName}.`,
+      category: matchedBox.status === 'ISSUE' ? 'ALARM' : 'SCAN',
+      timestamp: 'Just now',
+      targetBoxCode: matchedBox.code,
+    });
     await executeScanAuditAndNavigate(matchedBox, scanType);
   };
 
@@ -337,7 +402,8 @@ export default function UserScannerScreen() {
   const executeScanAuditAndNavigate = async (
     box: DistributionBox,
     scanType = 'CAMERA_QR',
-    overrideStatus?: string
+    overrideStatus?: string,
+    customAuditNotes?: string
   ) => {
     try {
       const finalStatus = overrideStatus || box.status;
@@ -348,9 +414,14 @@ export default function UserScannerScreen() {
         padlockVerified: true,
         boxStatusAtScan: finalStatus,
         auditNotes:
-          scanType === 'CAMERA_QR'
+          customAuditNotes ||
+          (scanType === 'TAG_AFFIXED'
+            ? `Physical QR placard affixed and ${box.code} (${box.siteName}) activated on-site.`
+            : scanType === 'UNTAGGED_INSPECT'
+            ? `Physical QR placard detected for ${box.code} (${box.siteName}) - inspected without tag affixing.`
+            : scanType === 'CAMERA_QR'
             ? `Field audit scan of ${box.code} at ${box.siteName}`
-            : `Scan test of ${box.code}`,
+            : `Scan test of ${box.code}`),
       });
     } catch (err) {
       console.error('Failed to submit scan audit log:', err);
@@ -382,10 +453,24 @@ export default function UserScannerScreen() {
         prev.map((b) => (b.id === tagModalBox.id ? { ...b, status: 'ACTIVE' } : b))
       );
 
-      // 3. Record audit log & navigate
+      // 3. Trigger Right Toast
+      showRightToast({
+        title: `Box Tagged & Activated · ${tagModalBox.code}`,
+        description: `Physical QR placard affixed and ${tagModalBox.code} (${tagModalBox.siteName}) activated on-site.`,
+        category: 'TAG_AFFIXED',
+        timestamp: 'Just now',
+        targetBoxCode: tagModalBox.code,
+      });
+
+      // 4. Record audit log & navigate
       const updatedBox = { ...tagModalBox, status: 'ACTIVE' as const };
       setTagModalBox(null);
-      await executeScanAuditAndNavigate(updatedBox, 'CAMERA_QR', 'ACTIVE');
+      await executeScanAuditAndNavigate(
+        updatedBox,
+        'TAG_AFFIXED',
+        'ACTIVE',
+        `Physical QR placard affixed and ${updatedBox.code} (${updatedBox.siteName}) activated on-site.`
+      );
     } catch (err) {
       console.error('Failed to affix tag:', err);
       showToast('Failed to update box status', 'error');
@@ -400,8 +485,22 @@ export default function UserScannerScreen() {
   const handleProceedWithoutAffix = async () => {
     if (!tagModalBox) return;
     const currentBox = tagModalBox;
+
+    showRightToast({
+      title: `Placard Inspected (Untagged) · ${currentBox.code}`,
+      description: `Inspection recorded for ${currentBox.code} (${currentBox.siteName}) without tag affixing.`,
+      category: 'SCAN',
+      timestamp: 'Just now',
+      targetBoxCode: currentBox.code,
+    });
+
     setTagModalBox(null);
-    await executeScanAuditAndNavigate(currentBox, 'CAMERA_QR', 'NEEDS_TAG');
+    await executeScanAuditAndNavigate(
+      currentBox,
+      'UNTAGGED_INSPECT',
+      'NEEDS_TAG',
+      `Physical QR placard detected for ${currentBox.code} (${currentBox.siteName}) - inspected without tag affixing.`
+    );
   };
 
   /**
@@ -558,10 +657,10 @@ export default function UserScannerScreen() {
     }
   };
 
-  const cornerBorderColor =
+  const cornerColor =
     focusState === 'off_center'
-      ? 'border-amber-400'
-      : 'border-[#6A795D]';
+      ? '#f59e0b'
+      : '#4d6029';
 
   return (
     <View className="flex-1 bg-black">
@@ -636,35 +735,37 @@ export default function UserScannerScreen() {
             onBarcodeScanned={scanned || isProcessing ? undefined : handleBarcodeScanned}
           />
 
-          {/* Transparent Overlay with Overlaid Close Button & Single Reticle */}
+          {/* Transparent Overlay with Overlaid Close Button, Reticle & Controls */}
           <SafeAreaView className="flex-1 justify-between z-20">
-            {/* 1. TOP OVERLAY: Floating Close Button & Live Status */}
-            <View className="px-5 pt-2 flex-row items-center justify-between">
+            {/* 1. TOP OVERLAY: Floating Close Button, Title & Torch Toggle (Matches Reference Image) */}
+            <View className="px-5 pt-3 flex-row items-center justify-between">
               <TouchableOpacity
                 onPress={handleGoBack}
-                className="w-10 h-10 rounded-full bg-black/50 border border-white/25 items-center justify-center shadow-lg active:bg-black/70"
+                className="w-11 h-11 rounded-full bg-white/95 items-center justify-center shadow-lg active:bg-white"
                 accessibilityLabel="Close scanner"
-                activeOpacity={0.75}
+                activeOpacity={0.8}
               >
-                <Ionicons name="close" size={22} color="#ffffff" />
+                <Ionicons name="close" size={24} color="#1e293b" />
               </TouchableOpacity>
 
-              <View className="bg-black/50 border border-white/20 px-3 py-1.5 rounded-full flex-row items-center">
-                <View
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    focusState === 'off_center'
-                      ? 'bg-amber-400'
-                      : 'bg-[#6A795D]'
-                  }`}
+              <Text className="text-base font-poppins-semibold text-white tracking-wide drop-shadow-md">
+                Scan code
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => setTorchEnabled(!torchEnabled)}
+                className={`w-11 h-11 rounded-full items-center justify-center shadow-lg active:opacity-90 ${
+                  torchEnabled ? 'bg-white border-2 border-[#4d6029]' : 'bg-white/95'
+                }`}
+                accessibilityLabel="Toggle flashlight"
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={torchEnabled ? 'flash' : 'flash-off'}
+                  size={22}
+                  color={torchEnabled ? '#4d6029' : '#1e293b'}
                 />
-                <Text className="text-[10px] font-poppins-semibold text-white/90">
-                  {focusState === 'focusing'
-                    ? 'Focusing QR...'
-                    : focusState === 'locked'
-                    ? 'QR Locked'
-                    : 'Live Scanner'}
-                </Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             {/* Floating Toast Notification */}
@@ -700,128 +801,153 @@ export default function UserScannerScreen() {
               </View>
             )}
 
-            {/* 2. CENTER RETICLE & CAMERA CONTROLS */}
+            {/* 2. CENTER RETICLE (Google Code Scanner style with green color palette) */}
             <View className="items-center justify-center">
-              {/* Single Viewfinder Reticle Rectangle */}
+              {/* Single Viewfinder Reticle Frame */}
               <Animated.View
                 ref={reticleViewRef}
                 onLayout={updateMeasuredBounds}
-                style={{ transform: [{ scale: reticleScaleAnim }] }}
-                className={`w-72 h-72 border-4 ${cornerBorderColor} rounded-3xl relative items-center justify-center shadow-2xl bg-transparent`}
+                style={{
+                  width: RETICLE_SIZE,
+                  height: RETICLE_SIZE,
+                  transform: [{ scale: reticleScaleAnim }],
+                }}
+                className="relative items-center justify-center bg-transparent"
               >
-                {/* Laser Sweep Line (shown when idle or off_center) */}
-                {focusState !== 'focusing' && focusState !== 'locked' && (
-                  <View
-                    className={`w-full h-0.5 absolute ${
-                      focusState === 'off_center'
-                        ? 'bg-amber-400 shadow-lg shadow-amber-400'
-                        : 'bg-[#6A795D] shadow-lg shadow-[#6A795D]'
-                    }`}
+                {/* SVG 4 Rounded Corner Brackets (Single Green Palette: #4d6029) */}
+                <Svg
+                  width={RETICLE_SIZE}
+                  height={RETICLE_SIZE}
+                  viewBox={`0 0 ${RETICLE_SIZE} ${RETICLE_SIZE}`}
+                  style={StyleSheet.absoluteFill}
+                >
+                  {/* Top-Left Corner Bracket */}
+                  <Path
+                    d="M 8 56 L 8 32 A 24 24 0 0 1 32 8 L 56 8"
+                    stroke={cornerColor}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Top-Right Corner Bracket */}
+                  <Path
+                    d="M 214 8 L 238 8 A 24 24 0 0 1 262 32 L 262 56"
+                    stroke={cornerColor}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Bottom-Right Corner Bracket */}
+                  <Path
+                    d="M 262 214 L 262 238 A 24 24 0 0 1 238 262 L 214 262"
+                    stroke={cornerColor}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Bottom-Left Corner Bracket */}
+                  <Path
+                    d="M 56 262 L 32 262 A 24 24 0 0 1 8 238 L 8 214"
+                    stroke={cornerColor}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </Svg>
+
+                {/* Animated Laser Sweep Line (idle/scanning) */}
+                {focusState !== 'locked' && (
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          translateY: scanAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [16, RETICLE_SIZE - 20],
+                          }),
+                        },
+                      ],
+                    }}
+                    className="w-56 h-0.5 self-center absolute rounded-full bg-[#4d6029]/80 shadow-md shadow-[#4d6029]"
                   />
                 )}
 
                 {/* Focus Progress Bar inside frame */}
                 {(focusState === 'focusing' || focusState === 'locked') && (
-                  <View className="w-44 h-1.5 bg-black/50 rounded-full overflow-hidden absolute bottom-14 border border-white/20">
+                  <View className="w-44 h-1.5 bg-black/50 rounded-full overflow-hidden absolute bottom-12 border border-white/20">
                     <View
                       style={{ width: `${focusProgress}%` }}
-                      className="h-full rounded-full bg-[#6A795D]"
+                      className="h-full rounded-full bg-[#4d6029]"
                     />
                   </View>
                 )}
-
-                {/* Scanning Prompt Badge */}
-                <View className="bg-white/95 px-3.5 py-1.5 rounded-full border border-slate-200 shadow-md flex-row items-center absolute bottom-4">
-                  {isProcessing ? (
-                    <>
-                      <ActivityIndicator size="small" color="#4d6029" style={{ marginRight: 6 }} />
-                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
-                        Verifying Network Database...
-                      </Text>
-                    </>
-                  ) : focusState === 'locked' || scanned ? (
-                    <>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={14}
-                        color="#6A795D"
-                        style={{ marginRight: 5 }}
-                      />
-                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
-                        QR Focused! Opening Details...
-                      </Text>
-                    </>
-                  ) : focusState === 'focusing' ? (
-                    <>
-                      <View className="w-2 h-2 rounded-full bg-[#6A795D] mr-2" />
-                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
-                        Focusing QR Code... Hold Steady
-                      </Text>
-                    </>
-                  ) : focusState === 'off_center' ? (
-                    <>
-                      <View className="w-2 h-2 rounded-full bg-amber-500 mr-2" />
-                      <Text className="text-[11px] font-poppins-semibold text-amber-900">
-                        Center QR inside frame to focus
-                      </Text>
-                    </>
-                  ) : (
-                    <>
-                      <View className="w-2 h-2 rounded-full bg-[#6A795D] mr-2" />
-                      <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
-                        Align QR inside frame
-                      </Text>
-                    </>
-                  )}
-                </View>
               </Animated.View>
 
-              {/* Camera Control Floating Pill (Torch & Flip) */}
-              <View className="flex-row items-center gap-3 mt-6">
-                <TouchableOpacity
-                  onPress={() => setTorchEnabled(!torchEnabled)}
-                  className={`px-4 py-2.5 rounded-2xl flex-row items-center border shadow-md ${
-                    torchEnabled
-                      ? 'bg-amber-400 border-amber-300'
-                      : 'bg-black/50 border-white/20'
-                  }`}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={torchEnabled ? 'flashlight' : 'flashlight-outline'}
-                    size={16}
-                    color={torchEnabled ? '#0f172a' : '#ffffff'}
-                  />
-                  <Text
-                    className={`text-xs font-poppins-bold ml-1.5 ${
-                      torchEnabled ? 'text-[#0f172a]' : 'text-white'
-                    }`}
-                  >
-                    Torch {torchEnabled ? 'ON' : 'OFF'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
-                  className="px-4 py-2.5 rounded-2xl flex-row items-center border bg-black/50 border-white/20 shadow-md active:bg-black/70"
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="camera-reverse-outline" size={16} color="#ffffff" />
-                  <Text className="text-xs font-poppins-bold text-white ml-1.5">
-                    Flip
-                  </Text>
-                </TouchableOpacity>
+              {/* Status Badge below Reticle */}
+              <View className="mt-5 bg-black/60 px-4 py-2 rounded-full border border-white/20 shadow-lg flex-row items-center">
+                {isProcessing ? (
+                  <>
+                    <ActivityIndicator size="small" color="#4d6029" style={{ marginRight: 8 }} />
+                    <Text className="text-xs font-poppins-medium text-white">
+                      Verifying Network Database...
+                    </Text>
+                  </>
+                ) : focusState === 'locked' || scanned ? (
+                  <>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={16}
+                      color="#4d6029"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-xs font-poppins-semibold text-white">
+                      QR Focused! Opening Details...
+                    </Text>
+                  </>
+                ) : focusState === 'focusing' ? (
+                  <>
+                    <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-2" />
+                    <Text className="text-xs font-poppins-medium text-white">
+                      Focusing QR Code... Hold Steady
+                    </Text>
+                  </>
+                ) : focusState === 'off_center' ? (
+                  <>
+                    <View className="w-2.5 h-2.5 rounded-full bg-amber-400 mr-2" />
+                    <Text className="text-xs font-poppins-medium text-amber-300">
+                      Center QR inside frame to focus
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-2" />
+                    <Text className="text-xs font-poppins-medium text-white/90">
+                      Align QR inside frame
+                    </Text>
+                  </>
+                )}
               </View>
             </View>
 
-            {/* 3. BOTTOM HELPER TEXT */}
+            {/* 3. BOTTOM HELPER & CAMERA FLIP */}
             <View className="pb-8 items-center px-6 w-full max-w-sm self-center">
-              <Text className="text-xs font-poppins-medium text-white/75 text-center tracking-wide">
-                {focusState === 'off_center'
-                  ? 'Move camera so the QR code is centered inside the frame'
-                  : focusState === 'focusing'
-                  ? 'Keep camera steady while focusing on QR code...'
-                  : 'Point camera at physical distribution box QR sticker'}
+              <TouchableOpacity
+                onPress={() => setFacing(facing === 'back' ? 'front' : 'back')}
+                className="bg-black/40 border border-white/20 px-4 py-2 rounded-full flex-row items-center active:bg-black/60 mb-3 shadow-md"
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera-reverse-outline" size={16} color="#ffffff" />
+                <Text className="text-xs font-poppins-medium text-white/90 ml-2">
+                  Flip Camera
+                </Text>
+              </TouchableOpacity>
+
+              <Text className="text-xs font-poppins-medium text-white/70 text-center tracking-wide">
+                Point camera at physical distribution box QR placard
               </Text>
             </View>
           </SafeAreaView>
@@ -917,6 +1043,9 @@ export default function UserScannerScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Floating right toast rendered on top of the modal */}
+        <AdminRightToast />
       </Modal>
     </View>
   );

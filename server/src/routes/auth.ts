@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { users, otps } from '../db/schema.js';
-import { eq, and, gt, desc } from 'drizzle-orm';
+import { eq, and, gt, desc, or } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { sendOtpEmail } from '../services/mailer.js';
@@ -10,6 +10,28 @@ import { firebaseAdminAuth } from '../services/firebase-admin.js';
 
 const router = Router();
 
+// Helper: Normalize Philippine and international phone numbers for consistent deduplication
+function normalizePhone(rawPhone?: string | null): { standard: string; e164: string } | null {
+  if (!rawPhone) return null;
+  const digits = String(rawPhone).replace(/\D/g, '');
+  if (!digits) return null;
+
+  let standard = digits;
+  let e164 = digits;
+
+  if (digits.startsWith('63') && digits.length === 12) {
+    standard = '0' + digits.slice(2);
+    e164 = '+' + digits;
+  } else if (digits.startsWith('09') && digits.length === 11) {
+    standard = digits;
+    e164 = '+63' + digits.slice(1);
+  } else if (digits.startsWith('9') && digits.length === 10) {
+    standard = '0' + digits;
+    e164 = '+63' + digits;
+  }
+
+  return { standard, e164 };
+}
 
 // Helper: Generate a random 6-digit OTP string
 const generate6DigitCode = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -28,9 +50,16 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    if (typeof password !== 'string' || password.length < 8 || password.length > 12) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be between 8 and 12 characters long.',
+      });
+    }
+
     const cleanEmail = email.toLowerCase().trim();
 
-    // Check if user already exists
+    // 1. Check if email already exists
     const existing = await db.query.users.findFirst({
       where: eq(users.email, cleanEmail),
     });
@@ -42,6 +71,25 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    // 2. Check if phone number already exists (enforce unique phone numbers)
+    const normalized = normalizePhone(phone);
+    if (normalized) {
+      const existingPhone = await db.query.users.findFirst({
+        where: or(
+          eq(users.phoneNumber, normalized.standard),
+          eq(users.phoneNumber, normalized.e164),
+          eq(users.phoneNumber, String(phone).trim())
+        ),
+      });
+
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'This mobile phone number is already registered to another account.',
+        });
+      }
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -50,7 +98,7 @@ router.post('/register', async (req, res) => {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: cleanEmail,
-      phoneNumber: phone ? phone.trim() : null,
+      phoneNumber: normalized ? normalized.standard : (phone ? phone.trim() : null),
       passwordHash: hashedPassword,
       role: 'user',        
       isActive: false,     
@@ -573,23 +621,48 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
 // =================================================================
 router.post('/check-availability', async (req, res: Response) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required.' });
+    const { email, phone } = req.body;
+    if (!email && !phone) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
     }
-    const cleanEmail = String(email).toLowerCase().trim();
-    const existing = await db.query.users.findFirst({
-      where: eq(users.email, cleanEmail),
-    });
 
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: 'An account with this email already exists.',
+    if (email) {
+      const cleanEmail = String(email).toLowerCase().trim();
+      const existing = await db.query.users.findFirst({
+        where: eq(users.email, cleanEmail),
       });
+
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          field: 'email',
+          message: 'An account with this email already exists.',
+        });
+      }
     }
 
-    return res.json({ success: true, message: 'Email is available.' });
+    if (phone) {
+      const normalized = normalizePhone(phone);
+      if (normalized) {
+        const existingPhone = await db.query.users.findFirst({
+          where: or(
+            eq(users.phoneNumber, normalized.standard),
+            eq(users.phoneNumber, normalized.e164),
+            eq(users.phoneNumber, String(phone).trim())
+          ),
+        });
+
+        if (existingPhone) {
+          return res.status(400).json({
+            success: false,
+            field: 'phone',
+            message: 'This mobile phone number is already registered to another account.',
+          });
+        }
+      }
+    }
+
+    return res.json({ success: true, message: 'Details are available.' });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -606,6 +679,13 @@ router.post('/register-with-phone', async (req, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'All fields (First name, Last name, Email, Password, and Phone Token) are required.',
+      });
+    }
+
+    if (typeof password !== 'string' || password.length < 8 || password.length > 12) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be between 8 and 12 characters long.',
       });
     }
 
@@ -644,17 +724,37 @@ router.post('/register-with-phone', async (req, res: Response) => {
       });
     }
 
-    // 3. Hash password
+    // 3. Check if phone number already registered
+    const targetPhone = verifiedPhoneNumber || (phone ? String(phone).trim() : '');
+    const normalizedTarget = normalizePhone(targetPhone);
+    if (normalizedTarget) {
+      const existingPhone = await db.query.users.findFirst({
+        where: or(
+          eq(users.phoneNumber, normalizedTarget.standard),
+          eq(users.phoneNumber, normalizedTarget.e164),
+          eq(users.phoneNumber, targetPhone)
+        ),
+      });
+
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'This mobile phone number is already registered to another account.',
+        });
+      }
+    }
+
+    // 4. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4. Create active user immediately (Phone is already verified via SMS!)
+    // 5. Create active user immediately (Phone is already verified via SMS!)
     const [newUser] = await db
       .insert(users)
       .values({
         firstName: String(firstName).trim(),
         lastName: String(lastName).trim(),
         email: cleanEmail,
-        phoneNumber: verifiedPhoneNumber || (phone ? String(phone).trim() : null),
+        phoneNumber: normalizedTarget ? normalizedTarget.standard : (targetPhone || null),
         passwordHash: hashedPassword,
         role: 'user',
         isActive: true,

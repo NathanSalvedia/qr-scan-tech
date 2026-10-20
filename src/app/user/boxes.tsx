@@ -81,9 +81,16 @@ export default function UserBoxesScreen() {
     }, [])
   );
 
-  // Dynamic filter
+  // Dynamic filter with unique boxes (each box appears once with its latest scan)
   const filteredHistory = useMemo(() => {
+    const seen = new Set<string>();
     return scans.filter((entry) => {
+      const key = entry.boxId || entry.boxCode;
+      if (key) {
+        if (seen.has(key)) return false;
+        seen.add(key);
+      }
+
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         q === "" ||

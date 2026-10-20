@@ -5,7 +5,7 @@ import { logsService, type RecentScanItem } from "@/services/logs";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -171,8 +171,17 @@ export default function UserDashboardScreen() {
     "User";
 
   const isWeb = Platform.OS === "web";
-  // Item limit: 5 latest items only
-  const displayedScans = recentScans.slice(0, 5);
+  // Deduplicate by box so each box only appears once showing its latest scan (Top 5 unique boxes)
+  const displayedScans = useMemo(() => {
+    const uniqueMap = new Map<string, RecentScanItem>();
+    for (const scan of recentScans) {
+      const key = scan.boxId || scan.boxCode;
+      if (key && !uniqueMap.has(key)) {
+        uniqueMap.set(key, scan);
+      }
+    }
+    return Array.from(uniqueMap.values()).slice(0, 5);
+  }, [recentScans]);
 
   return (
     <SafeAreaView className="flex-1 bg-[#f8fafc]">

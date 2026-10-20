@@ -45,8 +45,13 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    if (!newPassword || newPassword.length < 6) {
-      showAlert("Invalid Password", "New password must be at least 6 characters long.");
+    if (!newPassword || newPassword.length < 8) {
+      showAlert("Invalid Password", "New password must be at least 8 characters long.");
+      return;
+    }
+
+    if (newPassword.length > 12) {
+      showAlert("Password Too Long", "New password cannot exceed 12 characters.");
       return;
     }
 
@@ -144,10 +149,11 @@ export default function ResetPasswordScreen() {
                 <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-slate-200">
                   <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" />
                   <TextInput
-                    placeholder="Minimum 6 characters"
+                    placeholder="8 to 12 characters"
                     placeholderTextColor="#94a3b8"
                     value={newPassword}
                     onChangeText={setNewPassword}
+                    maxLength={12}
                     secureTextEntry={!showNewPassword}
                     className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
                   />
@@ -172,10 +178,11 @@ export default function ResetPasswordScreen() {
                 <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-slate-200">
                   <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" />
                   <TextInput
-                    placeholder="Re-enter your new password"
+                    placeholder="Confirm your new password"
                     placeholderTextColor="#94a3b8"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
+                    maxLength={12}
                     secureTextEntry={!showConfirmPassword}
                     className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
                   />

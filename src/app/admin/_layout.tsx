@@ -3,6 +3,35 @@ import { Stack, router } from 'expo-router';
 import { View, Text, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useAuth } from '@/services/auth-state';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AdminToastProvider } from '@/context/admin-toast-context';
+import { AdminRightToast } from '@/components/admin-right-toast';
+import { useAdminLogWatcher } from '@/hooks/use-admin-log-watcher';
+
+function AdminStackWithNotifications() {
+  // Activate real-time audit log monitoring for user sign-ups and box scans
+  useAdminLogWatcher();
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#f0f3f6' },
+        }}
+      >
+        <Stack.Screen name="dashboard" />
+        <Stack.Screen name="box-management" />
+        <Stack.Screen name="qr-print" />
+        <Stack.Screen name="technicians" />
+        <Stack.Screen name="activity-logs" />
+        <Stack.Screen name="settings" />
+      </Stack>
+
+      {/* Floating right-docked notification for admin */}
+      <AdminRightToast />
+    </View>
+  );
+}
 
 export default function AdminLayout() {
   const { isAuthenticated, isAdmin, isHydrated } = useAuth();
@@ -54,18 +83,8 @@ export default function AdminLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: '#f0f3f6' },
-      }}
-    >
-      <Stack.Screen name="dashboard" />
-      <Stack.Screen name="box-management" />
-      <Stack.Screen name="qr-print" />
-      <Stack.Screen name="technicians" />
-      <Stack.Screen name="activity-logs" />
-      <Stack.Screen name="settings" />
-    </Stack>
+    <AdminToastProvider>
+      <AdminStackWithNotifications />
+    </AdminToastProvider>
   );
 }

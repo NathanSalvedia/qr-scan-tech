@@ -27,13 +27,16 @@ export interface AuthResponse {
 }
 
 export const authService = {
-  // Pre-check if email is already taken before sending SMS
-  checkAvailability: async (email: string): Promise<{ success: boolean; message?: string }> => {
+  // Pre-check if email or phone is already taken before submitting
+  checkAvailability: async (
+    email?: string,
+    phone?: string
+  ): Promise<{ success: boolean; message?: string; field?: 'email' | 'phone' }> => {
     try {
       const res = await apiFetch(`${API_URL}/auth/check-availability`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, phone }),
       });
       return await res.json();
     } catch {

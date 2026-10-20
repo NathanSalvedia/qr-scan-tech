@@ -2,7 +2,7 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { boxService } from "@/services/boxes";
 
@@ -49,9 +49,9 @@ export interface UserMapPin {
 type FilterType = "ALL" | "ACTIVE" | "NEEDS_TAG" | "ISSUE";
 
 export default function UserMapScreen() {
+  const insets = useSafeAreaInsets();
   const [boxes, setBoxes] = useState<UserMapPin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
@@ -61,6 +61,25 @@ export default function UserMapScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPin, setSelectedPin] = useState<UserMapPin | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+
+  // Fullscreen map state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const webViewRef = useRef<WebView | null>(null);
+  const iframeRef = useRef<any>(null);
+
+  const toggleFullscreen = () => {
+    setIsFullscreen((prev) => {
+      const next = !prev;
+      const msg = { type: "SET_FULLSCREEN", isFullscreen: next };
+      if (isWeb) {
+        iframeRef.current?.contentWindow?.postMessage(msg, "*");
+      } else {
+        webViewRef.current?.postMessage(JSON.stringify(msg));
+      }
+      return next;
+    });
+  };
 
   const isWeb = Platform.OS === "web";
 
@@ -142,17 +161,6 @@ export default function UserMapScreen() {
     };
   }, [fetchMapBoxes]);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const { boxes: fetched, error: fetchErr } = await fetchMapBoxes();
-      if (fetched) setBoxes(fetched);
-      if (fetchErr) setError(fetchErr);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [fetchMapBoxes]);
-
   const filteredPins = boxes.filter((pin) => {
     const matchesFilter = activeFilter === "ALL" || pin.status === activeFilter;
     const query = searchQuery.toLowerCase().trim();
@@ -178,6 +186,8 @@ export default function UserMapScreen() {
           if (found) {
             setSelectedPin(found);
           }
+        } else if (event.data?.type === "LAYER_CHANGED") {
+          setMapMode(event.data.mode);
         }
       };
       window.addEventListener("message", handleMessage);
@@ -194,6 +204,8 @@ export default function UserMapScreen() {
         if (found) {
           setSelectedPin(found);
         }
+      } else if (data?.type === "LAYER_CHANGED") {
+        setMapMode(data.mode);
       }
     } catch {
       // Ignore parse errors
@@ -343,31 +355,79 @@ export default function UserMapScreen() {
           .pin-ground-dot.needs-tag { box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.6); }
           .pin-ground-dot.issue { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.6); }
           
-          /* Custom Google Style Zoom Controls */
+          /* Hide default Leaflet Zoom (+/-) */
           .leaflet-control-zoom {
-            border: none !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
-            border-radius: 10px !important;
-            overflow: hidden;
+            display: none !important;
           }
-          .leaflet-control-zoom a {
-            background: #ffffff !important;
-            color: #334155 !important;
-            font-weight: bold !important;
+
+          /* Top control positioning */
+          .leaflet-top {
+            top: 12px !important;
+            right: 12px !important;
+            transition: top 0.2s ease;
           }
-          .leaflet-control-zoom a:hover {
-            background: #f8fafc !important;
+          body.fullscreen-mode .leaflet-top {
+            top: ${Math.max(Math.round(insets.top || 0), 16) + 6}px !important;
+            right: 12px !important;
           }
+
+          /* Custom styling for Leaflet Layers Control matching Image 2 & Image 3 */
           .leaflet-control-layers {
-            border-radius: 10px !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
-            border: none !important;
-            font-weight: 600 !important;
-            font-size: 11px !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(0, 0, 0, 0.08) !important;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+            background: #ffffff !important;
+            transition: all 0.2s ease;
+          }
+
+          .leaflet-control-layers-toggle {
+            width: 40px !important;
+            height: 40px !important;
+            background-size: 22px 22px !important;
+            background-position: center !important;
+            border-radius: 12px !important;
+          }
+
+          .leaflet-control-layers-expanded {
+            padding: 8px 12px !important;
+            min-width: 144px !important;
+            border-radius: 12px !important;
+            background: #ffffff !important;
+          }
+
+          .leaflet-control-layers-base {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 4px !important;
+          }
+
+          .leaflet-control-layers-base label {
+            display: flex !important;
+            align-items: center !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            color: #1e293b !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            padding: 3px 2px !important;
+          }
+
+          .leaflet-control-layers-base label > div {
+            display: flex !important;
+            align-items: center !important;
+          }
+
+          .leaflet-control-layers-selector {
+            margin: 0 8px 0 0 !important;
+            accent-color: #2563eb !important;
+            cursor: pointer !important;
+            width: 16px !important;
+            height: 16px !important;
           }
         </style>
       </head>
-      <body>
+      <body class="${isFullscreen ? "fullscreen-mode" : ""}">
         <div id="map"></div>
         <script>
           var pins = ${JSON.stringify(filteredPins)};
@@ -383,7 +443,7 @@ export default function UserMapScreen() {
           var map = L.map('map', {
             center: defaultCenter,
             zoom: 15,
-            zoomControl: true
+            zoomControl: false
           });
 
           // Primary Google Maps Street Layer
@@ -405,11 +465,78 @@ export default function UserMapScreen() {
             googleStreet.addTo(map);
           }
 
+          // Layer Control configured with exact labels from Image 3
           var baseLayers = {
             "Google Streets": googleStreet,
             "Google Satellite": googleHybrid
           };
-          L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
+
+          var layerControl = L.control.layers(baseLayers, null, {
+            position: 'topright',
+            collapsed: true
+          }).addTo(map);
+
+          // Synchronize React Native state when layer is clicked in Leaflet
+          map.on('baselayerchange', function(e) {
+            var mode = e.name === 'Google Satellite' ? 'SATELLITE' : 'STREET_PINS';
+            if (window.parent && window.parent.postMessage) {
+              window.parent.postMessage({ type: 'LAYER_CHANGED', mode: mode }, '*');
+            }
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LAYER_CHANGED', mode: mode }));
+            }
+          });
+
+          // Mobile touch toggle helper: tap toggle button to open/close, tap map to close
+          var layersContainer = layerControl.getContainer();
+          var toggleBtn = layersContainer ? layersContainer.querySelector('.leaflet-control-layers-toggle') : null;
+          if (toggleBtn) {
+            L.DomEvent.on(toggleBtn, 'click', function(e) {
+              L.DomEvent.stop(e);
+              if (layersContainer.classList.contains('leaflet-control-layers-expanded')) {
+                layerControl.collapse();
+              } else {
+                layerControl.expand();
+              }
+            });
+          }
+          map.on('click', function() {
+            layerControl.collapse();
+          });
+
+          // Dynamic layer switching without reloading page or losing pan/zoom
+          function setMapLayer(mode) {
+            if (mode === 'SATELLITE') {
+              if (map.hasLayer(googleStreet)) map.removeLayer(googleStreet);
+              if (!map.hasLayer(googleHybrid)) googleHybrid.addTo(map);
+            } else {
+              if (map.hasLayer(googleHybrid)) map.removeLayer(googleHybrid);
+              if (!map.hasLayer(googleStreet)) googleStreet.addTo(map);
+            }
+          }
+
+          function handleModeMessage(event) {
+            var data = event.data;
+            if (typeof data === 'string') {
+              try { data = JSON.parse(data); } catch(e) {}
+            }
+            if (data && data.type === 'SET_MAP_MODE') {
+              setMapLayer(data.mode);
+            }
+            if (data && data.type === 'SET_FULLSCREEN') {
+              if (data.isFullscreen) {
+                document.body.classList.add('fullscreen-mode');
+              } else {
+                document.body.classList.remove('fullscreen-mode');
+              }
+              setTimeout(function() {
+                map.invalidateSize();
+              }, 150);
+            }
+          }
+
+          window.addEventListener('message', handleModeMessage);
+          document.addEventListener('message', handleModeMessage);
 
           var markerGroup = L.featureGroup();
 
@@ -474,165 +601,147 @@ export default function UserMapScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f8fafc]">
-      <StatusBar style="dark" />
+    <SafeAreaView
+      edges={isFullscreen ? ["left", "right"] : ["top", "left", "right"]}
+      className="flex-1 bg-[#f8fafc]"
+    >
+      <StatusBar
+        style={isFullscreen && mapMode === "SATELLITE" ? "light" : "dark"}
+      />
 
       <View className="flex-1 flex-col h-full overflow-hidden">
-        {/* HEADER & SEARCH BAR */}
-        <View className="bg-white border-b border-slate-200 px-4 pt-3 pb-2.5 z-30 shadow-xs">
-          <View className="flex-row items-center justify-between mb-2.5">
-            <View className="flex-row items-center">
-              <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
-                <Ionicons name="map" size={18} color="#4d6029" />
+        {/* HEADER & SEARCH BAR (Hidden in fullscreen mode) */}
+        {!isFullscreen && (
+          <View className="bg-white border-b border-slate-200 px-4 pt-3 pb-2.5 z-30 shadow-xs">
+            <View className="flex-row items-center justify-between mb-2.5">
+              <View className="flex-row items-center flex-1 pr-3">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <Ionicons name="map" size={18} color="#4d6029" />
+                </View>
+                <View className="flex-1">
+                  <Text
+                    className="text-base font-poppins-bold text-[#0f172a]"
+                    numberOfLines={1}
+                  >
+                    Distribution Box Map
+                  </Text>
+                  <Text
+                    className="text-[11px] font-poppins text-[#64748b]"
+                    numberOfLines={1}
+                  >
+                    Iligan City Network Grid · {filteredPins.length} Nodes
+                  </Text>
+                </View>
               </View>
-              <View>
-                <Text className="text-base font-poppins-bold text-[#0f172a]">
-                  Distribution Box Map
-                </Text>
-                <Text className="text-[11px] font-poppins text-[#64748b]">
-                  Iligan City Network Grid · {filteredPins.length} Nodes
-                </Text>
-              </View>
-            </View>
 
-            <View className="flex-row items-center gap-1.5">
-              {/* Refresh Button */}
+              {/* Full Screen Toggle Button */}
               <TouchableOpacity
-                onPress={handleRefresh}
-                disabled={refreshing}
-                className="w-8 h-8 rounded-xl border border-slate-200 bg-slate-50 items-center justify-center"
+                onPress={toggleFullscreen}
+                className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 items-center justify-center active:bg-slate-100"
                 activeOpacity={0.8}
+                accessibilityLabel="Full Screen Map"
               >
-                <Ionicons
-                  name="refresh"
-                  size={14}
+                <MaterialCommunityIcons
+                  name="fullscreen"
+                  size={20}
                   color="#334155"
-                  style={refreshing ? { transform: [{ rotate: "45deg" }] } : undefined}
                 />
               </TouchableOpacity>
+            </View>
 
-              {/* Satellite / Street Switcher */}
+            {/* Search Box Input */}
+            <View className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex-row items-center mb-2.5">
+              <Ionicons name="search" size={15} color="#64748b" />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search by box code (e.g. DB-MN-01), street, or zone..."
+                placeholderTextColor="#94a3b8"
+                className="flex-1 ml-2 text-xs font-poppins text-[#0f172a]"
+              />
+              {searchQuery ? (
+                <TouchableOpacity onPress={() => setSearchQuery("")}>
+                  <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Filter Pills */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="flex-row gap-1.5"
+            >
               <TouchableOpacity
-                onPress={() =>
-                  setMapMode(
-                    mapMode === "STREET_PINS" ? "SATELLITE" : "STREET_PINS",
-                  )
-                }
-                className={`px-3 py-1.5 rounded-xl border flex-row items-center ${
-                  mapMode === "SATELLITE"
-                    ? "bg-sky-600 border-sky-600"
-                    : "bg-slate-100 border-slate-200"
+                onPress={() => setActiveFilter("ALL")}
+                className={`px-3 py-1.5 rounded-full border ${
+                  activeFilter === "ALL"
+                    ? "bg-[#4d6029] border-[#4d6029]"
+                    : "bg-white border-slate-200"
                 }`}
-                activeOpacity={0.8}
               >
-                <Ionicons
-                  name={mapMode === "SATELLITE" ? "map" : "earth"}
-                  size={14}
-                  color={mapMode === "SATELLITE" ? "#ffffff" : "#334155"}
-                />
                 <Text
-                  className={`text-xs font-poppins-bold ml-1.5 ${
-                    mapMode === "SATELLITE" ? "text-white" : "text-[#334155]"
+                  className={`text-[11px] font-poppins-bold ${
+                    activeFilter === "ALL" ? "text-white" : "text-[#64748b]"
                   }`}
                 >
-                  {mapMode === "SATELLITE" ? "Street" : "Satellite"}
+                  All Boxes ({boxes.length})
                 </Text>
               </TouchableOpacity>
-            </View>
-          </View>
 
-          {/* Search Box Input */}
-          <View className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex-row items-center mb-2.5">
-            <Ionicons name="search" size={15} color="#64748b" />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by box code (e.g. DB-MN-01), street, or zone..."
-              placeholderTextColor="#94a3b8"
-              className="flex-1 ml-2 text-xs font-poppins text-[#0f172a]"
-            />
-            {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery("")}>
-                <Ionicons name="close-circle" size={16} color="#94a3b8" />
+              <TouchableOpacity
+                onPress={() => setActiveFilter("ACTIVE")}
+                className={`px-3 py-1.5 rounded-full border ${
+                  activeFilter === "ACTIVE"
+                    ? "bg-[#4d6029] border-[#4d6029]"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-poppins-bold ${
+                    activeFilter === "ACTIVE" ? "text-white" : "text-[#4d6029]"
+                  }`}
+                >
+                  Tagged ({activeCount})
+                </Text>
               </TouchableOpacity>
-            ) : null}
+
+              <TouchableOpacity
+                onPress={() => setActiveFilter("NEEDS_TAG")}
+                className={`px-3 py-1.5 rounded-full border ${
+                  activeFilter === "NEEDS_TAG"
+                    ? "bg-[#d97706] border-[#d97706]"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-poppins-bold ${
+                    activeFilter === "NEEDS_TAG" ? "text-white" : "text-amber-700"
+                  }`}
+                >
+                  Needs Tag ({needsTagCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setActiveFilter("ISSUE")}
+                className={`px-3 py-1.5 rounded-full border ${
+                  activeFilter === "ISSUE"
+                    ? "bg-[#dc2626] border-[#dc2626]"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-poppins-bold ${
+                    activeFilter === "ISSUE" ? "text-white" : "text-rose-700"
+                  }`}
+                >
+                  Issues ({issueCount})
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-
-          {/* Filter Pills */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="flex-row gap-1.5"
-          >
-            <TouchableOpacity
-              onPress={() => setActiveFilter("ALL")}
-              className={`px-3 py-1.5 rounded-full border ${
-                activeFilter === "ALL"
-                  ? "bg-[#4d6029] border-[#4d6029]"
-                  : "bg-white border-slate-200"
-              }`}
-            >
-              <Text
-                className={`text-[11px] font-poppins-bold ${
-                  activeFilter === "ALL" ? "text-white" : "text-[#64748b]"
-                }`}
-              >
-                All Boxes ({boxes.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setActiveFilter("ACTIVE")}
-              className={`px-3 py-1.5 rounded-full border ${
-                activeFilter === "ACTIVE"
-                  ? "bg-[#4d6029] border-[#4d6029]"
-                  : "bg-white border-slate-200"
-              }`}
-            >
-              <Text
-                className={`text-[11px] font-poppins-bold ${
-                  activeFilter === "ACTIVE" ? "text-white" : "text-[#4d6029]"
-                }`}
-              >
-                Tagged ({activeCount})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setActiveFilter("NEEDS_TAG")}
-              className={`px-3 py-1.5 rounded-full border ${
-                activeFilter === "NEEDS_TAG"
-                  ? "bg-[#d97706] border-[#d97706]"
-                  : "bg-white border-slate-200"
-              }`}
-            >
-              <Text
-                className={`text-[11px] font-poppins-bold ${
-                  activeFilter === "NEEDS_TAG" ? "text-white" : "text-amber-700"
-                }`}
-              >
-                Needs Tag ({needsTagCount})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setActiveFilter("ISSUE")}
-              className={`px-3 py-1.5 rounded-full border ${
-                activeFilter === "ISSUE"
-                  ? "bg-[#dc2626] border-[#dc2626]"
-                  : "bg-white border-slate-200"
-              }`}
-            >
-              <Text
-                className={`text-[11px] font-poppins-bold ${
-                  activeFilter === "ISSUE" ? "text-white" : "text-rose-700"
-                }`}
-              >
-                Issues ({issueCount})
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
+        )}
 
         {/* FULL INTERACTIVE GOOGLE MAP CONTAINER */}
         <View className="flex-1 relative bg-[#e2e8f0] overflow-hidden">
@@ -656,9 +765,30 @@ export default function UserMapScreen() {
             </View>
           )}
 
+          {/* Floating Exit Fullscreen Button (Fullscreen mode) */}
+          {isFullscreen && (
+            <TouchableOpacity
+              onPress={toggleFullscreen}
+              style={{ top: Math.max(insets.top, 16) + 6 }}
+              className="absolute left-3 z-30 flex-row items-center bg-white px-3.5 py-2.5 rounded-2xl border border-slate-200/90 shadow-md active:opacity-80"
+              activeOpacity={0.8}
+              accessibilityLabel="Exit Fullscreen"
+            >
+              <MaterialCommunityIcons
+                name="fullscreen-exit"
+                size={18}
+                color="#0f172a"
+              />
+              <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                Exit Fullscreen
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {isWeb ? (
             <iframe
-              key={`user-map-${activeFilter}-${mapMode}-${boxes.length}`}
+              ref={iframeRef}
+              key={`user-map-${activeFilter}-${boxes.length}`}
               title="Technician Distribution Box Map"
               srcDoc={generateMapHtml()}
               style={{
@@ -669,7 +799,8 @@ export default function UserMapScreen() {
             />
           ) : (
             <WebView
-              key={`native-user-map-${activeFilter}-${mapMode}-${boxes.length}`}
+              ref={webViewRef}
+              key={`native-user-map-${activeFilter}-${boxes.length}`}
               originWhitelist={["*"]}
               source={{ html: generateMapHtml() }}
               onMessage={handleNativeMessage}
@@ -681,7 +812,12 @@ export default function UserMapScreen() {
 
           {/* BOTTOM SELECTED PIN SLIDE-UP PREVIEW CARD */}
           {selectedPin && (
-            <View className="absolute bottom-3 left-3 right-3 bg-white rounded-3xl p-4 shadow-2xl border border-slate-200 z-30">
+            <View
+              style={{
+                bottom: isFullscreen ? Math.max(insets.bottom, 12) + 6 : 12,
+              }}
+              className="absolute left-3 right-3 bg-white rounded-3xl p-4 shadow-2xl border border-slate-200 z-30"
+            >
               <View className="flex-row items-center justify-between pb-2 border-b border-slate-100 mb-2.5">
                 <View className="flex-row items-center">
                   <Text className="text-base font-mono font-bold text-[#0f172a]">
@@ -926,8 +1062,8 @@ export default function UserMapScreen() {
           </View>
         </Modal>
 
-        {/* BOTTOM USER NAVIGATION */}
-        <UserBottomNavigation activeRoute="/user/map" />
+        {/* BOTTOM USER NAVIGATION (Hidden in fullscreen mode) */}
+        {!isFullscreen && <UserBottomNavigation activeRoute="/user/map" />}
       </View>
     </SafeAreaView>
   );

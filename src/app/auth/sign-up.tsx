@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -38,6 +39,25 @@ export default function SignUpScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successInfo, setSuccessInfo] = useState<{
+    firstName: string;
+    target: string;
+    type: "email" | "sms";
+  }>({ firstName: "", target: "", type: "email" });
+
+  const handleProceedToOtp = () => {
+    setShowSuccessModal(false);
+    router.push("/auth/otp");
+  };
+
+  const handlePhoneChange = (text: string) => {
+    // Keep only numeric characters up to 11 digits
+    const digitsOnly = text.replace(/\D/g, "");
+    if (digitsOnly.length <= 11) {
+      setPhone(digitsOnly);
+    }
+  };
 
   const isWeb = Platform.OS === "web";
 
@@ -104,13 +124,17 @@ export default function SignUpScreen() {
       return;
     }
 
-    // 4. Password validation
+    // 4. Password validation (8 to 12 characters)
     if (!password) {
       showAlert("Missing Password", "Please create a password for your account.");
       return;
     }
-    if (password.length < 6) {
-      showAlert("Weak Password", "Password must be at least 6 characters long.");
+    if (password.length < 8) {
+      showAlert("Password Too Short", "Password must be at least 8 characters long.");
+      return;
+    }
+    if (password.length > 12) {
+      showAlert("Password Too Long", "Password cannot exceed 12 characters.");
       return;
     }
 
@@ -123,13 +147,18 @@ export default function SignUpScreen() {
     try {
       setIsLoading(true);
 
+      // Pre-check availability for both email and phone to prevent duplicate registrations
+      const checkRes = await authService.checkAvailability(cleanEmail, cleanPhone);
+      if (!checkRes.success) {
+        showAlert(
+          checkRes.field === "phone" ? "Duplicate Phone Number" : "Account Exists",
+          checkRes.message || "An account with this email or phone number already exists."
+        );
+        return;
+      }
+
       if (USE_SMS_OTP) {
         // --- SMS OTP Flow (Preserved for future use) ---
-        const checkRes = await authService.checkAvailability(cleanEmail);
-        if (!checkRes.success) {
-          showAlert("Registration Error", checkRes.message || "An account with this email already exists.");
-          return;
-        }
 
         const formattedPhone = formatToE164(cleanPhone);
         const appVerifier = Platform.OS === "web" ? undefined : {
@@ -158,23 +187,12 @@ export default function SignUpScreen() {
           confirmationResult
         );
 
-        if (isWeb) {
-          window.alert(`Verification Code Sent! A 6-digit SMS code has been sent to ${formattedPhone}.`);
-          router.push("/auth/otp");
-        } else {
-          Alert.alert(
-            "Verification Code Sent",
-            `A 6-digit SMS verification code has been sent to ${formattedPhone}.`,
-            [
-              {
-                text: "Enter OTP",
-                onPress: () => {
-                  router.push("/auth/otp");
-                },
-              },
-            ]
-          );
-        }
+        setSuccessInfo({
+          firstName: cleanFirstName,
+          target: formattedPhone,
+          type: "sms",
+        });
+        setShowSuccessModal(true);
       } else {
         // --- Email OTP Flow (Active) ---
         const res = await authService.register({
@@ -192,23 +210,12 @@ export default function SignUpScreen() {
 
         authState.setAuthTarget(cleanEmail, "verification", cleanPhone, "email");
 
-        if (isWeb) {
-          window.alert(`Account Created! A 6-digit verification code has been sent to ${cleanEmail}.`);
-          router.push("/auth/otp");
-        } else {
-          Alert.alert(
-            "Account Created",
-            `Welcome ${cleanFirstName}! A 6-digit verification code has been sent to your email (${cleanEmail}).`,
-            [
-              {
-                text: "Enter OTP",
-                onPress: () => {
-                  router.push("/auth/otp");
-                },
-              },
-            ]
-          );
-        }
+        setSuccessInfo({
+          firstName: cleanFirstName,
+          target: cleanEmail,
+          type: "email",
+        });
+        setShowSuccessModal(true);
       }
     } catch (err: any) {
       console.error("Firebase Phone Auth error:", err);
@@ -232,7 +239,7 @@ export default function SignUpScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#f0f3f6]">
-      <StatusBar style="dark" />
+      <StatusBar style={showSuccessModal ? "light" : "dark"} />
       <FirebaseRecaptchaModal ref={recaptchaRef} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -339,17 +346,39 @@ export default function SignUpScreen() {
                 <Text className="text-[#1e293b] text-sm font-poppins-semibold mb-2">
                   Phone Number
                 </Text>
-                <View className="flex-row items-center bg-white rounded-2xl px-4 py-2.5 border border-slate-100 shadow-sm shadow-slate-200/50">
-                  <Ionicons name="call-outline" size={20} color="#94a3b8" />
+                <View
+                  className={`flex-row items-center bg-white rounded-2xl px-4 py-2.5 border shadow-sm shadow-slate-200/50 ${
+                    phone.length === 11 && phone.startsWith("09")
+                      ? "border-[#4d6029]/60"
+                      : "border-slate-100"
+                  }`}
+                >
+                  <View className="flex-row items-center pr-2.5 mr-2 border-r border-slate-200">
+                    <Ionicons name="call-outline" size={18} color="#4d6029" />
+                    <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                      PH
+                    </Text>
+                  </View>
                   <TextInput
-                    placeholder="Enter your phone number"
+                    placeholder="0917 123 4567"
                     placeholderTextColor="#94a3b8"
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={handlePhoneChange}
                     keyboardType="phone-pad"
-                    className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
+                    maxLength={11}
+                    className="flex-1 text-[#0f172a] text-sm font-poppins"
                   />
+                  {phone.length === 11 && phone.startsWith("09") ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#4d6029"
+                    />
+                  ) : null}
                 </View>
+                <Text className="text-[10px] font-poppins text-[#94a3b8] mt-1 ml-1">
+                  Unique mobile number required (e.g. 09171234567)
+                </Text>
               </View>
 
               {/* Password Field */}
@@ -364,10 +393,11 @@ export default function SignUpScreen() {
                     color="#94a3b8"
                   />
                   <TextInput
-                    placeholder="Create a password"
+                    placeholder="Create a password (8-12 chars)"
                     placeholderTextColor="#94a3b8"
                     value={password}
                     onChangeText={setPassword}
+                    maxLength={12}
                     secureTextEntry={!showPassword}
                     className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
                   />
@@ -382,6 +412,9 @@ export default function SignUpScreen() {
                     />
                   </TouchableOpacity>
                 </View>
+                <Text className="text-[10px] font-poppins text-[#94a3b8] mt-1 ml-1">
+                  Must be 8 to 12 characters
+                </Text>
               </View>
 
               {/* Confirm Password Field */}
@@ -400,6 +433,7 @@ export default function SignUpScreen() {
                     placeholderTextColor="#94a3b8"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
+                    maxLength={12}
                     secureTextEntry={!showConfirmPassword}
                     className="flex-1 text-[#0f172a] ml-3 text-sm font-poppins"
                   />
@@ -459,6 +493,106 @@ export default function SignUpScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Customize Account Created / Verification Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View
+          className="flex-1 justify-center items-center px-6"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.75)" }}
+        >
+          <View className="w-full max-w-sm bg-white rounded-3xl p-6 items-center shadow-2xl border border-slate-100">
+            {/* Top Close Button */}
+            <View className="w-full items-end -mb-2">
+              <TouchableOpacity
+                onPress={() => setShowSuccessModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center active:opacity-70"
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={18} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Success Icon */}
+            <View className="w-16 h-16 rounded-3xl bg-[#4d6029]/10 items-center justify-center mb-4">
+              <MaterialCommunityIcons
+                name="account-check-outline"
+                size={34}
+                color="#4d6029"
+              />
+            </View>
+
+            {/* Modal Title */}
+            <Text className="text-xl font-poppins-bold text-[#0f172a] text-center mb-1.5">
+              Account Created
+            </Text>
+
+            {/* Subtitle */}
+            <Text className="text-xs font-poppins text-[#64748b] text-center mb-3 leading-relaxed px-2">
+              Welcome {successInfo.firstName}! A 6-digit verification code has been sent to your{" "}
+              {successInfo.type === "sms" ? "phone" : "email"}:
+            </Text>
+
+            {/* Highlight Box */}
+            <View className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-3.5 flex-row items-center justify-center">
+              <Ionicons
+                name={successInfo.type === "sms" ? "phone-portrait-outline" : "mail"}
+                size={16}
+                color="#4d6029"
+              />
+              <Text
+                className="text-xs font-poppins-bold text-[#0f172a] ml-2 shrink"
+                numberOfLines={1}
+              >
+                {successInfo.target}
+              </Text>
+            </View>
+
+            {/* Informational Hint */}
+            <View className="w-full bg-[#FCF0DA] border border-[#edd5a6] rounded-2xl p-3 mb-5 flex-row items-center">
+              <Ionicons
+                name="information-circle"
+                size={16}
+                color="#78350f"
+              />
+              <Text className="text-[11px] font-poppins text-[#78350f] ml-2 flex-1 leading-4">
+                {successInfo.type === "sms"
+                  ? "Please check your SMS messages. The code expires in 10 minutes."
+                  : "Please check your inbox and spam folder. The code expires in 10 minutes."}
+              </Text>
+            </View>
+
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              onPress={handleProceedToOtp}
+              className="w-full bg-[#4d6029] active:opacity-90 py-3.5 rounded-2xl items-center justify-center flex-row shadow-sm shadow-[#4d6029]/30 mb-2"
+              activeOpacity={0.85}
+            >
+              <Ionicons name="key-outline" size={18} color="#ffffff" />
+              <Text className="text-white text-sm font-poppins-bold ml-2">
+                Enter OTP
+              </Text>
+            </TouchableOpacity>
+
+            {/* Secondary Action / Close */}
+            <TouchableOpacity
+              onPress={() => setShowSuccessModal(false)}
+              className="py-2 items-center justify-center"
+              activeOpacity={0.7}
+            >
+              <Text className="text-xs font-poppins-semibold text-[#64748b]">
+                Review Details
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

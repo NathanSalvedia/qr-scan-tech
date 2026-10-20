@@ -34,3 +34,36 @@ export function playScanConfirmationBeep() {
     console.debug('Scan beep error:', e);
   }
 }
+
+/**
+ * Pleasant subtle chime for Admin Toast Notifications:
+ * Two-tone soft chime (E5 -> A5)
+ */
+export function playNotificationChime() {
+  try {
+    if (typeof window !== 'undefined') {
+      const AudioContextClass =
+        window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08); // A5
+
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      }
+    }
+  } catch (e) {
+    console.debug('Notification chime error:', e);
+  }
+}
