@@ -44,7 +44,6 @@ export default function UserScannerScreen() {
   // Focus & Alignment state before opening box-details
   const [focusState, setFocusState] = useState<'idle' | 'off_center' | 'focusing' | 'locked'>('idle');
   const [focusProgress, setFocusProgress] = useState(0);
-  const [detectedQrBounds, setDetectedQrBounds] = useState<RectBounds | null>(null);
 
   // Layout refs for accurate reticle frame alignment check
   const cameraContainerRef = useRef<View>(null);
@@ -89,7 +88,6 @@ export default function UserScannerScreen() {
     isLockingRef.current = false;
     setFocusState('idle');
     setFocusProgress(0);
-    setDetectedQrBounds(null);
     Animated.spring(reticleScaleAnim, {
       toValue: 1,
       useNativeDriver: true,
@@ -452,44 +450,34 @@ export default function UserScannerScreen() {
    */
   const isQrAlignedInReticle = (qr: RectBounds): boolean => {
     const reticle = reticleBoundsRef.current;
+    const container = containerWindowRef.current;
     if (reticle.width <= 0 || reticle.height <= 0) return true;
+
+    // On some Android devices, native camera bounds are reported in sensor pixel dimensions
+    // rather than view dp dimensions. If bounds exceed the view container, skip coordinate rejection.
+    if (
+      container.width > 0 &&
+      container.height > 0 &&
+      (qr.x + qr.width > container.width * 1.1 || qr.y + qr.height > container.height * 1.1)
+    ) {
+      return true;
+    }
 
     const qrCenterX = qr.x + qr.width / 2;
     const qrCenterY = qr.y + qr.height / 2;
 
-    // 1. Center of QR must be inside the reticle frame (with a small inner margin)
-    const innerMargin = 12;
-    const isCenterInside =
-      qrCenterX >= reticle.x + innerMargin &&
-      qrCenterX <= reticle.x + reticle.width - innerMargin &&
-      qrCenterY >= reticle.y + innerMargin &&
-      qrCenterY <= reticle.y + reticle.height - innerMargin;
-
-    if (!isCenterInside) {
-      return false;
-    }
-
-    // 2. At least 60% of the QR code area (or reticle area if very close) must overlap the reticle
-    const tolerance = 18;
-    const overlapLeft = Math.max(qr.x, reticle.x - tolerance);
-    const overlapTop = Math.max(qr.y, reticle.y - tolerance);
-    const overlapRight = Math.min(qr.x + qr.width, reticle.x + reticle.width + tolerance);
-    const overlapBottom = Math.min(qr.y + qr.height, reticle.y + reticle.height + tolerance);
-
-    const overlapW = Math.max(0, overlapRight - overlapLeft);
-    const overlapH = Math.max(0, overlapBottom - overlapTop);
-    const overlapArea = overlapW * overlapH;
-
-    const qrArea = Math.max(1, qr.width * qr.height);
-    const reticleArea = Math.max(1, reticle.width * reticle.height);
-    const referenceArea = Math.min(qrArea, reticleArea);
-
-    return overlapArea / referenceArea >= 0.6;
+    // Center of QR must be inside the reticle frame
+    return (
+      qrCenterX >= reticle.x &&
+      qrCenterX <= reticle.x + reticle.width &&
+      qrCenterY >= reticle.y &&
+      qrCenterY <= reticle.y + reticle.height
+    );
   };
 
   /**
    * Step-by-step QR Focus & Alignment Handler:
-   * 1. Requires QR code to be aligned inside the viewfinder reticle frame
+   * 1. Requires QR code to be aligned inside the single viewfinder reticle frame
    * 2. Focuses & locks onto the QR code steadily before opening box-details
    */
   const handleBarcodeScanned = (result: BarcodeScanningResult) => {
@@ -509,20 +497,13 @@ export default function UserScannerScreen() {
     }, FOCUS_LOST_TIMEOUT_MS);
 
     const qrBounds = extractQrBounds(result);
-    if (qrBounds) {
-      setDetectedQrBounds(qrBounds);
-
-      // Check if QR code is aligned inside the center reticle frame
-      if (!isQrAlignedInReticle(qrBounds)) {
-        focusStartTimeRef.current = null;
-        alignedFrameCountRef.current = 0;
-        focusedDataRef.current = null;
-        setFocusState('off_center');
-        setFocusProgress(0);
-        return;
-      }
-    } else {
-      setDetectedQrBounds(null);
+    if (qrBounds && !isQrAlignedInReticle(qrBounds)) {
+      focusStartTimeRef.current = null;
+      alignedFrameCountRef.current = 0;
+      focusedDataRef.current = null;
+      setFocusState('off_center');
+      setFocusProgress(0);
+      return;
     }
 
     const now = Date.now();
@@ -578,22 +559,9 @@ export default function UserScannerScreen() {
   };
 
   const cornerBorderColor =
-    focusState === 'locked'
-      ? 'border-emerald-400'
-      : focusState === 'focusing'
-      ? 'border-lime-300'
-      : focusState === 'off_center'
+    focusState === 'off_center'
       ? 'border-amber-400'
-      : 'border-[#84cc16]';
-
-  const frameBorderColor =
-    focusState === 'locked'
-      ? 'border-emerald-400/90'
-      : focusState === 'focusing'
-      ? 'border-lime-400/90'
-      : focusState === 'off_center'
-      ? 'border-amber-400/80'
-      : 'border-[#4d6029]/80';
+      : 'border-[#6A795D]';
 
   return (
     <View className="flex-1 bg-black">
@@ -602,7 +570,7 @@ export default function UserScannerScreen() {
       {/* Permission Loading / Denied State */}
       {!permission ? (
         <View className="flex-1 items-center justify-center bg-black">
-          <ActivityIndicator size="large" color="#84cc16" />
+          <ActivityIndicator size="large" color="#6A795D" />
           <Text className="text-xs font-poppins-medium text-white/70 mt-3">
             Checking camera permissions...
           </Text>
@@ -668,39 +636,7 @@ export default function UserScannerScreen() {
             onBarcodeScanned={scanned || isProcessing ? undefined : handleBarcodeScanned}
           />
 
-          {/* Dynamic QR Focus Target Overlay on Detected QR Code */}
-          {detectedQrBounds && !scanned && (
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                left: detectedQrBounds.x - 6,
-                top: detectedQrBounds.y - 6,
-                width: Math.max(44, detectedQrBounds.width + 12),
-                height: Math.max(44, detectedQrBounds.height + 12),
-                zIndex: 15,
-              }}
-              className={`rounded-2xl border-2 items-center justify-center ${
-                focusState === 'locked'
-                  ? 'border-emerald-400 bg-emerald-400/20'
-                  : focusState === 'focusing'
-                  ? 'border-lime-300 bg-lime-300/15'
-                  : 'border-amber-400/80 bg-amber-400/10'
-              }`}
-            >
-              <View
-                className={`w-2.5 h-2.5 rounded-full ${
-                  focusState === 'locked'
-                    ? 'bg-emerald-400'
-                    : focusState === 'focusing'
-                    ? 'bg-lime-300'
-                    : 'bg-amber-400'
-                }`}
-              />
-            </View>
-          )}
-
-          {/* Transparent Overlay with Overlaid Close Button & Reticle */}
+          {/* Transparent Overlay with Overlaid Close Button & Single Reticle */}
           <SafeAreaView className="flex-1 justify-between z-20">
             {/* 1. TOP OVERLAY: Floating Close Button & Live Status */}
             <View className="px-5 pt-2 flex-row items-center justify-between">
@@ -716,13 +652,9 @@ export default function UserScannerScreen() {
               <View className="bg-black/50 border border-white/20 px-3 py-1.5 rounded-full flex-row items-center">
                 <View
                   className={`w-2 h-2 rounded-full mr-2 ${
-                    focusState === 'locked'
-                      ? 'bg-emerald-400'
-                      : focusState === 'focusing'
-                      ? 'bg-lime-400'
-                      : focusState === 'off_center'
+                    focusState === 'off_center'
                       ? 'bg-amber-400'
-                      : 'bg-emerald-400'
+                      : 'bg-[#6A795D]'
                   }`}
                 />
                 <Text className="text-[10px] font-poppins-semibold text-white/90">
@@ -770,51 +702,20 @@ export default function UserScannerScreen() {
 
             {/* 2. CENTER RETICLE & CAMERA CONTROLS */}
             <View className="items-center justify-center">
-              {/* Viewfinder Reticle Frame */}
+              {/* Single Viewfinder Reticle Rectangle */}
               <Animated.View
                 ref={reticleViewRef}
                 onLayout={updateMeasuredBounds}
                 style={{ transform: [{ scale: reticleScaleAnim }] }}
-                className={`w-72 h-72 border-2 ${frameBorderColor} rounded-3xl relative items-center justify-center shadow-2xl bg-transparent`}
+                className={`w-72 h-72 border-4 ${cornerBorderColor} rounded-3xl relative items-center justify-center shadow-2xl bg-transparent`}
               >
-                {/* 4 Corner Crosshairs */}
-                <View
-                  className={`absolute top-2 left-2 w-8 h-8 border-t-4 border-l-4 ${cornerBorderColor} rounded-tl-xl`}
-                />
-                <View
-                  className={`absolute top-2 right-2 w-8 h-8 border-t-4 border-r-4 ${cornerBorderColor} rounded-tr-xl`}
-                />
-                <View
-                  className={`absolute bottom-2 left-2 w-8 h-8 border-b-4 border-l-4 ${cornerBorderColor} rounded-bl-xl`}
-                />
-                <View
-                  className={`absolute bottom-2 right-2 w-8 h-8 border-b-4 border-r-4 ${cornerBorderColor} rounded-br-xl`}
-                />
-
-                {/* Center Focus Reticle Ring when Focusing / Locked */}
-                {(focusState === 'focusing' || focusState === 'locked') && (
-                  <View
-                    className={`w-20 h-20 rounded-2xl border-2 items-center justify-center ${
-                      focusState === 'locked'
-                        ? 'border-emerald-400 bg-emerald-500/20'
-                        : 'border-lime-300/90 bg-lime-400/10'
-                    }`}
-                  >
-                    <Ionicons
-                      name={focusState === 'locked' ? 'checkmark-circle' : 'scan-outline'}
-                      size={30}
-                      color={focusState === 'locked' ? '#34d399' : '#bef264'}
-                    />
-                  </View>
-                )}
-
                 {/* Laser Sweep Line (shown when idle or off_center) */}
                 {focusState !== 'focusing' && focusState !== 'locked' && (
                   <View
                     className={`w-full h-0.5 absolute ${
                       focusState === 'off_center'
                         ? 'bg-amber-400 shadow-lg shadow-amber-400'
-                        : 'bg-[#84cc16] shadow-lg shadow-[#84cc16]'
+                        : 'bg-[#6A795D] shadow-lg shadow-[#6A795D]'
                     }`}
                   />
                 )}
@@ -824,9 +725,7 @@ export default function UserScannerScreen() {
                   <View className="w-44 h-1.5 bg-black/50 rounded-full overflow-hidden absolute bottom-14 border border-white/20">
                     <View
                       style={{ width: `${focusProgress}%` }}
-                      className={`h-full rounded-full ${
-                        focusState === 'locked' ? 'bg-emerald-400' : 'bg-lime-400'
-                      }`}
+                      className="h-full rounded-full bg-[#6A795D]"
                     />
                   </View>
                 )}
@@ -845,7 +744,7 @@ export default function UserScannerScreen() {
                       <Ionicons
                         name="checkmark-circle"
                         size={14}
-                        color="#10b981"
+                        color="#6A795D"
                         style={{ marginRight: 5 }}
                       />
                       <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
@@ -854,7 +753,7 @@ export default function UserScannerScreen() {
                     </>
                   ) : focusState === 'focusing' ? (
                     <>
-                      <View className="w-2 h-2 rounded-full bg-lime-500 mr-2" />
+                      <View className="w-2 h-2 rounded-full bg-[#6A795D] mr-2" />
                       <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
                         Focusing QR Code... Hold Steady
                       </Text>
@@ -868,7 +767,7 @@ export default function UserScannerScreen() {
                     </>
                   ) : (
                     <>
-                      <View className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
+                      <View className="w-2 h-2 rounded-full bg-[#6A795D] mr-2" />
                       <Text className="text-[11px] font-poppins-semibold text-[#0f172a]">
                         Align QR inside frame
                       </Text>
@@ -943,7 +842,7 @@ export default function UserScannerScreen() {
       >
         <View className="flex-1 bg-black/75 items-center justify-center p-5">
           <View className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200">
-            <View className="w-12 h-12 rounded-2xl bg-amber-100 items-center justify-center mb-3">
+            <View className="w-12 h-12 rounded-2xl bg-amber-100 items-center justify-center self-center mb-3">
               <MaterialCommunityIcons name="qrcode-scan" size={26} color="#d97706" />
             </View>
 
@@ -987,7 +886,7 @@ export default function UserScannerScreen() {
                 <>
                   <Ionicons name="shield-checkmark-outline" size={16} color="#ffffff" />
                   <Text className="text-xs font-poppins-bold text-white ml-2">
-                    Affix Tag & Activate Box
+                    Tag & Activate Box
                   </Text>
                 </>
               )}

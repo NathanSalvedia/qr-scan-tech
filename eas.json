@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://reproduced-trunk-trips-librarian.trycloudflare.com/api"
+        "EXPO_PUBLIC_API_URL": "https://estimate-months-firewall-jake.trycloudflare.com/api"
       }
     },
     "production": {}

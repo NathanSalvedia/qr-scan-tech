@@ -1,4 +1,4 @@
-import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
@@ -205,14 +205,6 @@ export default function OtpVerificationScreen() {
     verifyCode(code);
   };
 
-  const handleFillDemoCode = () => {
-    setCode("123456");
-    setErrorMessage(null);
-    setTimeout(() => {
-      verifyCode("123456");
-    }, 100);
-  };
-
   const handleGoBack = () => {
     if (mode === "verification") {
       router.replace("/auth/sign-up");
@@ -321,15 +313,6 @@ export default function OtpVerificationScreen() {
             <View style={styles.otpSection}>
               <View style={styles.otpLabelRow}>
                 <Text style={styles.otpLabel}>Verification Code</Text>
-                {/* Quick test code auto-filler button */}
-                <TouchableOpacity
-                  onPress={handleFillDemoCode}
-                  activeOpacity={0.7}
-                  style={styles.autoFillBtn}
-                >
-                  <Feather name="zap" size={11} color="#64748b" />
-                  <Text style={styles.autoFillText}>Auto-fill: 123456</Text>
-                </TouchableOpacity>
               </View>
 
               {/* Seamless Tap Area for OTP Boxes */}
@@ -618,20 +601,6 @@ const styles = StyleSheet.create({
     color: "#334155",
     fontSize: 12,
     fontWeight: "600",
-  },
-  autoFillBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  autoFillText: {
-    fontSize: 10,
-    fontWeight: "500",
-    color: "#64748b",
-    marginLeft: 4,
   },
   otpBoxesRow: {
     flexDirection: "row",

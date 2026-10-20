@@ -63,23 +63,27 @@ export const getCustomApiUrl = (): string | null => {
  * - iOS Simulator / Web (localhost)
  */
 export const getApiBaseUrl = (): string => {
-  // 0. For Web in browser: use localhost for local development or match hostname
+  // 0. For Web in browser on localhost: use local backend directly
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:5000/api';
     }
-    return `http://${hostname}:5000/api`;
   }
 
-  // 1. Explicit EXPO_PUBLIC_API_URL takes highest priority (if not localhost)
+  // 1. Explicit EXPO_PUBLIC_API_URL takes highest priority (used by Vercel Web & Mobile)
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
     return normalizeApiUrl(envUrl);
   }
 
+  // 1b. For Web on LAN IP without EXPO_PUBLIC_API_URL
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:5000/api`;
+  }
+
   // Default fallback URL for standalone mobile builds (HTTPS Cloudflare tunnel)
-  const DEFAULT_REMOTE_URL = 'https://sit-launches-photographer-senate.trycloudflare.com/api';
+  const DEFAULT_REMOTE_URL = 'https://estimate-months-firewall-jake.trycloudflare.com/api';
 
   // 2. Automatically resolve host machine IP from Expo bundler
   const hostUri = Constants.expoConfig?.hostUri;
