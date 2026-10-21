@@ -38,13 +38,25 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Start Express Server explicitly on 0.0.0.0 (all IPv4 interfaces)
-app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`🚀 Backend server is running on http://localhost:${PORT}`);
-  console.log(`🌐 Network URL: http://192.168.111.16:${PORT}`);
-  console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
-  console.log(`📊 Dashboard API: http://localhost:${PORT}/api/dashboard`);
-  console.log(`📦 Boxes API: http://localhost:${PORT}/api/boxes`);
-  console.log(`👷 Technicians API: http://localhost:${PORT}/api/technicians`);
-  console.log(`📋 Activity Logs API: http://localhost:${PORT}/api/logs`);
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'qr-scan-tech-backend',
+    timestamp: new Date().toISOString(),
+  });
 });
+
+// Start Express Server explicitly when running directly (standalone / local dev)
+if (!process.env.VERCEL) {
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Backend server is running on http://localhost:${PORT}`);
+    console.log(`🌐 Network URL: http://192.168.111.16:${PORT}`);
+    console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
+    console.log(`📊 Dashboard API: http://localhost:${PORT}/api/dashboard`);
+    console.log(`📦 Boxes API: http://localhost:${PORT}/api/boxes`);
+    console.log(`👷 Technicians API: http://localhost:${PORT}/api/technicians`);
+    console.log(`📋 Activity Logs API: http://localhost:${PORT}/api/logs`);
+  });
+}
+
+export default app;

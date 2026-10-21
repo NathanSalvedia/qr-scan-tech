@@ -19,10 +19,16 @@ export const loadCustomApiUrl = async (): Promise<string | null> => {
   try {
     const saved = await AsyncStorage.getItem(STORAGE_KEY_CUSTOM_API_URL);
     if (saved && saved.trim()) {
-      const normalized = normalizeApiUrl(saved);
-      memoryCustomApiUrl = normalized;
-      if (normalized !== saved) {
-        await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_API_URL, normalized);
+      // Automatically purge legacy temporary tunnels (Cloudflare / Localtunnel)
+      if (saved.includes('trycloudflare.com') || saved.includes('loca.lt')) {
+        await AsyncStorage.removeItem(STORAGE_KEY_CUSTOM_API_URL);
+        memoryCustomApiUrl = null;
+      } else {
+        const normalized = normalizeApiUrl(saved);
+        memoryCustomApiUrl = normalized;
+        if (normalized !== saved) {
+          await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_API_URL, normalized);
+        }
       }
     }
   } catch {
@@ -73,17 +79,29 @@ export const getApiBaseUrl = (): string => {
 
   // 1. Explicit EXPO_PUBLIC_API_URL takes highest priority (used by Vercel Web & Mobile)
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+  if (
+    envUrl &&
+    !envUrl.includes('localhost') &&
+    !envUrl.includes('127.0.0.1') &&
+    !envUrl.includes('trycloudflare.com') &&
+    !envUrl.includes('loca.lt')
+  ) {
     return normalizeApiUrl(envUrl);
   }
 
-  // 1b. For Web on LAN IP without EXPO_PUBLIC_API_URL
+  // 1b. For Web in browser (LAN development or Vercel production)
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return `http://${window.location.hostname}:5000/api`;
+    const hostname = window.location.hostname;
+    const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    // If running on a remote production domain (such as Vercel) or HTTPS
+    if (window.location.protocol === 'https:' || (!isLanIp && hostname !== 'localhost')) {
+      return `${window.location.origin}/api`;
+    }
+    return `http://${hostname}:5000/api`;
   }
 
-  // Default fallback URL for standalone mobile builds (HTTPS Cloudflare tunnel)
-  const DEFAULT_REMOTE_URL = 'https://estimate-months-firewall-jake.trycloudflare.com/api';
+  // Default fallback URL for standalone mobile builds (Vercel Production API)
+  const DEFAULT_REMOTE_URL = 'https://qr-scan-tech.vercel.app/api';
 
   // 2. Automatically resolve host machine IP from Expo bundler
   const hostUri = Constants.expoConfig?.hostUri;
@@ -115,7 +133,14 @@ export const getApiBaseUrl = (): string => {
 export const API_BASE_URL = getApiBaseUrl();
 
 export const getActiveApiBaseUrl = (): string => {
-  return memoryCustomApiUrl ? normalizeApiUrl(memoryCustomApiUrl) : API_BASE_URL;
+  if (
+    memoryCustomApiUrl &&
+    !memoryCustomApiUrl.includes('trycloudflare.com') &&
+    !memoryCustomApiUrl.includes('loca.lt')
+  ) {
+    return normalizeApiUrl(memoryCustomApiUrl);
+  }
+  return API_BASE_URL;
 };
 
 /**
@@ -128,7 +153,9 @@ export const apiFetch = async (url: string, options: RequestInit = {}): Promise<
 
   const activeBase = getActiveApiBaseUrl();
   let targetUrl = url;
-  if (activeBase && activeBase !== API_BASE_URL && url.startsWith(API_BASE_URL)) {
+  if (targetUrl.includes('trycloudflare.com') || targetUrl.includes('loca.lt')) {
+    targetUrl = targetUrl.replace(/https?:\/\/[^/]+(\.trycloudflare\.com|\.loca\.lt)\/api/, activeBase);
+  } else if (activeBase && activeBase !== API_BASE_URL && url.startsWith(API_BASE_URL)) {
     targetUrl = url.replace(API_BASE_URL, activeBase);
   }
 

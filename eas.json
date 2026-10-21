@@ -13,10 +13,14 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://estimate-months-firewall-jake.trycloudflare.com/api"
+        "EXPO_PUBLIC_API_URL": "https://qr-scan-tech.vercel.app/api"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://qr-scan-tech.vercel.app/api"
+      }
+    }
   },
   "submit": {
     "production": {}

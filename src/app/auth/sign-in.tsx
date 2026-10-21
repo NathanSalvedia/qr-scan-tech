@@ -374,14 +374,14 @@ export default function SignInScreen() {
             </View>
 
             <Text className="text-xs text-[#64748b] font-poppins mb-3.5 leading-relaxed">
-              Configure backend API URL without rebuilding the app. Ideal for Cloudflare quick tunnels or local Wi-Fi.
+              Configure backend API URL without rebuilding the app. Ideal for Vercel production, remote servers, or local Wi-Fi.
             </Text>
 
             <Text className="text-[#1e293b] text-xs font-poppins-semibold mb-1.5">
               Backend API Base URL:
             </Text>
             <TextInput
-              placeholder="https://...trycloudflare.com/api"
+              placeholder="https://qr-scan-tech.vercel.app/api"
               placeholderTextColor="#94a3b8"
               value={serverUrlInput}
               onChangeText={(text) => {
