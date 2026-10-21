@@ -74934,10 +74934,13 @@ var subscribers = pgTable("subscribers", {
 var import_dotenv = __toESM(require_main());
 var import_path = __toESM(require("path"));
 import_dotenv.default.config({ path: import_path.default.resolve(process.cwd(), ".env") });
+var connectionString = process.env.DATABASE_URL;
+var isLocal = !connectionString || connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
 var pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 3e4
+  connectionString,
+  max: process.env.VERCEL ? 3 : 10,
+  idleTimeoutMillis: 3e4,
+  ssl: isLocal ? false : { rejectUnauthorized: false }
 });
 var db = drizzle(pool, { schema: schema_exports });
 
@@ -88986,7 +88989,11 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      detail: err.cause?.message || err.detail
+    });
   }
 });
 router.post("/forgot-password", async (req, res) => {
@@ -89253,7 +89260,11 @@ router.post("/check-availability", async (req, res) => {
     }
     return res.json({ success: true, message: "Details are available." });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      detail: err.cause?.message || err.detail
+    });
   }
 });
 router.post("/register-with-phone", async (req, res) => {
@@ -90825,19 +90836,51 @@ app.use("/api/technicians", technicians_default);
 app.use("/api/logs", logs_default);
 app.use("/api/settings", settings_default);
 app.use("/api/subscribers", subscribers_default);
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "qr-scan-tech-backend",
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
+app.get("/health", async (req, res) => {
+  try {
+    const dbTest = await db.execute(sql`SELECT current_database(), current_user`);
+    res.json({
+      status: "ok",
+      service: "qr-scan-tech-backend",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      database: "connected",
+      dbInfo: dbTest.rows?.[0]
+    });
+  } catch (err) {
+    res.json({
+      status: "degraded",
+      service: "qr-scan-tech-backend",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      database: "error",
+      dbError: err.message,
+      detail: err.cause?.message || err.detail
+    });
+  }
 });
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "qr-scan-tech-backend",
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
+app.get("/api/health", async (req, res) => {
+  try {
+    const dbTest = await db.execute(sql`SELECT current_database(), current_user`);
+    const tablesTest = await db.execute(
+      sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+    );
+    res.json({
+      status: "ok",
+      service: "qr-scan-tech-backend",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      database: "connected",
+      dbInfo: dbTest.rows?.[0],
+      tables: tablesTest.rows?.map((r2) => r2.table_name)
+    });
+  } catch (err) {
+    res.json({
+      status: "degraded",
+      service: "qr-scan-tech-backend",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      database: "error",
+      dbError: err.message,
+      detail: err.cause?.message || err.detail
+    });
+  }
 });
 if (!process.env.VERCEL) {
   app.listen(Number(PORT), "0.0.0.0", () => {

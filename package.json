@@ -6,6 +6,8 @@
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/ui": "~57.0.21",
     "@expo/vector-icons": "^15.0.2",
+    "@neon/config": "^1.9.3",
+    "@neon/env": "^1.6.4",
     "@react-native-async-storage/async-storage": "2.2.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",

@@ -29,21 +29,56 @@ app.use('/api/logs', logsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/subscribers', subscribersRouter);
 
+import { sql } from 'drizzle-orm';
+import { db } from './db/index.js';
+
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'qr-scan-tech-backend',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const dbTest = await db.execute(sql`SELECT current_database(), current_user`);
+    res.json({
+      status: 'ok',
+      service: 'qr-scan-tech-backend',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      dbInfo: dbTest.rows?.[0],
+    });
+  } catch (err: any) {
+    res.json({
+      status: 'degraded',
+      service: 'qr-scan-tech-backend',
+      timestamp: new Date().toISOString(),
+      database: 'error',
+      dbError: err.message,
+      detail: err.cause?.message || err.detail,
+    });
+  }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'qr-scan-tech-backend',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbTest = await db.execute(sql`SELECT current_database(), current_user`);
+    const tablesTest = await db.execute(
+      sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+    );
+    res.json({
+      status: 'ok',
+      service: 'qr-scan-tech-backend',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      dbInfo: dbTest.rows?.[0],
+      tables: tablesTest.rows?.map((r: any) => r.table_name),
+    });
+  } catch (err: any) {
+    res.json({
+      status: 'degraded',
+      service: 'qr-scan-tech-backend',
+      timestamp: new Date().toISOString(),
+      database: 'error',
+      dbError: err.message,
+      detail: err.cause?.message || err.detail,
+    });
+  }
 });
 
 // Start Express Server explicitly when running directly (standalone / local dev)

@@ -21,8 +21,6 @@ import { boxService, DistributionBox } from '@/services/boxes';
 import { logsService } from '@/services/logs';
 import { settingsService } from '@/services/settings';
 import { playScanConfirmationBeep } from '@/services/sound';
-import { useAdminToast } from '@/context/admin-toast-context';
-import { AdminRightToast } from '@/components/admin-right-toast';
 
 const FOCUS_REQUIRED_MS = 850;
 const FOCUS_LOST_TIMEOUT_MS = 950;
@@ -37,7 +35,6 @@ interface RectBounds {
 }
 
 export default function UserScannerScreen() {
-  const { showToast: showRightToast } = useAdminToast();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
@@ -353,17 +350,7 @@ export default function UserScannerScreen() {
       setIsProcessing(false);
       setTagModalBox(matchedBox);
 
-      // 1. Immediately trigger the Right Toast Notification on the device
-      showRightToast({
-        title: `Physical QR Placard Detected · ${matchedBox.code}`,
-        description: `Distribution box ${matchedBox.code} (${matchedBox.siteName}) was awaiting on-site physical tag affixing.`,
-        category: 'TAG_AFFIXED',
-        timestamp: 'Just now',
-        targetBoxCode: matchedBox.code,
-        actorName: 'Field Technician',
-      });
-
-      // 2. Immediately record the physical tag detection audit to database activity logs
+      // Immediately record the physical tag detection audit to database activity logs (Admin watcher will notify admin)
       logsService
         .recordScan({
           boxId: matchedBox.id,
@@ -386,13 +373,6 @@ export default function UserScannerScreen() {
     }
 
     // Standard flow for ACTIVE or ISSUE boxes: record scan & navigate
-    showRightToast({
-      title: `Box Scanned · ${matchedBox.code}`,
-      description: `Routine inspection scan for ${matchedBox.code} at ${matchedBox.siteName}.`,
-      category: matchedBox.status === 'ISSUE' ? 'ALARM' : 'SCAN',
-      timestamp: 'Just now',
-      targetBoxCode: matchedBox.code,
-    });
     await executeScanAuditAndNavigate(matchedBox, scanType);
   };
 
@@ -453,16 +433,7 @@ export default function UserScannerScreen() {
         prev.map((b) => (b.id === tagModalBox.id ? { ...b, status: 'ACTIVE' } : b))
       );
 
-      // 3. Trigger Right Toast
-      showRightToast({
-        title: `Box Tagged & Activated · ${tagModalBox.code}`,
-        description: `Physical QR placard affixed and ${tagModalBox.code} (${tagModalBox.siteName}) activated on-site.`,
-        category: 'TAG_AFFIXED',
-        timestamp: 'Just now',
-        targetBoxCode: tagModalBox.code,
-      });
-
-      // 4. Record audit log & navigate
+      // 3. Record audit log & navigate
       const updatedBox = { ...tagModalBox, status: 'ACTIVE' as const };
       setTagModalBox(null);
       await executeScanAuditAndNavigate(
@@ -485,14 +456,6 @@ export default function UserScannerScreen() {
   const handleProceedWithoutAffix = async () => {
     if (!tagModalBox) return;
     const currentBox = tagModalBox;
-
-    showRightToast({
-      title: `Placard Inspected (Untagged) · ${currentBox.code}`,
-      description: `Inspection recorded for ${currentBox.code} (${currentBox.siteName}) without tag affixing.`,
-      category: 'SCAN',
-      timestamp: 'Just now',
-      targetBoxCode: currentBox.code,
-    });
 
     setTagModalBox(null);
     await executeScanAuditAndNavigate(
@@ -1043,9 +1006,6 @@ export default function UserScannerScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Floating right toast rendered on top of the modal */}
-        <AdminRightToast />
       </Modal>
     </View>
   );

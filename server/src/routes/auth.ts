@@ -318,7 +318,11 @@ router.post('/login', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Login error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      detail: err.cause?.message || err.detail,
+    });
   }
 });
 
@@ -664,7 +668,11 @@ router.post('/check-availability', async (req, res: Response) => {
 
     return res.json({ success: true, message: 'Details are available.' });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      detail: err.cause?.message || err.detail,
+    });
   }
 });
 

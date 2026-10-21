@@ -62,8 +62,14 @@ export default function SignInScreen() {
         setTestStatus("success");
         setTestMessage("Connected to server successfully!");
       } else {
+        let detailMsg = `Server returned HTTP ${res.status}`;
+        try {
+          const errData = await res.json();
+          if (errData.detail) detailMsg = `Server: ${errData.detail}`;
+          else if (errData.error) detailMsg = `Server: ${errData.error}`;
+        } catch {}
         setTestStatus("error");
-        setTestMessage(`Server returned HTTP ${res.status}`);
+        setTestMessage(detailMsg);
       }
     } catch (err: any) {
       setTestStatus("error");
