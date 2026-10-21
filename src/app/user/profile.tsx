@@ -2,20 +2,19 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { authService } from "@/services/auth";
 import { useAuth } from "@/services/auth-state";
 import { boxService } from "@/services/boxes";
-import { settingsService } from "@/services/settings";
+import { settingsService, BeepSoundStyle } from "@/services/settings";
+import { BEEP_SOUND_OPTIONS } from "@/services/sound";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -62,47 +61,52 @@ export default function UserProfileScreen() {
   const [vibrateOnScan, setVibrateOnScan] = useState(true);
   const [autoFlashlight, setAutoFlashlight] = useState(false);
   const [beepOnScan, setBeepOnScan] = useState(true);
+  const [beepSoundStyle, setBeepSoundStyle] = useState<BeepSoundStyle>("tech-chirp");
+
+  const currentSoundOption = useMemo(() => {
+    return (
+      BEEP_SOUND_OPTIONS.find((s) => s.id === beepSoundStyle) ||
+      BEEP_SOUND_OPTIONS[0]
+    );
+  }, [beepSoundStyle]);
 
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState("Loading...");
   const [syncToast, setSyncToast] = useState<string | null>(null);
 
-  // Password Modal State
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPasswords, setShowPasswords] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-
   // Logout Modal State
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  // Load persisted settings on mount
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      try {
-        const [prefs, duty, syncTs] = await Promise.all([
-          settingsService.getScannerPreferences(),
-          settingsService.getOnDutyStatus(),
-          settingsService.getLastSyncTimestamp(),
-        ]);
-        if (!isMounted) return;
-        setVibrateOnScan(prefs.vibrateOnScan);
-        setAutoFlashlight(prefs.autoFlashlight);
-        setBeepOnScan(prefs.beepOnScan);
-        setIsOnDuty(duty);
-        setLastSyncTime(settingsService.formatLastSyncTime(syncTs));
-      } catch (e) {
-        console.error("Failed to load user settings:", e);
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // Load and refresh persisted settings on mount and screen focus
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      (async () => {
+        try {
+          const [prefs, duty, syncTs] = await Promise.all([
+            settingsService.getScannerPreferences(),
+            settingsService.getOnDutyStatus(),
+            settingsService.getLastSyncTimestamp(),
+          ]);
+          if (!isMounted) return;
+          setVibrateOnScan(prefs.vibrateOnScan);
+          setAutoFlashlight(prefs.autoFlashlight);
+          setBeepOnScan(prefs.beepOnScan);
+          if (prefs.beepSoundStyle) {
+            setBeepSoundStyle(prefs.beepSoundStyle);
+          }
+          setIsOnDuty(duty);
+          setLastSyncTime(settingsService.formatLastSyncTime(syncTs));
+        } catch (e) {
+          console.error("Failed to load user settings:", e);
+        }
+      })();
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
 
   // Handlers for Preferences
   const handleToggleDuty = async () => {
@@ -147,55 +151,6 @@ export default function UserProfileScreen() {
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncToast(null), 3800);
-    }
-  };
-
-  // Dynamic Change Password via backend API
-  const handleSavePassword = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert("Incomplete Form", "Please fill in all password fields.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert(
-        "Password Mismatch",
-        "New password and confirmation do not match.",
-      );
-      return;
-    }
-    if (newPassword.length < 6) {
-      Alert.alert(
-        "Password Too Short",
-        "New password must be at least 6 characters long.",
-      );
-      return;
-    }
-
-    setIsSavingPassword(true);
-    try {
-      const res = await authService.changePassword(
-        currentPassword,
-        newPassword,
-      );
-      if (res.success) {
-        setShowPasswordModal(false);
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-        Alert.alert(
-          "Success",
-          res.message || "Your password has been successfully updated.",
-        );
-      } else {
-        Alert.alert(
-          "Update Failed",
-          res.message || "Current password may be incorrect.",
-        );
-      }
-    } catch (e: any) {
-      Alert.alert("Network Error", e.message || "Failed to update password.");
-    } finally {
-      setIsSavingPassword(false);
     }
   };
 
@@ -357,7 +312,7 @@ export default function UserProfileScreen() {
               </View>
 
               {/* Beep Sound on Scan */}
-              <View className="p-4 flex-row items-center justify-between">
+              <View className="p-4 flex-row items-center justify-between border-b border-slate-100">
                 <View className="flex-row items-center flex-1 pr-3">
                   <View className="w-8 h-8 rounded-xl bg-slate-100 items-center justify-center mr-3">
                     <Ionicons
@@ -382,6 +337,37 @@ export default function UserProfileScreen() {
                   thumbColor="#ffffff"
                 />
               </View>
+
+              {/* Beep Sound Tone Selector Page Navigation */}
+              <TouchableOpacity
+                onPress={() => router.push("/user/scan-sound" as any)}
+                activeOpacity={0.7}
+                className="px-4 py-3 bg-slate-50/70 flex-row items-center justify-between active:bg-slate-100"
+              >
+                <View className="flex-row items-center flex-1 pr-2">
+                  <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-3 border border-[#4d6029]/20">
+                    <Ionicons
+                      name="musical-note"
+                      size={16}
+                      color="#4d6029"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                      Beep Sound Tone
+                    </Text>
+                    <Text className="text-[10px] font-poppins-medium text-[#64748b] mt-0.5">
+                      Current: <Text className="font-poppins-bold text-[#4d6029]">{currentSoundOption.name}</Text>
+                    </Text>
+                  </View>
+                </View>
+                <View className="flex-row items-center">
+                  <Text className="text-[10px] font-poppins-semibold text-[#4d6029] mr-1">
+                    Change
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color="#4d6029" />
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -436,7 +422,7 @@ export default function UserProfileScreen() {
 
               {/* Change Password */}
               <TouchableOpacity
-                onPress={() => setShowPasswordModal(true)}
+                onPress={() => router.push("/user/change-password" as any)}
                 className="p-4 flex-row items-center justify-between border-b border-slate-100 active:bg-slate-50"
                 activeOpacity={0.75}
               >
@@ -492,133 +478,6 @@ export default function UserProfileScreen() {
           </View>
         </ScrollView>
       </View>
-
-      {/* Change Password Modal */}
-      <Modal
-        visible={showPasswordModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!isSavingPassword) setShowPasswordModal(false);
-        }}
-      >
-        <View className="flex-1 bg-black/60 justify-center px-5">
-          <View className="bg-white rounded-3xl p-6 max-w-md w-full self-center shadow-2xl">
-            {/* Modal Header */}
-            <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <View className="flex-row items-center">
-                <View className="w-9 h-9 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
-                  <Ionicons name="key-outline" size={18} color="#4d6029" />
-                </View>
-                <Text className="text-base font-poppins-bold text-[#0f172a]">
-                  Change Password
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => {
-                  if (!isSavingPassword) setShowPasswordModal(false);
-                }}
-                disabled={isSavingPassword}
-                className="w-7 h-7 rounded-full bg-slate-100 items-center justify-center"
-              >
-                <Ionicons name="close" size={16} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Inputs */}
-            <View className="mb-3">
-              <Text className="text-xs font-poppins-semibold text-[#334155] mb-1.5">
-                Current Password
-              </Text>
-              <TextInput
-                secureTextEntry={!showPasswords}
-                placeholder="Enter current password"
-                placeholderTextColor="#94a3b8"
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                editable={!isSavingPassword}
-                className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
-              />
-            </View>
-
-            <View className="mb-3">
-              <Text className="text-xs font-poppins-semibold text-[#334155] mb-1.5">
-                New Password
-              </Text>
-              <TextInput
-                secureTextEntry={!showPasswords}
-                placeholder="Enter new password (min. 6 chars)"
-                placeholderTextColor="#94a3b8"
-                value={newPassword}
-                onChangeText={setNewPassword}
-                editable={!isSavingPassword}
-                className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
-              />
-            </View>
-
-            <View className="mb-4">
-              <Text className="text-xs font-poppins-semibold text-[#334155] mb-1.5">
-                Confirm New Password
-              </Text>
-              <TextInput
-                secureTextEntry={!showPasswords}
-                placeholder="Re-enter new password"
-                placeholderTextColor="#94a3b8"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                editable={!isSavingPassword}
-                className="bg-slate-50 rounded-xl px-3.5 py-2.5 text-xs font-poppins-medium text-[#0f172a] border border-slate-200"
-              />
-            </View>
-
-            {/* Show Password Toggle */}
-            <TouchableOpacity
-              onPress={() => setShowPasswords(!showPasswords)}
-              className="flex-row items-center mb-5"
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={showPasswords ? "checkbox" : "square-outline"}
-                size={18}
-                color={showPasswords ? "#4d6029" : "#94a3b8"}
-              />
-              <Text className="text-xs font-poppins-medium text-[#64748b] ml-2">
-                Show Passwords
-              </Text>
-            </TouchableOpacity>
-
-            {/* Action Buttons */}
-            <View className="flex-row gap-3">
-              <TouchableOpacity
-                onPress={() => setShowPasswordModal(false)}
-                disabled={isSavingPassword}
-                className="flex-1 bg-slate-100 py-3 rounded-xl items-center justify-center"
-                activeOpacity={0.8}
-              >
-                <Text className="text-xs font-poppins-semibold text-[#64748b]">
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={handleSavePassword}
-                disabled={isSavingPassword}
-                className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center shadow-sm"
-                activeOpacity={0.88}
-              >
-                {isSavingPassword ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text className="text-xs font-poppins-bold text-white">
-                    Save Changes
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal

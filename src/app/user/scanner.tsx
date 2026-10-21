@@ -8,6 +8,7 @@ import {
   Modal,
   Animated,
   Easing,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -326,12 +327,18 @@ export default function UserScannerScreen() {
     }
 
     // 4. Box found & verified!
-    showToast(`Verified: ${matchedBox.code} · ${matchedBox.siteName}`, 'success');
+    setToastMessage(null);
 
     // Trigger haptic pulse and/or audio beep based on scanner preferences
     settingsService.getScannerPreferences().then((prefs) => {
       if (prefs.vibrateOnScan) {
+        // 1. Hardware vibration for Android & iOS physical devices
+        Vibration.vibrate(120);
+
+        // 2. Haptic engine pulse
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+
+        // 3. Web vibration API fallback
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
           try {
             navigator.vibrate(120);
@@ -341,7 +348,7 @@ export default function UserScannerScreen() {
         }
       }
       if (prefs.beepOnScan) {
-        playScanConfirmationBeep();
+        playScanConfirmationBeep(prefs.beepSoundStyle);
       }
     });
 

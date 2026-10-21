@@ -443,10 +443,10 @@ export default function UserDashboardScreen() {
                       params: { code: scan.boxCode, id: scan.boxId },
                     })
                   }
-                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center active:bg-slate-50"
+                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
                   activeOpacity={0.75}
                 >
-                  <View className="flex-row items-center flex-1">
+                  <View className="flex-row items-center flex-1 mr-3">
                     <View
                       className={`w-10 h-10 rounded-xl items-center justify-center mr-3 border ${badge.iconBg}`}
                     >
@@ -457,27 +457,9 @@ export default function UserDashboardScreen() {
                       />
                     </View>
                     <View className="flex-1">
-                      <View className="flex-row items-center">
-                        <Text className="text-sm font-poppins-bold text-[#0f172a] mr-2">
-                          {scan.boxCode}
-                        </Text>
-                        <View
-                          style={badge.pillStyle}
-                          className="px-2.5 py-0.5 rounded-full flex-row items-center border"
-                        >
-                          <View
-                            style={{ backgroundColor: badge.dotColor }}
-                            className="w-1.5 h-1.5 rounded-full mr-1.5"
-                          />
-                          <Text
-                            style={badge.textStyle}
-                            className="text-[10px] font-poppins-semibold"
-                            numberOfLines={1}
-                          >
-                            {badge.label}
-                          </Text>
-                        </View>
-                      </View>
+                      <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                        {scan.boxCode}
+                      </Text>
                       <Text
                         className="text-[11px] font-poppins-medium text-[#64748b] mt-0.5"
                         numberOfLines={1}
@@ -485,6 +467,23 @@ export default function UserDashboardScreen() {
                         {details}
                       </Text>
                     </View>
+                  </View>
+
+                  <View
+                    style={badge.pillStyle}
+                    className="px-2.5 py-1 rounded-full flex-row items-center border"
+                  >
+                    <View
+                      style={{ backgroundColor: badge.dotColor }}
+                      className="w-1.5 h-1.5 rounded-full mr-1.5"
+                    />
+                    <Text
+                      style={badge.textStyle}
+                      className="text-[10px] font-poppins-semibold"
+                      numberOfLines={1}
+                    >
+                      {badge.label}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );

@@ -36,6 +36,8 @@ export default function UserLayout() {
         <Stack.Screen name="boxes" options={{ animation: 'none' }} />
         <Stack.Screen name="box-details" options={{ animation: 'none' }} />
         <Stack.Screen name="profile" options={{ animation: 'none' }} />
+        <Stack.Screen name="scan-sound" options={{ animation: 'none' }} />
+        <Stack.Screen name="change-password" options={{ animation: 'none' }} />
       </Stack>
     </View>
   );

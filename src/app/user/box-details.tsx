@@ -983,7 +983,7 @@ export default function BoxDetailsScreen() {
                     <Text className="text-[11px] font-poppins-bold text-rose-900 mb-2">
                       Select Problem Type:
                     </Text>
-                    <View className="flex-row flex-wrap gap-1.5">
+                    <View className="flex-row flex-wrap justify-between">
                       {[
                         {
                           id: "Cable Damage / Cut",
@@ -1009,24 +1009,24 @@ export default function BoxDetailsScreen() {
                         <TouchableOpacity
                           key={issue.id}
                           onPress={() => setSelectedIssueType(issue.id)}
-                          className={`py-1.5 px-2.5 rounded-xl border flex-row items-center ${
+                          className={`w-[48.5%] mb-2 py-2 px-2.5 rounded-xl border flex-row items-center min-h-[42px] ${
                             selectedIssueType === issue.id
-                              ? "bg-rose-600 border-rose-700"
+                              ? "bg-rose-600 border-rose-700 shadow-sm"
                               : "bg-white border-rose-200"
                           }`}
                         >
                           <Ionicons
                             name={issue.icon as any}
-                            size={12}
+                            size={13}
                             color={
                               selectedIssueType === issue.id
                                 ? "#ffffff"
                                 : "#dc2626"
                             }
-                            style={{ marginRight: 4 }}
+                            style={{ marginRight: 5 }}
                           />
                           <Text
-                            className={`text-[10px] font-poppins-bold ${
+                            className={`text-[10px] leading-tight font-poppins-bold flex-1 ${
                               selectedIssueType === issue.id
                                 ? "text-white"
                                 : "text-rose-800"

@@ -3,10 +3,13 @@ import { DistributionBox } from './boxes';
 import { authState, AuthUser } from './auth-state';
 import { API_BASE_URL as API_URL, apiFetch } from './api-config';
 
+export type BeepSoundStyle = 'tech-chirp' | 'laser-beep' | 'fiber-bell' | 'dual-chime';
+
 export interface ScannerPreferences {
   vibrateOnScan: boolean;
   autoFlashlight: boolean;
   beepOnScan: boolean;
+  beepSoundStyle: BeepSoundStyle;
 }
 
 export interface SystemSettings {
@@ -59,6 +62,7 @@ const DEFAULT_PREFERENCES: ScannerPreferences = {
   vibrateOnScan: true,
   autoFlashlight: false,
   beepOnScan: true,
+  beepSoundStyle: 'tech-chirp',
 };
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
