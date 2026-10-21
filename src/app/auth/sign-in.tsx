@@ -1,10 +1,11 @@
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -204,10 +205,10 @@ export default function SignInScreen() {
             {/* Top Brand QR Icon */}
             <View className="items-center mb-8">
               <View className="w-16 h-16 rounded-2xl bg-[#4d6029] items-center justify-center shadow-sm mb-4">
-                <MaterialCommunityIcons
-                  name="qrcode-scan"
-                  size={32}
-                  color="#ffffff"
+                <Image
+                  source={require("@/assets/images/app-logo-white.png")}
+                  style={{ width: 36, height: 36 }}
+                  resizeMode="contain"
                 />
               </View>
               <Text className="text-3xl font-poppins-bold text-[#0f172a] tracking-tight text-center">

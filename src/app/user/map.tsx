@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -860,10 +861,10 @@ export default function UserMapScreen() {
                   onPress={() => router.push("/user/scanner")}
                   className="flex-1 bg-[#4d6029] py-2.5 rounded-xl flex-row items-center justify-center shadow-xs active:opacity-90"
                 >
-                  <MaterialCommunityIcons
-                    name="qrcode-scan"
-                    size={15}
-                    color="#ffffff"
+                  <Image
+                    source={require("@/assets/images/app-logo-white.png")}
+                    style={{ width: 16, height: 16 }}
+                    resizeMode="contain"
                   />
                   <Text className="text-xs font-poppins-bold text-white ml-1.5">
                     Scan Box QR
@@ -1048,10 +1049,10 @@ export default function UserMapScreen() {
                   }}
                   className="w-full bg-[#4d6029] py-3 rounded-xl flex-row items-center justify-center shadow-xs active:opacity-90"
                 >
-                  <MaterialCommunityIcons
-                    name="qrcode-scan"
-                    size={16}
-                    color="#ffffff"
+                  <Image
+                    source={require("@/assets/images/app-logo-white.png")}
+                    style={{ width: 17, height: 17 }}
+                    resizeMode="contain"
                   />
                   <Text className="text-sm font-poppins-bold text-white ml-2">
                     Launch QR Scanner

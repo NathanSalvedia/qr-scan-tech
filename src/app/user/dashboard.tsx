@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -246,19 +247,19 @@ export default function UserDashboardScreen() {
         <View className="bg-[#4d6029] rounded-2xl p-5 mb-6 shadow-md shadow-[#4d6029]/20 relative overflow-hidden">
           {/* Background Decorative Watermark */}
           <View className="absolute -right-6 -bottom-6 opacity-10 pointer-events-none">
-            <MaterialCommunityIcons
-              name="qrcode-scan"
-              size={140}
-              color="#ffffff"
+            <Image
+              source={require("@/assets/images/app-logo-white.png")}
+              style={{ width: 140, height: 140 }}
+              resizeMode="contain"
             />
           </View>
 
           <View className="flex-row items-center mb-2.5">
             <View className="w-8 h-8 rounded-lg bg-white/20 items-center justify-center mr-2.5">
-              <MaterialCommunityIcons
-                name="qrcode-scan"
-                size={18}
-                color="#ffffff"
+              <Image
+                source={require("@/assets/images/app-logo-white.png")}
+                style={{ width: 18, height: 18 }}
+                resizeMode="contain"
               />
             </View>
             <Text className="text-base font-poppins-bold text-white">
