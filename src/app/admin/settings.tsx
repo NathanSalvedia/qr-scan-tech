@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { SidebarNavigation } from '@/components/sidebar-navigation';
+import { SidebarNavigation, useSidebarCollapse } from '@/components/sidebar-navigation';
 import { useAuth, authState } from '@/services/auth-state';
 import {
   settingsService,
@@ -22,7 +22,7 @@ import {
 
 export default function SettingsScreen() {
   const { user } = useAuth();
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
 
   // Loading & Feedback States
   const [isLoading, setIsLoading] = useState(true);
@@ -238,7 +238,7 @@ export default function SettingsScreen() {
           <SidebarNavigation
             activeRoute="/admin/settings"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex"
           />
         )}

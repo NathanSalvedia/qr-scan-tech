@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { SidebarNavigation } from '@/components/sidebar-navigation';
+import { SidebarNavigation, useSidebarCollapse } from '@/components/sidebar-navigation';
 import { WebView } from 'react-native-webview';
 
 import { useDashboardData } from '@/hooks/useDashboardData';
@@ -25,7 +25,7 @@ export default function AdminDashboardScreen() {
   const [selectedPin, setSelectedPin] = useState<BoxData | null>(null);
   const [selectedBoxForQR, setSelectedBoxForQR] = useState<BoxData | null>(null);
   const [mapMode, setMapMode] = useState<'STREET_PINS' | 'SATELLITE'>('STREET_PINS');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
   const [isMapFullScreen, setIsMapFullScreen] = useState(false);
 
   const isWeb = Platform.OS === 'web';
@@ -346,7 +346,7 @@ export default function AdminDashboardScreen() {
           <SidebarNavigation
             activeRoute="/admin/dashboard"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex"
             badgeCounts={{
               boxes: stats.totalBoxes > 0 ? stats.totalBoxes : boxes.length > 0 ? boxes.length : undefined,

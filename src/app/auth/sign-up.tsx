@@ -41,6 +41,18 @@ export default function SignUpScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateModalInfo, setDuplicateModalInfo] = useState<{
+    type: "phone" | "email";
+    title: string;
+    message: string;
+    target: string;
+  }>({
+    type: "phone",
+    title: "Duplicate Phone Number",
+    message: "This mobile phone number is already registered to another account.",
+    target: "",
+  });
   const [successInfo, setSuccessInfo] = useState<{
     firstName: string;
     target: string;
@@ -151,10 +163,21 @@ export default function SignUpScreen() {
       // Pre-check availability for both email and phone to prevent duplicate registrations
       const checkRes = await authService.checkAvailability(cleanEmail, cleanPhone);
       if (!checkRes.success) {
-        showAlert(
-          checkRes.field === "phone" ? "Duplicate Phone Number" : "Account Exists",
-          checkRes.message || "An account with this email or phone number already exists."
-        );
+        setIsLoading(false);
+        const isPhoneDup = checkRes.field === "phone";
+        const messageText =
+          checkRes.message ||
+          (isPhoneDup
+            ? "This mobile phone number is already registered to another account."
+            : "An account with this email address already exists.");
+        setErrorMsg(messageText);
+        setDuplicateModalInfo({
+          type: isPhoneDup ? "phone" : "email",
+          title: isPhoneDup ? "Duplicate Phone Number" : "Account Exists",
+          message: messageText,
+          target: isPhoneDup ? cleanPhone : cleanEmail,
+        });
+        setShowDuplicateModal(true);
         return;
       }
 
@@ -205,7 +228,44 @@ export default function SignUpScreen() {
         });
 
         if (!res.success) {
-          showAlert("Registration Failed", res.message || res.error || "Could not complete registration.");
+          setIsLoading(false);
+          const errText = res.message || res.error || "Could not complete registration.";
+          const lower = errText.toLowerCase();
+          if (
+            lower.includes("phone") &&
+            (lower.includes("registered") ||
+              lower.includes("already") ||
+              lower.includes("duplicate") ||
+              lower.includes("exists"))
+          ) {
+            setErrorMsg(errText);
+            setDuplicateModalInfo({
+              type: "phone",
+              title: "Duplicate Phone Number",
+              message: errText,
+              target: cleanPhone,
+            });
+            setShowDuplicateModal(true);
+            return;
+          }
+          if (
+            lower.includes("email") &&
+            (lower.includes("registered") ||
+              lower.includes("already") ||
+              lower.includes("duplicate") ||
+              lower.includes("exists"))
+          ) {
+            setErrorMsg(errText);
+            setDuplicateModalInfo({
+              type: "email",
+              title: "Account Exists",
+              message: errText,
+              target: cleanEmail,
+            });
+            setShowDuplicateModal(true);
+            return;
+          }
+          showAlert("Registration Failed", errText);
           return;
         }
 
@@ -491,6 +551,112 @@ export default function SignUpScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Customized Duplicate Phone Number / Account Exists Modal */}
+      <Modal
+        visible={showDuplicateModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setShowDuplicateModal(false)}
+      >
+        <View
+          className="flex-1 justify-center items-center px-6"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.75)" }}
+        >
+          <View className="w-full max-w-sm bg-white rounded-3xl p-6 items-center shadow-2xl border border-slate-100">
+            {/* Top Close Button */}
+            <View className="w-full items-end -mb-2">
+              <TouchableOpacity
+                onPress={() => setShowDuplicateModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center active:opacity-70"
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={18} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Warning Icon Badge */}
+            <View className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-100 items-center justify-center mb-4">
+              <Ionicons
+                name={
+                  duplicateModalInfo.type === "phone"
+                    ? "phone-portrait-outline"
+                    : "mail-outline"
+                }
+                size={32}
+                color="#dc2626"
+              />
+            </View>
+
+            {/* Modal Title */}
+            <Text className="text-xl font-poppins-bold text-[#0f172a] text-center mb-1.5">
+              {duplicateModalInfo.title}
+            </Text>
+
+            {/* Subtitle / Message */}
+            <Text className="text-xs font-poppins text-[#64748b] text-center mb-3.5 leading-relaxed px-1">
+              {duplicateModalInfo.message}
+            </Text>
+
+            {/* Target Highlight Box (shows the duplicate phone or email) */}
+            {duplicateModalInfo.target ? (
+              <View className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-3.5 flex-row items-center justify-center">
+                <Ionicons
+                  name={duplicateModalInfo.type === "phone" ? "call" : "mail"}
+                  size={15}
+                  color="#dc2626"
+                />
+                <Text
+                  className="text-xs font-poppins-bold text-[#0f172a] ml-2 font-mono shrink"
+                  numberOfLines={1}
+                >
+                  {duplicateModalInfo.target}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Helpful Notice */}
+            <View className="w-full bg-rose-50/70 border border-rose-200/90 rounded-2xl p-3 mb-5 flex-row items-center">
+              <Ionicons
+                name="information-circle"
+                size={16}
+                color="#b91c1c"
+              />
+              <Text className="text-[11px] font-poppins text-rose-900 ml-2 flex-1 leading-4">
+                If you already have an account with this number, sign in below. Otherwise, please enter a different phone number.
+              </Text>
+            </View>
+
+            {/* Primary Action Button: Go to Sign In */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowDuplicateModal(false);
+                router.push("/auth/sign-in");
+              }}
+              className="w-full bg-[#4d6029] active:opacity-90 py-3.5 rounded-2xl items-center justify-center flex-row shadow-sm shadow-[#4d6029]/30 mb-2"
+              activeOpacity={0.85}
+            >
+              <Ionicons name="log-in-outline" size={18} color="#ffffff" />
+              <Text className="text-white text-sm font-poppins-bold ml-2">
+                Sign In to Existing Account
+              </Text>
+            </TouchableOpacity>
+
+            {/* Secondary Action: Change Phone Number / Edit Details */}
+            <TouchableOpacity
+              onPress={() => setShowDuplicateModal(false)}
+              className="py-2 items-center justify-center"
+              activeOpacity={0.7}
+            >
+              <Text className="text-xs font-poppins-semibold text-[#64748b]">
+                Change Phone Number
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Customize Account Created / Verification Modal */}
       <Modal

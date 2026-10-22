@@ -1,4 +1,4 @@
-import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { SidebarNavigation, useSidebarCollapse } from "@/components/sidebar-navigation";
 import { STANDARD_HARDWARE_CATALOG } from "@/constants/distribution-boxes";
 import { boxService } from "@/services/boxes";
 import { SubscriberRecord, subscriberService } from "@/services/subscribers";
@@ -133,7 +133,7 @@ export default function BoxManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<CategoryFilter>("ALL");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
 
   const fetchBoxes = useCallback(async () => {
     setLoading(true);
@@ -1048,7 +1048,7 @@ export default function BoxManagementScreen() {
           <SidebarNavigation
             activeRoute="/admin/box-management"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex"
             badgeCounts={{
               boxes: boxes.length > 0 ? boxes.length : undefined,

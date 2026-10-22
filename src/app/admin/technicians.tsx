@@ -1,4 +1,4 @@
-import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { SidebarNavigation, useSidebarCollapse } from "@/components/sidebar-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -33,7 +33,7 @@ export default function TechniciansScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<DutyFilter>("ALL");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
 
   useEffect(() => {
     let isMounted = true;
@@ -179,7 +179,7 @@ export default function TechniciansScreen() {
           <SidebarNavigation
             activeRoute="/admin/technicians"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex"
           />
         )}

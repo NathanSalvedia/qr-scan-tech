@@ -1,12 +1,10 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -82,7 +80,9 @@ export interface BoxDetailData {
 }
 
 export default function BoxDetailsScreen() {
-  const params = useLocalSearchParams<{ code?: string; id?: string }>();
+  const localParams = useLocalSearchParams<{ code?: string; id?: string }>();
+  const globalParams = useGlobalSearchParams<{ code?: string; id?: string }>();
+  const params = (localParams && (localParams.id || localParams.code)) ? localParams : globalParams;
   const boxIdentifier = (params.id || params.code || "DB-MN-01").trim();
 
   // Dynamic box state
@@ -93,6 +93,7 @@ export default function BoxDetailsScreen() {
 
   // Field audit modal state
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [showConfirmSubmitModal, setShowConfirmSubmitModal] = useState(false);
   const [isSubmittingAudit, setIsSubmittingAudit] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
   const [padlockVerified, setPadlockVerified] = useState(true);
@@ -104,8 +105,6 @@ export default function BoxDetailsScreen() {
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error">("success");
-
-  const isWeb = Platform.OS === "web";
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToastMessage(msg);
@@ -216,11 +215,68 @@ export default function BoxDetailsScreen() {
 
   const handleOpenAuditModal = () => {
     if (!box) return;
-    setAuditStatus(box.status || "ACTIVE");
-    setPadlockVerified(true);
-    setSelectedIssueType("Defective Port / Splitter");
+    const initialStatus = box.status || "ACTIVE";
+    setAuditStatus(initialStatus);
+
+    // If box currently has an issue, preselect its existing problem type if recorded
+    let initialIssueType = "Defective Port / Splitter";
+    if (initialStatus === "ISSUE" && box.latestIssue?.notes) {
+      const match = box.latestIssue.notes.match(/^\[(.*?)\]/);
+      if (match && match[1]) {
+        initialIssueType = match[1];
+      }
+    }
+    setSelectedIssueType(initialIssueType);
+
+    // Sync padlock verification: if Broken Lock, padlockVerified is false
+    if (
+      initialStatus === "ISSUE" &&
+      (initialIssueType === "Broken Lock / Door" ||
+        box.latestIssue?.padlockVerified === false)
+    ) {
+      setPadlockVerified(false);
+    } else {
+      setPadlockVerified(true);
+    }
+
     setAuditNotes("");
+    setShowConfirmSubmitModal(false);
     setIsAuditModalOpen(true);
+  };
+
+  const handleSelectStatus = (st: "ACTIVE" | "NEEDS_TAG" | "ISSUE") => {
+    setAuditStatus(st);
+    if (st === "ISSUE") {
+      if (!selectedIssueType) {
+        setSelectedIssueType("Defective Port / Splitter");
+      }
+      if (selectedIssueType === "Broken Lock / Door") {
+        setPadlockVerified(false);
+      }
+    } else {
+      setPadlockVerified(true);
+    }
+  };
+
+  const handleSelectIssueType = (issueId: string) => {
+    setSelectedIssueType(issueId);
+    if (issueId === "Broken Lock / Door") {
+      setPadlockVerified(false);
+    } else if (!padlockVerified && selectedIssueType === "Broken Lock / Door") {
+      setPadlockVerified(true);
+    }
+  };
+
+  const handleTogglePadlock = () => {
+    const nextPadlock = !padlockVerified;
+    setPadlockVerified(nextPadlock);
+    if (!nextPadlock) {
+      // Unlatched / broken padlock automatically selects ISSUE and Broken Lock / Door!
+      setAuditStatus("ISSUE");
+      setSelectedIssueType("Broken Lock / Door");
+    } else if (selectedIssueType === "Broken Lock / Door") {
+      setSelectedIssueType("Defective Port / Splitter");
+    }
   };
 
   const handleSubmitAudit = async () => {
@@ -252,6 +308,7 @@ export default function BoxDetailsScreen() {
         if (auditStatus !== box.status) {
           await boxService.update(box.id, { status: auditStatus });
         }
+        setShowConfirmSubmitModal(false);
         setIsAuditModalOpen(false);
         showToast(
           auditStatus === "ISSUE"
@@ -265,6 +322,7 @@ export default function BoxDetailsScreen() {
     } catch (err: any) {
       console.error("Error submitting inspection:", err);
       showToast(err.message || "Failed to submit inspection.", "error");
+      setShowConfirmSubmitModal(false);
     } finally {
       setIsSubmittingAudit(false);
     }
@@ -871,11 +929,18 @@ export default function BoxDetailsScreen() {
           transparent
           statusBarTranslucent
           animationType="fade"
-          onRequestClose={() => setIsAuditModalOpen(false)}
+          onRequestClose={() => {
+            if (showConfirmSubmitModal) {
+              setShowConfirmSubmitModal(false);
+            } else {
+              setIsAuditModalOpen(false);
+            }
+          }}
         >
-          <View className="flex-1 bg-black/75 items-center justify-center p-4">
-            <View className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100">
-              <View className="flex-row items-center justify-between pb-3.5 border-b border-slate-100 mb-4">
+          <View className="flex-1 bg-black/75 items-center justify-center p-4 relative">
+            <View className="bg-white rounded-3xl p-5 max-w-lg w-full shadow-2xl border border-slate-100">
+              {/* Modal Header */}
+              <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3">
                 <View className="flex-row items-center">
                   <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
                     <Ionicons
@@ -890,34 +955,45 @@ export default function BoxDetailsScreen() {
                 </View>
                 <TouchableOpacity
                   onPress={() => setIsAuditModalOpen(false)}
-                  className="p-1.5 rounded-full bg-slate-100"
+                  className="p-1.5 rounded-full bg-slate-100 active:opacity-70"
                 >
                   <Ionicons name="close" size={18} color="#475569" />
                 </TouchableOpacity>
               </View>
 
+              {/* Modal Body */}
               <View className="space-y-3">
                 {/* Physical Padlock Verification Toggle */}
                 <TouchableOpacity
-                  onPress={() => setPadlockVerified(!padlockVerified)}
-                  className={`p-3.5 rounded-2xl border flex-row items-center justify-between mb-3 ${
-                    padlockVerified
-                      ? "bg-[#AEAC78]/20 border-[#AEAC78]/70"
-                      : "bg-rose-50/70 border-rose-200"
-                  }`}
+                  onPress={handleTogglePadlock}
+                  style={{
+                    padding: 14,
+                    borderRadius: 16,
+                    borderWidth: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
+                    backgroundColor: padlockVerified
+                      ? "rgba(174, 172, 120, 0.2)"
+                      : "rgba(255, 241, 242, 0.9)",
+                    borderColor: padlockVerified
+                      ? "rgba(174, 172, 120, 0.7)"
+                      : "#fecdd3",
+                  }}
                   activeOpacity={0.8}
                 >
-                  <View className="flex-row items-center flex-1 mr-2">
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
                     <Ionicons
                       name={padlockVerified ? "lock-closed" : "lock-open"}
                       size={18}
                       color={padlockVerified ? "#4d6029" : "#dc2626"}
                     />
-                    <View className="ml-2.5 flex-1">
-                      <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                    <View style={{ marginLeft: 10, flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontFamily: "Poppins_700Bold", color: "#0f172a" }}>
                         Cabinet Padlock & Seal
                       </Text>
-                      <Text className="text-[10px] font-poppins text-[#64748b]">
+                      <Text style={{ fontSize: 10, fontFamily: "Poppins_400Regular", color: "#64748b" }}>
                         {padlockVerified
                           ? "Physical lock latched and intact"
                           : "Lock unlatched or seal broken"}
@@ -925,16 +1001,25 @@ export default function BoxDetailsScreen() {
                     </View>
                   </View>
                   <View
-                    className={`px-2 py-0.5 rounded-lg border ${
-                      padlockVerified
-                        ? "bg-[#AEAC78]/30 border-[#AEAC78]/80"
-                        : "bg-rose-100 border border-rose-300"
-                    }`}
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      backgroundColor: padlockVerified
+                        ? "rgba(174, 172, 120, 0.3)"
+                        : "#ffe4e6",
+                      borderColor: padlockVerified
+                        ? "rgba(174, 172, 120, 0.8)"
+                        : "#fca5a5",
+                    }}
                   >
                     <Text
-                      className={`text-[10px] font-poppins-bold ${
-                        padlockVerified ? "text-[#4d6029]" : "text-rose-800"
-                      }`}
+                      style={{
+                        fontSize: 10,
+                        fontFamily: "Poppins_700Bold",
+                        color: padlockVerified ? "#4d6029" : "#9f1239",
+                      }}
                     >
                       {padlockVerified ? "VERIFIED" : "ISSUE"}
                     </Text>
@@ -942,110 +1027,187 @@ export default function BoxDetailsScreen() {
                 </TouchableOpacity>
 
                 {/* Status Selection */}
-                <View className="mb-3">
-                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
+                <View style={{ marginBottom: 12 }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: "Poppins_600SemiBold",
+                      color: "#475569",
+                      marginBottom: 6,
+                    }}
+                  >
                     Box Operational Status:
                   </Text>
-                  <View className="flex-row gap-2">
-                    {(["ACTIVE", "NEEDS_TAG", "ISSUE"] as const).map((st) => (
-                      <TouchableOpacity
-                        key={st}
-                        onPress={() => setAuditStatus(st)}
-                        className={`flex-1 py-2 rounded-xl items-center border ${
-                          auditStatus === st
-                            ? st === "ACTIVE"
-                              ? "bg-[#4d6029] border-[#3e4e20]"
-                              : st === "NEEDS_TAG"
-                                ? "bg-amber-600 border-amber-700"
-                                : "bg-rose-600 border-rose-700"
-                            : "bg-slate-100 border-slate-200"
-                        }`}
-                      >
-                        <Text
-                          className={`text-[10px] font-poppins-bold ${
-                            auditStatus === st ? "text-white" : "text-[#475569]"
-                          }`}
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {(["ACTIVE", "NEEDS_TAG", "ISSUE"] as const).map((st) => {
+                      const isSelected = auditStatus === st;
+                      const activeBg =
+                        st === "ACTIVE"
+                          ? "#4d6029"
+                          : st === "NEEDS_TAG"
+                            ? "#d97706"
+                            : "#dc2626";
+                      const activeBorder =
+                        st === "ACTIVE"
+                          ? "#3e4e20"
+                          : st === "NEEDS_TAG"
+                            ? "#b45309"
+                            : "#b91c1c";
+
+                      return (
+                        <TouchableOpacity
+                          key={st}
+                          onPress={() => handleSelectStatus(st)}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 8,
+                            borderRadius: 12,
+                            alignItems: "center",
+                            borderWidth: 1,
+                            backgroundColor: isSelected ? activeBg : "#f1f5f9",
+                            borderColor: isSelected ? activeBorder : "#e2e8f0",
+                          }}
                         >
-                          {st === "ACTIVE"
-                            ? "Active"
-                            : st === "NEEDS_TAG"
-                              ? "Needs Tag"
-                              : "Issue"}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontFamily: "Poppins_700Bold",
+                              color: isSelected ? "#ffffff" : "#475569",
+                            }}
+                          >
+                            {st === "ACTIVE"
+                              ? "Active"
+                              : st === "NEEDS_TAG"
+                                ? "Needs Tag"
+                                : "Issue"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
 
                 {/* Hardware Issue Selection Chips or Operational Confirmation */}
                 {auditStatus === "ISSUE" ? (
-                  <View className="mb-3 bg-rose-50/70 border border-rose-200/90 rounded-2xl p-3">
-                    <Text className="text-[11px] font-poppins-bold text-rose-900 mb-2">
+                  <View
+                    style={{
+                      marginBottom: 12,
+                      backgroundColor: "rgba(255, 241, 242, 0.7)",
+                      borderColor: "rgba(254, 205, 211, 0.9)",
+                      borderWidth: 1,
+                      borderRadius: 16,
+                      padding: 12,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "Poppins_700Bold",
+                        color: "#881337",
+                        marginBottom: 8,
+                      }}
+                    >
                       Select Problem Type:
                     </Text>
-                    <View className="flex-row flex-wrap justify-between">
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        justifyContent: "space-between",
+                      }}
+                    >
                       {[
                         {
                           id: "Cable Damage / Cut",
-                          icon: "flash-off",
+                          icon: "flash-outline",
                           label: "Cable Cut / Damage",
                         },
                         {
                           id: "Defective Port / Splitter",
-                          icon: "hardware-chip",
+                          icon: "hardware-chip-outline",
                           label: "Defective Splitter / Port",
                         },
                         {
                           id: "Broken Lock / Door",
-                          icon: "lock-open",
+                          icon: "lock-open-outline",
                           label: "Broken Lock / Door",
                         },
                         {
                           id: "Water / Weather Damage",
-                          icon: "rainy",
+                          icon: "rainy-outline",
                           label: "Water / Weather Damage",
                         },
-                      ].map((issue) => (
-                        <TouchableOpacity
-                          key={issue.id}
-                          onPress={() => setSelectedIssueType(issue.id)}
-                          className={`w-[48.5%] mb-2 py-2 px-2.5 rounded-xl border flex-row items-center min-h-[42px] ${
-                            selectedIssueType === issue.id
-                              ? "bg-rose-600 border-rose-700 shadow-sm"
-                              : "bg-white border-rose-200"
-                          }`}
-                        >
-                          <Ionicons
-                            name={issue.icon as any}
-                            size={13}
-                            color={
-                              selectedIssueType === issue.id
-                                ? "#ffffff"
-                                : "#dc2626"
-                            }
-                            style={{ marginRight: 5 }}
-                          />
-                          <Text
-                            className={`text-[10px] leading-tight font-poppins-bold flex-1 ${
-                              selectedIssueType === issue.id
-                                ? "text-white"
-                                : "text-rose-800"
-                            }`}
+                      ].map((issue) => {
+                        const isSelected = selectedIssueType === issue.id;
+                        return (
+                          <TouchableOpacity
+                            key={issue.id}
+                            onPress={() => handleSelectIssueType(issue.id)}
+                            activeOpacity={0.8}
+                            style={{
+                              width: "48.5%",
+                              marginBottom: 8,
+                              paddingVertical: 8,
+                              paddingHorizontal: 10,
+                              borderRadius: 12,
+                              borderWidth: 1,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              minHeight: 44,
+                              backgroundColor: isSelected ? "#dc2626" : "#ffffff",
+                              borderColor: isSelected ? "#b91c1c" : "#fecdd3",
+                            }}
                           >
-                            {issue.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                            <Ionicons
+                              name={issue.icon as any}
+                              size={14}
+                              color={isSelected ? "#ffffff" : "#dc2626"}
+                              style={{ marginRight: 6 }}
+                            />
+                            <Text
+                              numberOfLines={2}
+                              style={{
+                                fontSize: 10,
+                                lineHeight: 13,
+                                fontFamily: "Poppins_700Bold",
+                                flex: 1,
+                                color: isSelected ? "#ffffff" : "#881337",
+                              }}
+                            >
+                              {issue.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
                 ) : (
-                  <View className="mb-3 bg-[#AEAC78]/20 border border-[#AEAC78]/70 rounded-2xl p-3 flex-row items-center">
+                  <View
+                    style={{
+                      marginBottom: 12,
+                      backgroundColor: "rgba(174, 172, 120, 0.2)",
+                      borderColor: "rgba(174, 172, 120, 0.7)",
+                      borderWidth: 1,
+                      borderRadius: 16,
+                      padding: 12,
+                      flexDirection: "row",
+                      alignItems: "center",
+                    }}
+                  >
                     <Ionicons
                       name="checkmark-circle"
                       size={18}
                       color="#4d6029"
                     />
-                    <Text className="text-[11px] font-poppins text-[#4d6029] ml-2 flex-1">
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "Poppins_400Regular",
+                        color: "#4d6029",
+                        marginLeft: 8,
+                        flex: 1,
+                      }}
+                    >
                       All optical ports, enclosure, and hardware verified operational on-site.
                     </Text>
                   </View>
@@ -1053,7 +1215,14 @@ export default function BoxDetailsScreen() {
 
                 {/* Audit Notes Input */}
                 <View>
-                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1">
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: "Poppins_600SemiBold",
+                      color: "#475569",
+                      marginBottom: 4,
+                    }}
+                  >
                     Field Inspection Notes:
                   </Text>
                   <TextInput
@@ -1067,7 +1236,18 @@ export default function BoxDetailsScreen() {
                     onChangeText={setAuditNotes}
                     multiline
                     numberOfLines={3}
-                    className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-poppins text-[#0f172a] h-20 text-top"
+                    textAlignVertical="top"
+                    style={{
+                      backgroundColor: "#f8fafc",
+                      borderWidth: 1,
+                      borderColor: "#e2e8f0",
+                      borderRadius: 16,
+                      padding: 12,
+                      fontSize: 12,
+                      fontFamily: "Poppins_400Regular",
+                      color: "#0f172a",
+                      height: 80,
+                    }}
                   />
                 </View>
               </View>
@@ -1075,41 +1255,25 @@ export default function BoxDetailsScreen() {
               {/* Submit / Cancel Buttons */}
               <View className="flex-row pt-4 mt-4 border-t border-slate-100 gap-2">
                 <TouchableOpacity
-                  onPress={() => {
-                    if (isWeb) {
-                      handleSubmitAudit();
-                    } else {
-                      Alert.alert(
-                        "Submit Field Inspection",
-                        `Confirm inspection submission for ${box.code}?`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Submit", onPress: handleSubmitAudit },
-                        ],
-                      );
-                    }
-                  }}
+                  onPress={() => setShowConfirmSubmitModal(true)}
                   disabled={isSubmittingAudit}
                   className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
                 >
-                  {isSubmittingAudit ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={16}
-                        color="#ffffff"
-                      />
-                      <Text className="text-white text-xs font-poppins-bold ml-1.5">
-                        Submit Inspection Report
-                      </Text>
-                    </>
-                  )}
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#ffffff"
+                  />
+                  <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                    Submit Inspection Report
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => setIsAuditModalOpen(false)}
+                  onPress={() => {
+                    setShowConfirmSubmitModal(false);
+                    setIsAuditModalOpen(false);
+                  }}
                   disabled={isSubmittingAudit}
                   className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
                 >
@@ -1119,6 +1283,177 @@ export default function BoxDetailsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Customized Submit Confirmation Modal Overlay */}
+            {showConfirmSubmitModal && (
+              <View className="absolute inset-0 bg-black/60 items-center justify-center p-4 z-50">
+                <View className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 items-center">
+                  {/* Status Badge Icon */}
+                  <View
+                    className={`w-14 h-14 rounded-2xl items-center justify-center mb-3.5 border ${
+                      auditStatus === "ISSUE"
+                        ? "bg-rose-50 border-rose-200"
+                        : auditStatus === "NEEDS_TAG"
+                          ? "bg-amber-50 border-amber-200"
+                          : "bg-[#AEAC78]/25 border-[#AEAC78]/70"
+                    }`}
+                  >
+                    <Ionicons
+                      name={
+                        auditStatus === "ISSUE"
+                          ? "alert-circle"
+                          : auditStatus === "NEEDS_TAG"
+                            ? "pricetag"
+                            : "shield-checkmark"
+                      }
+                      size={28}
+                      color={
+                        auditStatus === "ISSUE"
+                          ? "#dc2626"
+                          : auditStatus === "NEEDS_TAG"
+                            ? "#d97706"
+                            : "#4d6029"
+                      }
+                    />
+                  </View>
+
+                  {/* Header Title & Subtitle */}
+                  <Text className="text-base font-poppins-bold text-[#0f172a] text-center">
+                    Submit Field Inspection
+                  </Text>
+                  <Text className="text-xs font-poppins text-[#64748b] text-center mt-1 mb-4 leading-relaxed">
+                    Confirm inspection submission for{" "}
+                    <Text className="font-mono font-bold text-[#0f172a]">
+                      {box.code}
+                    </Text>
+                    ?
+                  </Text>
+
+                  {/* Summary Card */}
+                  <View className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 mb-5 space-y-2.5">
+                    {/* Status */}
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-[11px] font-poppins-medium text-[#64748b]">
+                        Reported Status:
+                      </Text>
+                      <View
+                        className={`px-2 py-0.5 rounded-lg border ${
+                          auditStatus === "ACTIVE"
+                            ? "bg-[#AEAC78]/30 border-[#AEAC78]/80"
+                            : auditStatus === "NEEDS_TAG"
+                              ? "bg-amber-100 border-amber-300"
+                              : "bg-rose-100 border-rose-300"
+                        }`}
+                      >
+                        <Text
+                          className={`text-[10px] font-poppins-bold ${
+                            auditStatus === "ACTIVE"
+                              ? "text-[#4d6029]"
+                              : auditStatus === "NEEDS_TAG"
+                                ? "text-amber-800"
+                                : "text-rose-800"
+                          }`}
+                        >
+                          {auditStatus === "ACTIVE"
+                            ? "Active & Verified"
+                            : auditStatus === "NEEDS_TAG"
+                              ? "Needs Tag"
+                              : "Issue Reported"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Problem Type if ISSUE */}
+                    {auditStatus === "ISSUE" && (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-[11px] font-poppins-medium text-[#64748b]">
+                          Problem Type:
+                        </Text>
+                        <Text
+                          className="text-[11px] font-poppins-bold text-rose-700 max-w-[55%] text-right"
+                          numberOfLines={1}
+                        >
+                          {selectedIssueType}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Padlock */}
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-[11px] font-poppins-medium text-[#64748b]">
+                        Cabinet Padlock:
+                      </Text>
+                      <View className="flex-row items-center">
+                        <Ionicons
+                          name={padlockVerified ? "checkmark-circle" : "close-circle"}
+                          size={13}
+                          color={padlockVerified ? "#4d6029" : "#dc2626"}
+                          style={{ marginRight: 3 }}
+                        />
+                        <Text
+                          className={`text-[11px] font-poppins-bold ${
+                            padlockVerified ? "text-[#4d6029]" : "text-rose-700"
+                          }`}
+                        >
+                          {padlockVerified ? "Verified Intact" : "Unlatched / Broken"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Notes preview if entered */}
+                    {auditNotes.trim().length > 0 && (
+                      <View className="pt-2 border-t border-slate-200/60">
+                        <Text className="text-[10px] font-poppins-medium text-[#64748b] mb-0.5">
+                          Inspection Notes:
+                        </Text>
+                        <Text
+                          numberOfLines={2}
+                          className="text-[11px] font-poppins text-[#334155] italic bg-white p-2 rounded-xl border border-slate-200/60"
+                        >
+                          &ldquo;{auditNotes.trim()}&rdquo;
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Actions */}
+                  <View className="flex-row gap-2.5 w-full">
+                    <TouchableOpacity
+                      onPress={() => setShowConfirmSubmitModal(false)}
+                      disabled={isSubmittingAudit}
+                      className="flex-1 bg-slate-100 py-3 rounded-xl items-center justify-center active:opacity-80"
+                    >
+                      <Text className="text-xs font-poppins-bold text-[#475569]">
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleSubmitAudit}
+                      disabled={isSubmittingAudit}
+                      className={`flex-1 py-3 rounded-xl items-center justify-center flex-row shadow-sm active:opacity-90 ${
+                        auditStatus === "ISSUE" ? "bg-rose-600" : "bg-[#4d6029]"
+                      }`}
+                    >
+                      {isSubmittingAudit ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color="#ffffff"
+                          />
+                          <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                            Submit
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </Modal>
       )}

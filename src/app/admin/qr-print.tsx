@@ -1,4 +1,4 @@
-import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { SidebarNavigation, useSidebarCollapse } from "@/components/sidebar-navigation";
 import { boxService } from "@/services/boxes";
 import { settingsService } from "@/services/settings";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -114,7 +114,7 @@ export default function QRPrintScreen() {
   const [selectedBoxIds, setSelectedBoxIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("NEEDS_TAG");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
   const [activeSheetIndex, setActiveSheetIndex] = useState(0);
   const [showDuplicateIfSingle, setShowDuplicateIfSingle] = useState(true);
   const [placardHeader, setPlacardHeader] = useState("MULTIFACTORS · ILIGAN");
@@ -317,7 +317,7 @@ export default function QRPrintScreen() {
           <SidebarNavigation
             activeRoute="/admin/qr-print"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex no-print"
           />
         )}

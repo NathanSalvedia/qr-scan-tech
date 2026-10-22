@@ -1,4 +1,4 @@
-import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { SidebarNavigation, useSidebarCollapse } from "@/components/sidebar-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect, useCallback } from "react";
@@ -88,7 +88,7 @@ export default function ActivityLogsScreen() {
       setRefreshing(false);
     }
   }, []);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
 
   // Inspector Modal State
   const [selectedLogForDetails, setSelectedLogForDetails] =
@@ -251,7 +251,7 @@ export default function ActivityLogsScreen() {
           <SidebarNavigation
             activeRoute="/admin/activity-logs"
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             className="hidden md:flex"
           />
         )}

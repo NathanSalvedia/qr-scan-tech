@@ -1,10 +1,90 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, usePathname } from "expo-router";
-import { useState } from "react";
-import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useSyncExternalStore } from "react";
+import { Image, Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { authService } from "@/services/auth";
 import { AuthUser, useAuth } from "@/services/auth-state";
+
+export const SIDEBAR_COLLAPSED_STORAGE_KEY = "@admin_sidebar_collapsed";
+
+// Global in-memory cache & reactive listeners for instantaneous cross-route sync
+let cachedSidebarCollapsed = false;
+let isStorageHydrated = false;
+const listeners = new Set<() => void>();
+
+function subscribe(callback: () => void) {
+  listeners.add(callback);
+  return () => {
+    listeners.delete(callback);
+  };
+}
+
+function getSnapshot() {
+  return cachedSidebarCollapsed;
+}
+
+function getServerSnapshot() {
+  return false;
+}
+
+// Synchronous check on Web to prevent layout flicker/shift on load or refresh
+if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
+  try {
+    const saved = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+    if (saved !== null) {
+      cachedSidebarCollapsed = saved === "true";
+      isStorageHydrated = true;
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function setSidebarCollapsed(collapsed: boolean) {
+  cachedSidebarCollapsed = collapsed;
+  listeners.forEach((listener) => listener());
+
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+    } catch {
+      // ignore
+    }
+  }
+  AsyncStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed)).catch(() => {});
+}
+
+export function toggleSidebarCollapse() {
+  setSidebarCollapsed(!cachedSidebarCollapsed);
+}
+
+export function useSidebarCollapse() {
+  const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  useEffect(() => {
+    if (!isStorageHydrated) {
+      AsyncStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+        .then((saved) => {
+          if (saved !== null) {
+            cachedSidebarCollapsed = saved === "true";
+            listeners.forEach((listener) => listener());
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          isStorageHydrated = true;
+        });
+    }
+  }, []);
+
+  return {
+    isCollapsed: collapsed,
+    setIsCollapsed: setSidebarCollapsed,
+    toggleSidebar: toggleSidebarCollapse,
+  };
+}
 
 export interface SidebarBadgeCounts {
   boxes?: number | string;
@@ -110,16 +190,16 @@ export function SidebarNavigation({
   const currentPath = usePathname();
   const activeRoute = explicitActiveRoute || currentPath || "/admin/dashboard";
 
-  // Support both controlled and internal state for collapse
-  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  // Persistent sidebar collapse state (synced across screens & routes)
+  const { isCollapsed: persistentCollapsed, toggleSidebar } = useSidebarCollapse();
   const isCollapsed =
-    externalCollapsed !== undefined ? externalCollapsed : internalCollapsed;
+    externalCollapsed !== undefined ? externalCollapsed : persistentCollapsed;
 
   const handleToggle = () => {
     if (onToggleCollapse) {
       onToggleCollapse();
     } else {
-      setInternalCollapsed(!internalCollapsed);
+      toggleSidebar();
     }
   };
 
@@ -180,9 +260,10 @@ export function SidebarNavigation({
   const handleItemPress = (route: string) => {
     if (onNavigate) {
       onNavigate(route);
-    } else {
-      router.push(route as any);
+      return;
     }
+    if (activeRoute === route) return;
+    router.push(route as any);
   };
 
   const handleSignOut = () => {
