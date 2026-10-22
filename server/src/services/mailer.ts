@@ -1,17 +1,23 @@
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 import path from "path";
-import { Resend } from "resend";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
-const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
-const fromEmail = (
-  process.env.RESEND_FROM_EMAIL || "ScanOps <onboarding@resend.dev>"
-).trim();
+const emailUser = (process.env.EMAIL_USER || "").trim();
+const emailPass = (process.env.EMAIL_PASS || "").trim();
 
-const resend = new Resend(resendApiKey);
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
+  auth: {
+    user: emailUser,
+    pass: emailPass,
+  },
+});
 
-// Function to send branded 6-digit OTP email via Resend
+// Function to send branded 6-digit OTP email via Gmail SMTP
 export async function sendOtpEmail(
   toEmail: string,
   otpCode: string,
@@ -55,30 +61,27 @@ export async function sendOtpEmail(
     </div>
   `;
 
+  // Plain text fallback (reduces spam score)
   const textContent = isReset
     ? `Your ScanOps password reset code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not request this, please ignore this email.`
     : `Your ScanOps email verification code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not create an account, please ignore this email.`;
 
+  const mailOptions = {
+    from: `"ScanOps" <${emailUser}>`,
+    to: toEmail.trim(),
+    subject,
+    text: textContent,
+    html: htmlContent,
+  };
+
   try {
-    const { data, error } = await resend.emails.send({
-      from: fromEmail,
-      to: [toEmail.trim()],
-      subject,
-      html: htmlContent,
-      text: textContent,
-    });
-
-    if (error) {
-      console.error("❌ Failed to send email via Resend:", error);
-      return { success: false, error: error.message };
-    }
-
+    const info = await transporter.sendMail(mailOptions);
     console.log(
-      `📧 Email sent successfully to ${toEmail} via Resend (ID: ${data?.id})`,
+      `📧 Email sent successfully to ${toEmail} via Gmail (Message ID: ${info.messageId})`,
     );
-    return { success: true, messageId: data?.id };
+    return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error("❌ Resend exception:", error);
+    console.error("❌ Failed to send email via Gmail:", error);
     return { success: false, error: error.message };
   }
 }
