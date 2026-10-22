@@ -16,6 +16,15 @@ const emptyStats: DashboardStats = {
   portDegraded: 0,
 };
 
+const normalizeBoxCoords = (b: BoxData): BoxData => {
+  const numLng = Number(b.longitude);
+  return {
+    ...b,
+    latitude: Number(b.latitude) || 8.232,
+    longitude: numLng >= 20 && numLng <= 35 ? numLng + 100 : (numLng || 124.248),
+  };
+};
+
 const calculateStatsFromBoxes = (boxList: BoxData[]): DashboardStats => {
   const total = boxList.length;
   const active = boxList.filter((b) => b.status === 'ACTIVE').length;
@@ -56,7 +65,9 @@ export function useDashboardData() {
       ]);
 
       const fetchedBoxes =
-        boxesRes.success && Array.isArray(boxesRes.boxes) ? boxesRes.boxes : [];
+        boxesRes.success && Array.isArray(boxesRes.boxes)
+          ? boxesRes.boxes.map(normalizeBoxCoords)
+          : [];
       setBoxes(fetchedBoxes);
 
       if (statsRes.success && statsRes.stats) {
@@ -88,7 +99,9 @@ export function useDashboardData() {
         if (!isMounted) return;
 
         const fetchedBoxes =
-          boxesRes.success && Array.isArray(boxesRes.boxes) ? boxesRes.boxes : [];
+          boxesRes.success && Array.isArray(boxesRes.boxes)
+            ? boxesRes.boxes.map(normalizeBoxCoords)
+            : [];
         setBoxes(fetchedBoxes);
 
         if (statsRes.success && statsRes.stats) {

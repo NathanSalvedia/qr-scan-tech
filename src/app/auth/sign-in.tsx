@@ -257,7 +257,7 @@ export default function SignInScreen() {
               </View>
 
               {/* Password Field */}
-              <View className="mb-2">
+              <View className={isWeb ? "mb-6" : "mb-2"}>
                 <Text className="text-[#1e293b] text-sm font-poppins-semibold mb-2">
                   Password:
                 </Text>
@@ -294,17 +294,19 @@ export default function SignInScreen() {
                 </View>
               </View>
 
-              {/* Forgot Password Link */}
-              <View className="items-end mb-6">
-                <TouchableOpacity
-                  onPress={() => router.push("/auth/forgot-password")}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-[#4d6029] text-sm font-poppins-semibold">
-                    Forgot Password?
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {/* Forgot Password Link: Mobile Only */}
+              {!isWeb && (
+                <View className="items-end mb-6">
+                  <TouchableOpacity
+                    onPress={() => router.push("/auth/forgot-password")}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-[#4d6029] text-sm font-poppins-semibold">
+                      Forgot Password?
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Sign In Button */}
               <TouchableOpacity

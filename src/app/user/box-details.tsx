@@ -37,7 +37,7 @@ export interface ClientConnectionItem {
   clientType?: string;
   plan?: string;
   status: string;
-  signalDbm?: string;
+  signalDbm?: string | null;
 }
 
 export interface BoxDetailData {

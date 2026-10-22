@@ -252,7 +252,6 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           'Account Number': client.accountNumber,
           Subscriber: client.customerName,
           'Service Plan': client.servicePlan || 'Fiber',
-          'Signal (dBm)': client.signalDbm || 'Nominal',
         },
         rawDate: connDate.getTime(),
       });

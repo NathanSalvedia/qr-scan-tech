@@ -150,7 +150,10 @@ export default function BoxManagementScreen() {
           mountingType: b.mountingType || b.mounting_type || "Utility Pole",
           poleNumber: b.poleNumber || b.pole_number || "",
           latitude: Number(b.latitude) || 8.232,
-          longitude: Number(b.longitude) || 124.248,
+          longitude:
+            Number(b.longitude) >= 20 && Number(b.longitude) <= 35
+              ? Number(b.longitude) + 100
+              : Number(b.longitude) || 124.248,
           status: b.status || "NEEDS_TAG",
           totalPorts: b.totalPorts || b.total_ports || 24,
           activePorts: Array.isArray(b.clients)
@@ -199,7 +202,10 @@ export default function BoxManagementScreen() {
             mountingType: b.mountingType || b.mounting_type || "Utility Pole",
             poleNumber: b.poleNumber || b.pole_number || "",
             latitude: Number(b.latitude) || 8.232,
-            longitude: Number(b.longitude) || 124.248,
+            longitude:
+              Number(b.longitude) >= 20 && Number(b.longitude) <= 35
+                ? Number(b.longitude) + 100
+                : Number(b.longitude) || 124.248,
             status: b.status || "NEEDS_TAG",
             totalPorts: b.totalPorts || b.total_ports || 24,
             activePorts: Array.isArray(b.clients)
@@ -925,7 +931,11 @@ export default function BoxManagementScreen() {
         : [];
 
     const parsedLat = parseFloat(newLatitude);
-    const parsedLng = parseFloat(newLongitude);
+    let parsedLng = parseFloat(newLongitude);
+    if (parsedLng >= 20 && parsedLng <= 35) {
+      // Auto-correct missing leading 1 for Philippine longitude (e.g. 24.2611 -> 124.2611)
+      parsedLng += 100;
+    }
     if (!newLatitude.trim() || !newLongitude.trim() || isNaN(parsedLat) || isNaN(parsedLng)) {
       const msg = "Please provide valid GPS Geolocation Coordinates (Latitude and Longitude) for this box. You can use Auto-Detect GPS or enter them manually.";
       if (isWeb) {

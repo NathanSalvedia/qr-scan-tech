@@ -110,7 +110,10 @@ export default function UserMapScreen() {
             : ["Optical Splitter", "Terminal Block"],
           clientsCount: Number(b.clientsCount ?? b.clients?.length ?? 0),
           latitude: Number(b.latitude) || 8.232,
-          longitude: Number(b.longitude) || 124.248,
+          longitude:
+            Number(b.longitude) >= 20 && Number(b.longitude) <= 35
+              ? Number(b.longitude) + 100
+              : Number(b.longitude) || 124.248,
           zone: String(b.zone || "Poblacion"),
           tier: String(
             b.tier ||
@@ -603,14 +606,14 @@ export default function UserMapScreen() {
 
   return (
     <SafeAreaView
-      edges={isFullscreen ? ["left", "right"] : ["top", "left", "right"]}
+      edges={isFullscreen ? ["left", "right"] : ["top", "bottom", "left", "right"]}
       className="flex-1 bg-[#f8fafc]"
     >
       <StatusBar
         style={isFullscreen && mapMode === "SATELLITE" ? "light" : "dark"}
       />
 
-      <View className="flex-1 flex-col h-full overflow-hidden">
+      <View className="flex-1 flex-col overflow-hidden">
         {/* HEADER & SEARCH BAR (Hidden in fullscreen mode) */}
         {!isFullscreen && (
           <View className="bg-white border-b border-slate-200 px-4 pt-3 pb-2.5 z-30 shadow-xs">

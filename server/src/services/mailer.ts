@@ -1,32 +1,26 @@
-import dotenv from 'dotenv';
-import nodemailer from 'nodemailer';
-import path from 'path';
+import dotenv from "dotenv";
+import path from "path";
+import { Resend } from "resend";
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
-const emailUser = (process.env.EMAIL_USER || '').trim();
-const emailPass = (process.env.EMAIL_PASS || '').trim();
+const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
+const fromEmail = (
+  process.env.RESEND_FROM_EMAIL || "ScanOps <onboarding@resend.dev>"
+).trim();
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: emailUser,
-    pass: emailPass,
-  },
-});
+const resend = new Resend(resendApiKey);
 
-// Function to send branded 6-digit OTP email
+// Function to send branded 6-digit OTP email via Resend
 export async function sendOtpEmail(
   toEmail: string,
   otpCode: string,
-  mode: 'verification' | 'reset' = 'verification'
+  mode: "verification" | "reset" = "verification",
 ) {
-  const isReset = mode === 'reset';
+  const isReset = mode === "reset";
   const subject = isReset
-    ? '🔐 Password Reset Code - QR Scan Tech'
-    : '✉️ Verify Your Email - QR Scan Tech';
+    ? "ScanOps - Password Reset Code"
+    : "ScanOps - Email Verification Code";
 
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; background-color: #f0f3f6; padding: 30px; color: #0f172a;">
@@ -34,10 +28,10 @@ export async function sendOtpEmail(
         
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 25px;">
-          <div style="display: inline-block; background-color: #4d6029; color: #ffffff; width: 50px; height: 50px; line-height: 50px; border-radius: 12px; font-size: 24px; font-weight: bold;">
-            QR
+          <div style="display: inline-block; background-color: #4d6029; color: #ffffff; padding: 8px 18px; border-radius: 12px; font-size: 20px; font-weight: bold; letter-spacing: 0.5px;">
+            ScanOps
           </div>
-          <h2 style="color: #0f172a; margin-top: 15px; margin-bottom: 5px;">${isReset ? 'Reset Your Password' : 'Verify Your Email'}</h2>
+          <h2 style="color: #0f172a; margin-top: 15px; margin-bottom: 5px;">${isReset ? "Reset Your Password" : "Verify Your Email"}</h2>
           <p style="color: #64748b; font-size: 14px; margin: 0;">Use the 6-digit verification code below:</p>
         </div>
 
@@ -61,32 +55,30 @@ export async function sendOtpEmail(
     </div>
   `;
 
-  // Plain text fallback (Crucial: Spam filters penalize HTML-only emails)
   const textContent = isReset
-    ? `Your QR Scan Tech password reset code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not request this, please ignore this email.`
-    : `Your QR Scan Tech email verification code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not create an account, please ignore this email.`;
-
-  const mailOptions = {
-    from: `"QR Scan Tech" <${emailUser}>`,
-    to: toEmail.trim(),
-    subject: isReset
-      ? 'QR Scan Tech - Password Reset Code'
-      : 'QR Scan Tech - Email Verification Code',
-    text: textContent,
-    html: htmlContent,
-    headers: {
-      'X-Priority': '1 (Highest)',
-      'X-MSMail-Priority': 'High',
-      Importance: 'High',
-    },
-  };
+    ? `Your ScanOps password reset code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not request this, please ignore this email.`
+    : `Your ScanOps email verification code is: ${otpCode}\n\nThis code will expire in 10 minutes.\nIf you did not create an account, please ignore this email.`;
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`📧 Email sent successfully to ${toEmail} (Message ID: ${info.messageId})`);
-    return { success: true, messageId: info.messageId };
+    const { data, error } = await resend.emails.send({
+      from: fromEmail,
+      to: [toEmail.trim()],
+      subject,
+      html: htmlContent,
+      text: textContent,
+    });
+
+    if (error) {
+      console.error("❌ Failed to send email via Resend:", error);
+      return { success: false, error: error.message };
+    }
+
+    console.log(
+      `📧 Email sent successfully to ${toEmail} via Resend (ID: ${data?.id})`,
+    );
+    return { success: true, messageId: data?.id };
   } catch (error: any) {
-    console.error('❌ Failed to send email via Gmail:', error);
+    console.error("❌ Resend exception:", error);
     return { success: false, error: error.message };
   }
 }

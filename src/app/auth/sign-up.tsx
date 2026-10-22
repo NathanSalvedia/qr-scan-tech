@@ -377,9 +377,6 @@ export default function SignUpScreen() {
                     />
                   ) : null}
                 </View>
-                <Text className="text-[10px] font-poppins text-[#94a3b8] mt-1 ml-1">
-                  Unique mobile number required (e.g. 09171234567)
-                </Text>
               </View>
 
               {/* Password Field */}

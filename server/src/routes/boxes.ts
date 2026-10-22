@@ -102,10 +102,13 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             }
           : null;
 
+      const rawLng = Number(box.longitude);
+      const safeLng = rawLng >= 20 && rawLng <= 35 ? rawLng + 100 : rawLng;
+
       return {
         ...box,
         latitude: Number(box.latitude),
-        longitude: Number(box.longitude),
+        longitude: safeLng,
         activePorts,
         portsUsed: activePorts,
         clientsCount: boxClients.length,
@@ -334,7 +337,11 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
         address: address.trim(),
         mountingType: mountingType || 'Utility Pole',
         latitude: String(latitude || 8.232),
-        longitude: String(longitude || 124.248),
+        longitude: String(
+          Number(longitude) >= 20 && Number(longitude) <= 35
+            ? Number(longitude) + 100
+            : longitude || 124.248
+        ),
         status: 'NEEDS_TAG',
         totalPorts: Number(totalPorts) || 24,
         qrToken,
@@ -460,7 +467,12 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     if (address) updatePayload.address = address.trim();
     if (mountingType) updatePayload.mountingType = mountingType;
     if (latitude !== undefined) updatePayload.latitude = String(latitude);
-    if (longitude !== undefined) updatePayload.longitude = String(longitude);
+    if (longitude !== undefined) {
+      const numLng = Number(longitude);
+      updatePayload.longitude = String(
+        numLng >= 20 && numLng <= 35 ? numLng + 100 : longitude
+      );
+    }
     if (totalPorts !== undefined) updatePayload.totalPorts = Number(totalPorts);
     if (status) updatePayload.status = status;
     if (notes !== undefined) updatePayload.notes = notes ? notes.trim() : null;

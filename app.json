@@ -70,8 +70,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "cd29a37f-6d88-4d07-b610-1a88b93098bd"
+        "projectId": "f1dccbb0-f846-4611-ab25-c430d4fa2f92"
       }
-    }
+    },
+    "owner": "fluffey"
   }
 }
