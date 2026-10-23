@@ -1,5 +1,6 @@
 import { authState, AuthUser } from './auth-state';
 import { API_BASE_URL as API_URL, apiFetch, getActiveApiBaseUrl } from './api-config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface RegisterPayload {
   firstName: string;
@@ -55,6 +56,19 @@ export const authService = {
       const data: AuthResponse = await res.json();
       if (data.success && data.user) {
         authState.setUser(data.user, data.token || null);
+        if (data.user.role !== 'admin') {
+          AsyncStorage.setItem('@technician_on_duty', 'true').catch(() => {});
+          if (data.token) {
+            apiFetch(`${API_URL}/auth/duty-status`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${data.token}`,
+              },
+              body: JSON.stringify({ onDuty: true, dutyStatus: 'ON_DUTY' }),
+            }).catch(() => {});
+          }
+        }
       }
       return data;
     } catch (err: any) {
@@ -94,6 +108,19 @@ export const authService = {
       const data: AuthResponse = await res.json();
       if (data.success && data.user) {
         authState.setUser(data.user, data.token || null);
+        if (data.user.role !== 'admin') {
+          AsyncStorage.setItem('@technician_on_duty', 'true').catch(() => {});
+          if (data.token) {
+            apiFetch(`${API_URL}/auth/duty-status`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${data.token}`,
+              },
+              body: JSON.stringify({ onDuty: true, dutyStatus: 'ON_DUTY' }),
+            }).catch(() => {});
+          }
+        }
       }
       return data;
     } catch (err: any) {
@@ -135,6 +162,19 @@ export const authService = {
       }
       if (data.success && data.user) {
         authState.setUser(data.user, data.token || null);
+        if (data.user.role !== 'admin') {
+          AsyncStorage.setItem('@technician_on_duty', 'true').catch(() => {});
+          if (data.token) {
+            apiFetch(`${API_URL}/auth/duty-status`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${data.token}`,
+              },
+              body: JSON.stringify({ onDuty: true, dutyStatus: 'ON_DUTY' }),
+            }).catch(() => {});
+          }
+        }
       }
       return data;
     } catch (err: any) {
@@ -192,7 +232,30 @@ export const authService = {
   },
 
   // 8. Logout
-  logout: () => {
-    authState.logout();
+  logout: async (currentUser?: AuthUser | null): Promise<void> => {
+    try {
+      await authState.ensureHydrated();
+      const token = authState.getToken();
+      const user = currentUser || authState.getUser();
+
+      await apiFetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          userId: user?.id,
+          email: user?.email,
+        }),
+      }).catch((err) => {
+        console.warn('Failed to notify backend on logout:', err);
+      });
+    } catch (err) {
+      console.warn('Logout network error:', err);
+    } finally {
+      await AsyncStorage.setItem('@technician_on_duty', 'false').catch(() => {});
+      authState.logout();
+    }
   },
 };

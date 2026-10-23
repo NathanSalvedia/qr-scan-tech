@@ -1,4 +1,7 @@
-import { SidebarNavigation, useSidebarCollapse } from "@/components/sidebar-navigation";
+import {
+  SidebarNavigation,
+  useSidebarCollapse,
+} from "@/components/sidebar-navigation";
 import { STANDARD_HARDWARE_CATALOG } from "@/constants/distribution-boxes";
 import { boxService } from "@/services/boxes";
 import { SubscriberRecord, subscriberService } from "@/services/subscribers";
@@ -133,7 +136,10 @@ export default function BoxManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<CategoryFilter>("ALL");
-  const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
+  const {
+    isCollapsed: isSidebarCollapsed,
+    toggleSidebar: toggleSidebarCollapse,
+  } = useSidebarCollapse();
 
   const fetchBoxes = useCallback(async () => {
     setLoading(true);
@@ -704,7 +710,9 @@ export default function BoxManagementScreen() {
 
     const searchQueries: string[] = [];
     if (site && addr) {
-      searchQueries.push(`${site}, ${normalizedAddress}, Iligan City, Philippines`);
+      searchQueries.push(
+        `${site}, ${normalizedAddress}, Iligan City, Philippines`,
+      );
     }
     if (site) {
       searchQueries.push(`${site}, Iligan City, Philippines`);
@@ -714,7 +722,8 @@ export default function BoxManagementScreen() {
     }
 
     try {
-      let matchedResult: { lat: string; lon: string; name: string } | null = null;
+      let matchedResult: { lat: string; lon: string; name: string } | null =
+        null;
 
       for (const query of searchQueries) {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
@@ -731,7 +740,11 @@ export default function BoxManagementScreen() {
             matchedResult = {
               lat: Number(found.lat).toFixed(6),
               lon: Number(found.lon).toFixed(6),
-              name: found.name || (found.display_name ? found.display_name.split(",")[0] : query.split(",")[0]),
+              name:
+                found.name ||
+                (found.display_name
+                  ? found.display_name.split(",")[0]
+                  : query.split(",")[0]),
             };
             break;
           }
@@ -745,11 +758,15 @@ export default function BoxManagementScreen() {
         setNewLongitude(matchedResult.lon);
         setGeocodingStatus(`Auto-detected: ${matchedResult.name}`);
       } else {
-        setGeocodingStatus("⚠️ Location not found on map — please enter GPS coordinates manually");
+        setGeocodingStatus(
+          "⚠️ Location not found on map — please enter GPS coordinates manually",
+        );
       }
     } catch (err) {
       console.warn("Geocoding lookup error:", err);
-      setGeocodingStatus("Lookup unavailable — please enter GPS coordinates manually");
+      setGeocodingStatus(
+        "Lookup unavailable — please enter GPS coordinates manually",
+      );
     } finally {
       setIsGeocoding(false);
     }
@@ -757,9 +774,19 @@ export default function BoxManagementScreen() {
 
   const handleLatitudeChange = (val: string) => {
     // If user pastes "8.223293, 124.243392" or "8.223293 124.243392"
-    if (val.includes(",") || (val.includes(" ") && val.trim().split(/\s+/).length === 2)) {
-      const parts = val.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-      if (parts.length >= 2 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
+    if (
+      val.includes(",") ||
+      (val.includes(" ") && val.trim().split(/\s+/).length === 2)
+    ) {
+      const parts = val
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (
+        parts.length >= 2 &&
+        !isNaN(Number(parts[0])) &&
+        !isNaN(Number(parts[1]))
+      ) {
         setNewLatitude(parts[0]);
         setNewLongitude(parts[1]);
         setGeocodingStatus("Coordinates pasted and separated");
@@ -909,7 +936,10 @@ export default function BoxManagementScreen() {
       if (isWeb) {
         window.alert("Please select Total Optical / Terminal Ports.");
       } else {
-        Alert.alert("Required Field", "Please select Total Optical / Terminal Ports.");
+        Alert.alert(
+          "Required Field",
+          "Please select Total Optical / Terminal Ports.",
+        );
       }
       return;
     }
@@ -936,8 +966,14 @@ export default function BoxManagementScreen() {
       // Auto-correct missing leading 1 for Philippine longitude (e.g. 24.2611 -> 124.2611)
       parsedLng += 100;
     }
-    if (!newLatitude.trim() || !newLongitude.trim() || isNaN(parsedLat) || isNaN(parsedLng)) {
-      const msg = "Please provide valid GPS Geolocation Coordinates (Latitude and Longitude) for this box. You can use Auto-Detect GPS or enter them manually.";
+    if (
+      !newLatitude.trim() ||
+      !newLongitude.trim() ||
+      isNaN(parsedLat) ||
+      isNaN(parsedLng)
+    ) {
+      const msg =
+        "Please provide valid GPS Geolocation Coordinates (Latitude and Longitude) for this box. You can use Auto-Detect GPS or enter them manually.";
       if (isWeb) {
         window.alert(msg);
       } else {
@@ -2697,22 +2733,29 @@ export default function BoxManagementScreen() {
                     <View className="flex-row items-center mb-2 px-1">
                       <Ionicons
                         name={
-                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
+                          geocodingStatus.startsWith("Auto-detected") ||
+                          geocodingStatus.startsWith("Coordinates pasted")
                             ? "checkmark-circle"
                             : "information-circle-outline"
                         }
                         size={12}
                         color={
-                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
+                          geocodingStatus.startsWith("Auto-detected") ||
+                          geocodingStatus.startsWith("Coordinates pasted")
                             ? "#16a34a"
-                            : (geocodingStatus.includes("⚠️") ? "#d97706" : "#64748b")
+                            : geocodingStatus.includes("⚠️")
+                              ? "#d97706"
+                              : "#64748b"
                         }
                       />
                       <Text
                         className={`text-[10px] font-poppins ml-1 ${
-                          geocodingStatus.startsWith("Auto-detected") || geocodingStatus.startsWith("Coordinates pasted")
+                          geocodingStatus.startsWith("Auto-detected") ||
+                          geocodingStatus.startsWith("Coordinates pasted")
                             ? "text-emerald-700 font-poppins-medium"
-                            : (geocodingStatus.includes("⚠️") ? "text-amber-700 font-poppins-medium" : "text-[#64748b]")
+                            : geocodingStatus.includes("⚠️")
+                              ? "text-amber-700 font-poppins-medium"
+                              : "text-[#64748b]"
                         }`}
                         numberOfLines={1}
                       >
@@ -2776,7 +2819,9 @@ export default function BoxManagementScreen() {
                             : "font-poppins-medium text-[#0f172a]"
                         }`}
                       >
-                        {newPorts ? `${newPorts} Ports` : "+ Add or Select Port"}
+                        {newPorts
+                          ? `${newPorts} Ports`
+                          : "+ Add or Select Port"}
                       </Text>
                     </View>
                     <Ionicons
@@ -2945,7 +2990,7 @@ export default function BoxManagementScreen() {
                         ))}
                       </ScrollView>
 
-                      {/* Equipment Item Checklist */}
+                      {/* Equipment Item Checklist (Includes PLC & FBT Optical Splitters) */}
                       <ScrollView
                         className="max-h-56"
                         contentContainerStyle={{ paddingVertical: 2 }}
@@ -3403,7 +3448,9 @@ export default function BoxManagementScreen() {
                     </Text>
                     <TouchableOpacity
                       onPress={() => {
-                        setIsSubscriberDirectoryOpen(!isSubscriberDirectoryOpen);
+                        setIsSubscriberDirectoryOpen(
+                          !isSubscriberDirectoryOpen,
+                        );
                         setIsClientPortDropdownOpen(false);
                         setIsClientTypeDropdownOpen(false);
                         setIsClientPlanDropdownOpen(false);
@@ -3785,7 +3832,9 @@ export default function BoxManagementScreen() {
                       </View>
                       <Ionicons
                         name={
-                          isClientPlanDropdownOpen ? "chevron-up" : "chevron-down"
+                          isClientPlanDropdownOpen
+                            ? "chevron-up"
+                            : "chevron-down"
                         }
                         size={16}
                         color="#64748b"
@@ -3861,7 +3910,8 @@ export default function BoxManagementScreen() {
                                 key={`${plan.category}-${plan.name}`}
                                 onPress={() => {
                                   setNewClientPlan(plan.name);
-                                  const match = plan.name.match(/(\d+)\s*Mbps/i);
+                                  const match =
+                                    plan.name.match(/(\d+)\s*Mbps/i);
                                   if (match) {
                                     setCustomPlanSpeed(match[1]);
                                   } else {

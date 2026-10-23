@@ -60,8 +60,14 @@ export default function TechniciansScreen() {
 
     loadTechnicians();
 
+    // Auto-refresh every 8 seconds to reflect live duty status changes
+    const interval = setInterval(() => {
+      loadTechnicians();
+    }, 8000);
+
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
   }, []);
 

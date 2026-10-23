@@ -180,7 +180,7 @@ router.post('/verify-otp', async (req, res) => {
 
     // Activate user account for registration verification
     const [updatedUser] = await db.update(users)
-      .set({ isActive: true, updatedAt: new Date() })
+      .set({ isActive: true, dutyStatus: 'ON_DUTY', updatedAt: new Date() })
       .where(eq(users.email, cleanEmail))
       .returning();
 
@@ -206,6 +206,7 @@ router.post('/verify-otp', async (req, res) => {
         email: updatedUser.email,
         role: updatedUser.role,
         isActive: updatedUser.isActive,
+        dutyStatus: updatedUser.dutyStatus,
       },
       token,
     });
@@ -295,6 +296,15 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Automatically set technicians (role != 'admin') to ON_DUTY on sign-in
+    let currentDutyStatus = user.dutyStatus || 'OFF_DUTY';
+    if (user.role !== 'admin') {
+      currentDutyStatus = 'ON_DUTY';
+      await db.update(users)
+        .set({ dutyStatus: 'ON_DUTY', updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+    }
+
     // Generate JWT Token
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
@@ -313,6 +323,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         isActive: user.isActive,
+        dutyStatus: currentDutyStatus,
       },
       token,
     });
@@ -766,6 +777,7 @@ router.post('/register-with-phone', async (req, res: Response) => {
         passwordHash: hashedPassword,
         role: 'user',
         isActive: true,
+        dutyStatus: 'ON_DUTY',
       })
       .returning();
 
@@ -788,11 +800,131 @@ router.post('/register-with-phone', async (req, res: Response) => {
         phoneNumber: newUser.phoneNumber,
         role: newUser.role,
         isActive: newUser.isActive,
+        dutyStatus: newUser.dutyStatus,
       },
       token,
     });
   } catch (err: any) {
     console.error('Register with phone error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 10. LOGOUT (Set Duty Status to OFF_DUTY)
+// Accepts JWT Bearer token OR body: { userId, email } so logout always succeeds
+// =================================================================
+router.post('/logout', async (req, res: Response) => {
+  try {
+    let targetUserId: string | undefined;
+    let targetEmail: string | undefined;
+
+    // 1. Try resolving user from JWT Authorization header if present
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || 'secret'
+        ) as { id: string; email: string };
+        targetUserId = decoded.id;
+        targetEmail = decoded.email;
+      } catch {
+        // Token might be expired, proceed to check body fallback
+      }
+    }
+
+    // 2. Fall back to body parameters
+    if (!targetUserId && req.body?.userId) {
+      targetUserId = String(req.body.userId);
+    }
+    if (!targetEmail && req.body?.email) {
+      targetEmail = String(req.body.email).toLowerCase().trim();
+    }
+
+    // 3. Update database
+    if (targetUserId) {
+      await db.update(users)
+        .set({ dutyStatus: 'OFF_DUTY', updatedAt: new Date() })
+        .where(eq(users.id, targetUserId));
+    } else if (targetEmail) {
+      await db.update(users)
+        .set({ dutyStatus: 'OFF_DUTY', updatedAt: new Date() })
+        .where(eq(users.email, targetEmail));
+    }
+
+    return res.json({
+      success: true,
+      message: 'Logged out successfully. Duty status set to OFF_DUTY.',
+    });
+  } catch (err: any) {
+    console.error('Logout error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 11. GET CURRENT DUTY STATUS
+// =================================================================
+router.get('/duty-status', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    return res.json({
+      success: true,
+      dutyStatus: user?.dutyStatus || 'OFF_DUTY',
+      isOnDuty: user?.dutyStatus === 'ON_DUTY',
+    });
+  } catch (err: any) {
+    console.error('Get duty status error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =================================================================
+// 12. UPDATE DUTY STATUS (On Duty / Off Duty / On Break)
+// =================================================================
+router.post('/duty-status', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    const { dutyStatus, onDuty } = req.body;
+    let newStatus = 'OFF_DUTY';
+
+    if (dutyStatus && ['ON_DUTY', 'OFF_DUTY', 'ON_BREAK'].includes(dutyStatus)) {
+      newStatus = dutyStatus;
+    } else if (typeof onDuty === 'boolean') {
+      newStatus = onDuty ? 'ON_DUTY' : 'OFF_DUTY';
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid duty status. Expected dutyStatus ("ON_DUTY" | "OFF_DUTY" | "ON_BREAK") or boolean onDuty.',
+      });
+    }
+
+    await db.update(users)
+      .set({ dutyStatus: newStatus, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    return res.json({
+      success: true,
+      message: `Duty status updated to ${newStatus}`,
+      dutyStatus: newStatus,
+      isOnDuty: newStatus === 'ON_DUTY',
+    });
+  } catch (err: any) {
+    console.error('Update duty status error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });

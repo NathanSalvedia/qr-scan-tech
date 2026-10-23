@@ -2,13 +2,13 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { authService } from "@/services/auth";
 import { useAuth } from "@/services/auth-state";
 import { boxService } from "@/services/boxes";
-import { settingsService, BeepSoundStyle } from "@/services/settings";
+import { BeepSoundStyle, settingsService } from "@/services/settings";
 import { BEEP_SOUND_OPTIONS } from "@/services/sound";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useMemo, useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -61,7 +61,8 @@ export default function UserProfileScreen() {
   const [vibrateOnScan, setVibrateOnScan] = useState(true);
   const [autoFlashlight, setAutoFlashlight] = useState(false);
   const [beepOnScan, setBeepOnScan] = useState(true);
-  const [beepSoundStyle, setBeepSoundStyle] = useState<BeepSoundStyle>("tech-chirp");
+  const [beepSoundStyle, setBeepSoundStyle] =
+    useState<BeepSoundStyle>("tech-chirp");
 
   const currentSoundOption = useMemo(() => {
     return (
@@ -105,7 +106,7 @@ export default function UserProfileScreen() {
       return () => {
         isMounted = false;
       };
-    }, [])
+    }, []),
   );
 
   // Handlers for Preferences
@@ -155,10 +156,10 @@ export default function UserProfileScreen() {
   };
 
   // Sign Out Handler
-  const handleConfirmLogout = () => {
+  const handleConfirmLogout = async () => {
     setShowLogoutModal(false);
+    await authService.logout(user);
     logout();
-    authService.logout();
     router.replace("/auth/sign-in" as any);
   };
 
@@ -346,18 +347,17 @@ export default function UserProfileScreen() {
               >
                 <View className="flex-row items-center flex-1 pr-2">
                   <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-3 border border-[#4d6029]/20">
-                    <Ionicons
-                      name="musical-note"
-                      size={16}
-                      color="#4d6029"
-                    />
+                    <Ionicons name="musical-note" size={16} color="#4d6029" />
                   </View>
                   <View className="flex-1">
                     <Text className="text-xs font-poppins-bold text-[#0f172a]">
                       Beep Sound Tone
                     </Text>
                     <Text className="text-[10px] font-poppins-medium text-[#64748b] mt-0.5">
-                      Current: <Text className="font-poppins-bold text-[#4d6029]">{currentSoundOption.name}</Text>
+                      Current:{" "}
+                      <Text className="font-poppins-bold text-[#4d6029]">
+                        {currentSoundOption.name}
+                      </Text>
                     </Text>
                   </View>
                 </View>
@@ -473,7 +473,7 @@ export default function UserProfileScreen() {
           {/* Footer Metadata */}
           <View className="items-center justify-center pt-3">
             <Text className="text-[9px] font-poppins-medium text-[#cbd5e1] mt-0.5">
-              QR Box Management · Version {appVersion}
+              ScanOps· Version {appVersion}
             </Text>
           </View>
         </ScrollView>

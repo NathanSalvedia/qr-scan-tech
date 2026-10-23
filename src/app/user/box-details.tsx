@@ -647,7 +647,7 @@ export default function BoxDetailsScreen() {
             </View>
 
             {/* Parent Box reference for Sub Boxes */}
-            {box.category === "SUB_BOX" && (
+            {box.category === "SUB_BOX" && !!box.parentCode && (
               <View className="pt-3 border-t border-slate-100 flex-row items-center justify-between">
                 <View className="flex-row items-center flex-1 mr-2">
                   <Ionicons
@@ -661,7 +661,7 @@ export default function BoxDetailsScreen() {
                 </View>
                 <View className="bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl">
                   <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                    {box.parentCode || "DB-MN-01"}
+                    {box.parentCode}
                   </Text>
                 </View>
               </View>

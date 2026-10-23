@@ -10,6 +10,7 @@ export interface AuthUser {
   email: string;
   role: 'user' | 'admin' | string;
   isActive?: boolean;
+  dutyStatus?: 'ON_DUTY' | 'OFF_DUTY' | 'ON_BREAK' | string;
 }
 
 type Listener = () => void;

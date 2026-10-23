@@ -24,6 +24,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: userRoleEnum('role').default('user').notNull(),
   isActive: boolean('is_active').default(false).notNull(),
+  dutyStatus: varchar('duty_status', { length: 20 }).default('OFF_DUTY').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

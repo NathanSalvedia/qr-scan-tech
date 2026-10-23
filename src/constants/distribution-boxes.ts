@@ -34,6 +34,7 @@ export interface EquipmentCatalogItem {
 export const STANDARD_HARDWARE_CATALOG: EquipmentCatalogItem[] = [
   // 1. Optical Equipment (For Signal and Data Transmission)
   { id: 'cat-opt-1', name: 'PLC Optical Splitter', category: 'Optical Equipment', type: 'Splitter' },
+  { id: 'cat-opt-5', name: 'FBT Optical Splitter', category: 'Optical Equipment', type: 'Splitter' },
   { id: 'cat-opt-2', name: 'Fiber Optic Adapters / Couplers', category: 'Optical Equipment', type: 'Adapter' },
   { id: 'cat-opt-3', name: 'Fiber Optic Pigtails', category: 'Optical Equipment', type: 'Pigtail' },
   { id: 'cat-opt-4', name: 'Fiber Patch Cord', category: 'Optical Equipment', type: 'Patch Cord' },

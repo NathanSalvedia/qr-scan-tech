@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -25,8 +26,14 @@ export default function ResetPasswordScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const isWeb = Platform.OS === "web";
+
+  const handleProceedToSignIn = () => {
+    setShowSuccessModal(false);
+    router.replace("/auth/sign-in");
+  };
 
   const showAlert = (title: string, message: string, onOk?: () => void) => {
     if (isWeb) {
@@ -69,13 +76,7 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      showAlert(
-        "Success!",
-        "Your password has been reset successfully. You can now sign in with your new password.",
-        () => {
-          router.replace("/auth/sign-in");
-        }
-      );
+      setShowSuccessModal(true);
     } catch (err: any) {
       showAlert("Error", err.message || "An unexpected error occurred.");
     } finally {
@@ -85,7 +86,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#f0f3f6]">
-      <StatusBar style="dark" />
+      <StatusBar style={showSuccessModal ? "light" : "dark"} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -222,24 +223,105 @@ export default function ResetPasswordScreen() {
                 )}
               </TouchableOpacity>
 
-              {/* Back to Sign In */}
-              <View className="flex-row items-center justify-center">
-                <Text className="text-[#64748b] text-sm font-poppins">
-                  Remember your password?{" "}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => router.replace("/auth/sign-in")}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-[#4d6029] font-poppins-bold text-sm">
-                    Sign In
+              {/* Navigation Hyperlinks */}
+              <View className="items-center justify-center space-y-2 mt-2">
+                {/* Forgot Password Hyperlink */}
+                <View className="flex-row items-center justify-center">
+                  <Text className="text-[#64748b] text-xs font-poppins">
+                    Need a new reset code?{" "}
                   </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push("/auth/forgot-password")}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-[#4d6029] font-poppins-bold text-xs underline">
+                      Forgot Password
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Back to Sign In */}
+                <View className="flex-row items-center justify-center mt-1">
+                  <Text className="text-[#64748b] text-xs font-poppins">
+                    Remember your password?{" "}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => router.replace("/auth/sign-in")}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-[#4d6029] font-poppins-bold text-xs">
+                      Sign In
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Customized Password Reset Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleProceedToSignIn}
+      >
+        <View className="flex-1 bg-slate-900/60 justify-center items-center px-4">
+          <View
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl items-center border border-slate-100"
+            style={{
+              elevation: 20,
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+            }}
+          >
+            {/* Success Icon */}
+            <View className="w-16 h-16 rounded-3xl bg-[#4d6029]/10 border border-[#4d6029]/20 items-center justify-center mb-4">
+              <MaterialCommunityIcons
+                name="check-decagram"
+                size={38}
+                color="#4d6029"
+              />
+            </View>
+
+            {/* Modal Title */}
+            <Text className="text-xl font-poppins-bold text-[#0f172a] text-center mb-1.5">
+              Password Reset Successful!
+            </Text>
+
+            {/* Subtitle / Description */}
+            <Text className="text-xs font-poppins text-[#64748b] text-center mb-4 leading-relaxed px-2">
+              Your account password has been updated. You can now use your new password to sign in.
+            </Text>
+
+            {/* Account Email Confirmation Pill */}
+            <View className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-5 flex-row items-center justify-center">
+              <Ionicons name="mail" size={16} color="#4d6029" />
+              <Text
+                className="text-xs font-poppins-bold text-[#0f172a] ml-2 shrink"
+                numberOfLines={1}
+              >
+                {email}
+              </Text>
+            </View>
+
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              onPress={handleProceedToSignIn}
+              className="w-full bg-[#4d6029] active:opacity-90 py-3.5 rounded-2xl items-center justify-center flex-row shadow-sm shadow-[#4d6029]/30"
+              activeOpacity={0.85}
+            >
+              <Ionicons name="log-in-outline" size={18} color="#ffffff" />
+              <Text className="text-white text-sm font-poppins-bold ml-2">
+                Proceed to Sign In
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

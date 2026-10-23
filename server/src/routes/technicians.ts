@@ -78,6 +78,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         phoneNumber: users.phoneNumber,
         role: users.role,
         isActive: users.isActive,
+        dutyStatus: users.dutyStatus,
         createdAt: users.createdAt,
       })
       .from(users)
@@ -148,9 +149,10 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         };
       });
 
-      const dutyStatus: 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY' = !user.isActive
-        ? 'OFF_DUTY'
-        : 'ON_DUTY';
+      const dutyStatus: 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY' =
+        user.dutyStatus === 'ON_DUTY' || user.dutyStatus === 'ON_BREAK' || user.dutyStatus === 'OFF_DUTY'
+          ? (user.dutyStatus as 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY')
+          : (!user.isActive ? 'OFF_DUTY' : 'ON_DUTY');
 
       return {
         id: user.id,
@@ -205,6 +207,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
         phoneNumber: users.phoneNumber,
         role: users.role,
         isActive: users.isActive,
+        dutyStatus: users.dutyStatus,
         createdAt: users.createdAt,
       })
       .from(users)
@@ -249,7 +252,10 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
         email: user.email,
         phone: user.phoneNumber || '+63 917 000 0000',
         isActive: user.isActive,
-        dutyStatus: user.isActive ? 'ON_DUTY' : 'OFF_DUTY',
+        dutyStatus:
+          user.dutyStatus === 'ON_DUTY' || user.dutyStatus === 'ON_BREAK' || user.dutyStatus === 'OFF_DUTY'
+            ? user.dutyStatus
+            : (user.isActive ? 'ON_DUTY' : 'OFF_DUTY'),
         scanHistory,
       },
     });

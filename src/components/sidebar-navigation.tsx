@@ -266,8 +266,8 @@ export function SidebarNavigation({
     router.push(route as any);
   };
 
-  const handleSignOut = () => {
-    authService.logout();
+  const handleSignOut = async () => {
+    await authService.logout(currentUser);
     router.replace("/auth/sign-in");
   };
 

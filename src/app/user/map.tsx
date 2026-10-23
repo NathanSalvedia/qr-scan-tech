@@ -969,7 +969,7 @@ export default function UserMapScreen() {
                         Parent Upstream Node:
                       </Text>
                       <Text className="text-[11px] font-mono font-bold text-[#0f172a]">
-                        {selectedPin.parentCode || "Root Feeder Node"}
+                        {selectedPin.parentCode || (selectedPin.category === "MAIN_BOX" ? "Root Feeder Node" : "None / Standalone")}
                       </Text>
                     </View>
                   </View>

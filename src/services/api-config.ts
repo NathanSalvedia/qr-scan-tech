@@ -69,11 +69,32 @@ export const getCustomApiUrl = (): string | null => {
  * - iOS Simulator / Web (localhost)
  */
 export const getApiBaseUrl = (): string => {
-  // 0. For Web in browser on localhost: use local backend directly
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:5000/api';
+  // 0. Development Mode (__DEV__): prioritize local backend for Expo Go & LAN dev
+  if (__DEV__) {
+    // 0a. For Web browser:
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:5000/api';
+      }
+      const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+      if (isLanIp) {
+        return `http://${hostname}:5000/api`;
+      }
+    }
+
+    // 0b. For Physical Mobile Device via Expo Go bundler hostUri:
+    const hostUri = Constants.expoConfig?.hostUri;
+    if (hostUri) {
+      const isTunnel =
+        hostUri.includes('exp.direct') ||
+        hostUri.includes('ngrok') ||
+        hostUri.includes('.tunnel.');
+
+      if (!isTunnel) {
+        const hostIp = hostUri.split(':')[0];
+        return `http://${hostIp}:5000/api`;
+      }
     }
   }
 

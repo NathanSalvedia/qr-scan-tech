@@ -2,6 +2,7 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { useAuth } from "@/services/auth-state";
 import { boxService } from "@/services/boxes";
 import { logsService, type RecentScanItem } from "@/services/logs";
+import { settingsService } from "@/services/settings";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -72,6 +73,13 @@ export default function UserDashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [isOnDuty, setIsOnDuty] = useState(true);
+
+  // Proactively ensure logged-in technician is synced as ON_DUTY on server
+  useEffect(() => {
+    if (user && user.role !== "admin") {
+      settingsService.setOnDutyStatus(true).catch(() => {});
+    }
+  }, [user]);
 
   const [stats, setStats] = useState({
     total: 0,

@@ -74818,6 +74818,7 @@ var users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").default("user").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
+  dutyStatus: varchar("duty_status", { length: 20 }).default("OFF_DUTY").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
@@ -88883,7 +88884,7 @@ router.post("/verify-otp", async (req, res) => {
         email: cleanEmail
       });
     }
-    const [updatedUser] = await db.update(users).set({ isActive: true, updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, cleanEmail)).returning();
+    const [updatedUser] = await db.update(users).set({ isActive: true, dutyStatus: "ON_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, cleanEmail)).returning();
     if (!updatedUser) {
       return res.status(404).json({ success: false, message: "User not found." });
     }
@@ -88902,7 +88903,8 @@ router.post("/verify-otp", async (req, res) => {
         name: `${updatedUser.firstName} ${updatedUser.lastName}`,
         email: updatedUser.email,
         role: updatedUser.role,
-        isActive: updatedUser.isActive
+        isActive: updatedUser.isActive,
+        dutyStatus: updatedUser.dutyStatus
       },
       token
     });
@@ -88965,6 +88967,11 @@ router.post("/login", async (req, res) => {
         message: "Invalid email or password."
       });
     }
+    let currentDutyStatus = user.dutyStatus || "OFF_DUTY";
+    if (user.role !== "admin") {
+      currentDutyStatus = "ON_DUTY";
+      await db.update(users).set({ dutyStatus: "ON_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, user.id));
+    }
     const token = import_jsonwebtoken2.default.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET || "secret",
@@ -88980,7 +88987,8 @@ router.post("/login", async (req, res) => {
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role,
-        isActive: user.isActive
+        isActive: user.isActive,
+        dutyStatus: currentDutyStatus
       },
       token
     });
@@ -89332,7 +89340,8 @@ router.post("/register-with-phone", async (req, res) => {
       phoneNumber: normalizedTarget ? normalizedTarget.standard : targetPhone || null,
       passwordHash: hashedPassword,
       role: "user",
-      isActive: true
+      isActive: true,
+      dutyStatus: "ON_DUTY"
     }).returning();
     const token = import_jsonwebtoken2.default.sign(
       { id: newUser.id, email: newUser.email, role: newUser.role },
@@ -89350,12 +89359,99 @@ router.post("/register-with-phone", async (req, res) => {
         email: newUser.email,
         phoneNumber: newUser.phoneNumber,
         role: newUser.role,
-        isActive: newUser.isActive
+        isActive: newUser.isActive,
+        dutyStatus: newUser.dutyStatus
       },
       token
     });
   } catch (err) {
     console.error("Register with phone error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.post("/logout", async (req, res) => {
+  try {
+    let targetUserId;
+    let targetEmail;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      try {
+        const decoded = import_jsonwebtoken2.default.verify(
+          token,
+          process.env.JWT_SECRET || "secret"
+        );
+        targetUserId = decoded.id;
+        targetEmail = decoded.email;
+      } catch {
+      }
+    }
+    if (!targetUserId && req.body?.userId) {
+      targetUserId = String(req.body.userId);
+    }
+    if (!targetEmail && req.body?.email) {
+      targetEmail = String(req.body.email).toLowerCase().trim();
+    }
+    if (targetUserId) {
+      await db.update(users).set({ dutyStatus: "OFF_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, targetUserId));
+    } else if (targetEmail) {
+      await db.update(users).set({ dutyStatus: "OFF_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, targetEmail));
+    }
+    return res.json({
+      success: true,
+      message: "Logged out successfully. Duty status set to OFF_DUTY."
+    });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.get("/duty-status", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId)
+    });
+    return res.json({
+      success: true,
+      dutyStatus: user?.dutyStatus || "OFF_DUTY",
+      isOnDuty: user?.dutyStatus === "ON_DUTY"
+    });
+  } catch (err) {
+    console.error("Get duty status error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+router.post("/duty-status", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+    const { dutyStatus, onDuty } = req.body;
+    let newStatus = "OFF_DUTY";
+    if (dutyStatus && ["ON_DUTY", "OFF_DUTY", "ON_BREAK"].includes(dutyStatus)) {
+      newStatus = dutyStatus;
+    } else if (typeof onDuty === "boolean") {
+      newStatus = onDuty ? "ON_DUTY" : "OFF_DUTY";
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid duty status. Expected dutyStatus ("ON_DUTY" | "OFF_DUTY" | "ON_BREAK") or boolean onDuty.'
+      });
+    }
+    await db.update(users).set({ dutyStatus: newStatus, updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, userId));
+    return res.json({
+      success: true,
+      message: `Duty status updated to ${newStatus}`,
+      dutyStatus: newStatus,
+      isOnDuty: newStatus === "ON_DUTY"
+    });
+  } catch (err) {
+    console.error("Update duty status error:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -90035,6 +90131,7 @@ router4.get("/", requireAuth, async (req, res) => {
       phoneNumber: users.phoneNumber,
       role: users.role,
       isActive: users.isActive,
+      dutyStatus: users.dutyStatus,
       createdAt: users.createdAt
     }).from(users).where(ne(users.role, "admin")).orderBy(users.createdAt);
     const allAudits = await db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt));
@@ -90075,7 +90172,7 @@ router4.get("/", requireAuth, async (req, res) => {
           notes: audit.auditNotes || `Physical inspection performed. Padlock verified: ${audit.padlockVerified ? "Yes" : "No"}.`
         };
       });
-      const dutyStatus = !user.isActive ? "OFF_DUTY" : "ON_DUTY";
+      const dutyStatus = user.dutyStatus === "ON_DUTY" || user.dutyStatus === "ON_BREAK" || user.dutyStatus === "OFF_DUTY" ? user.dutyStatus : !user.isActive ? "OFF_DUTY" : "ON_DUTY";
       return {
         id: user.id,
         employeeId: `TECH-ILG-${(index + 1).toString().padStart(2, "0")}`,
@@ -90123,6 +90220,7 @@ router4.get("/:id", requireAuth, async (req, res) => {
       phoneNumber: users.phoneNumber,
       role: users.role,
       isActive: users.isActive,
+      dutyStatus: users.dutyStatus,
       createdAt: users.createdAt
     }).from(users).where(and(eq(users.id, id), ne(users.role, "admin")));
     if (!user) {
@@ -90153,7 +90251,7 @@ router4.get("/:id", requireAuth, async (req, res) => {
         email: user.email,
         phone: user.phoneNumber || "+63 917 000 0000",
         isActive: user.isActive,
-        dutyStatus: user.isActive ? "ON_DUTY" : "OFF_DUTY",
+        dutyStatus: user.dutyStatus === "ON_DUTY" || user.dutyStatus === "ON_BREAK" || user.dutyStatus === "OFF_DUTY" ? user.dutyStatus : user.isActive ? "ON_DUTY" : "OFF_DUTY",
         scanHistory
       }
     });
