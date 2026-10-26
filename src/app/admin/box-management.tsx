@@ -265,7 +265,8 @@ export default function BoxManagementScreen() {
   const [newCategory, setNewCategory] = useState<"MAIN_BOX" | "SUB_BOX">(
     "SUB_BOX",
   );
-  const [newParentCode, setNewParentCode] = useState("DB-MN-01");
+  const [newParentCode, setNewParentCode] = useState("");
+  const [isParentDropdownOpen, setIsParentDropdownOpen] = useState(false);
   const [newSiteName, setNewSiteName] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newMountingType, setNewMountingType] = useState<
@@ -757,6 +758,14 @@ export default function BoxManagementScreen() {
         setNewLatitude(matchedResult.lat);
         setNewLongitude(matchedResult.lon);
         setGeocodingStatus(`Auto-detected: ${matchedResult.name}`);
+
+        // Smart proximity suggestion for Feeder Parent
+        if (newCategory === "SUB_BOX") {
+          const closest = getClosestMainBox(matchedResult.lat, matchedResult.lon);
+          if (closest) {
+            setNewParentCode(closest.code);
+          }
+        }
       } else {
         setGeocodingStatus(
           "⚠️ Location not found on map — please enter GPS coordinates manually",
@@ -790,6 +799,14 @@ export default function BoxManagementScreen() {
         setNewLatitude(parts[0]);
         setNewLongitude(parts[1]);
         setGeocodingStatus("Coordinates pasted and separated");
+
+        // Smart proximity suggestion for Feeder Parent
+        if (newCategory === "SUB_BOX") {
+          const closest = getClosestMainBox(parts[0], parts[1]);
+          if (closest) {
+            setNewParentCode(closest.code);
+          }
+        }
         return;
       }
     }
@@ -800,11 +817,43 @@ export default function BoxManagementScreen() {
     setNewAddress(text);
   };
 
+  // Find closest Main Box to the given coordinates
+  const getClosestMainBox = (latStr: string, lonStr: string) => {
+    const lat = parseFloat(latStr);
+    const lon = parseFloat(lonStr);
+    if (isNaN(lat) || isNaN(lon)) return null;
+
+    const mainBoxes = boxes.filter(
+      (b) => b.category === "MAIN_BOX" && !isNaN(Number(b.latitude)) && !isNaN(Number(b.longitude))
+    );
+    if (mainBoxes.length === 0) return null;
+
+    let closest = mainBoxes[0];
+    let minDistance = Infinity;
+
+    mainBoxes.forEach((b) => {
+      const dLat = Number(b.latitude) - lat;
+      const dLon = Number(b.longitude) - lon;
+      const distSq = dLat * dLat + dLon * dLon;
+      if (distSq < minDistance) {
+        minDistance = distSq;
+        closest = b;
+      }
+    });
+
+    return closest;
+  };
+
   const handleOpenRegisterModal = () => {
     const defaultCat: "MAIN_BOX" | "SUB_BOX" = "SUB_BOX";
     setNewCategory(defaultCat);
     setNewCode(getNextBoxCode(defaultCat, boxes));
-    setNewParentCode("DB-MN-01");
+
+    // Default to first Main Box if available
+    const mainBoxes = boxes.filter((b) => b.category === "MAIN_BOX");
+    setNewParentCode(mainBoxes.length > 0 ? mainBoxes[0].code : "DB-MN-01");
+    setIsParentDropdownOpen(false);
+
     setNewSiteName("");
     setNewAddress("");
     setNewLatitude("");
@@ -1713,7 +1762,7 @@ export default function BoxManagementScreen() {
                   </View>
                 </View>
 
-                {/* Right: Previous / Page Numbers / Next */}
+                {/* Right: Previous / Next */}
                 <View className="flex-row items-center space-x-1">
                   {/* Previous Button */}
                   <TouchableOpacity
@@ -1732,31 +1781,6 @@ export default function BoxManagementScreen() {
                       Previous
                     </Text>
                   </TouchableOpacity>
-
-                  {/* Page Numbers */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                    (pageNum) => (
-                      <TouchableOpacity
-                        key={pageNum}
-                        onPress={() => setCurrentPage(pageNum)}
-                        className={`w-8 h-8 rounded-xl items-center justify-center border mx-0.5 ${
-                          safeCurrentPage === pageNum
-                            ? "bg-[#4d6029] border-[#4d6029]"
-                            : "bg-white border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Text
-                          className={`text-xs font-poppins-bold ${
-                            safeCurrentPage === pageNum
-                              ? "text-white"
-                              : "text-[#475569]"
-                          }`}
-                        >
-                          {pageNum}
-                        </Text>
-                      </TouchableOpacity>
-                    ),
-                  )}
 
                   {/* Next Button */}
                   <TouchableOpacity
@@ -2561,7 +2585,12 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* Box Code & Parent Feeder */}
-                <View className="flex-row gap-2.5">
+                <View
+                  className="flex-row gap-2.5"
+                  style={{
+                    zIndex: isParentDropdownOpen ? 100 : 1,
+                  }}
+                >
                   <View className="flex-1">
                     <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
                       Box Code:
@@ -2591,15 +2620,116 @@ export default function BoxManagementScreen() {
                       <Text className="text-xs font-poppins-semibold text-[#475569] mb-1 mt-3">
                         Feeder Parent:
                       </Text>
-                      <TextInput
-                        placeholder="e.g. DB-MN-01"
-                        placeholderTextColor="#94a3b8"
-                        value={newParentCode}
-                        onChangeText={setNewParentCode}
-                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-poppins-medium text-[#0f172a]"
-                      />
+                      <View
+                        className="relative"
+                        style={{
+                          zIndex: isParentDropdownOpen ? 100 : 1,
+                        }}
+                      >
+                        <TouchableOpacity
+                          onPress={() => setIsParentDropdownOpen(!isParentDropdownOpen)}
+                          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 flex-row items-center justify-between"
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            className={`text-xs ${
+                              newParentCode
+                                ? "font-poppins-bold text-[#0f172a]"
+                                : "font-poppins-medium text-[#94a3b8]"
+                            }`}
+                            numberOfLines={1}
+                          >
+                            {newParentCode || "Select Feeder Main Box"}
+                          </Text>
+                          <Ionicons
+                            name={isParentDropdownOpen ? "chevron-up" : "chevron-down"}
+                            size={14}
+                            color="#64748b"
+                          />
+                        </TouchableOpacity>
+
+                        {/* Floating Absolute Overlay Dropdown Menu */}
+                        {isParentDropdownOpen && (
+                          <View
+                            className="bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden"
+                            style={{
+                              position: "absolute",
+                              top: "100%",
+                              left: 0,
+                              right: 0,
+                              marginTop: 6,
+                              zIndex: 9999,
+                              elevation: 50,
+                              shadowColor: "#0f172a",
+                              shadowOffset: { width: 0, height: 10 },
+                              shadowOpacity: 0.25,
+                              shadowRadius: 20,
+                            }}
+                          >
+                          {boxes.filter((b) => b.category === "MAIN_BOX").length === 0 ? (
+                            <View className="p-3">
+                              <Text className="text-xs font-poppins text-[#94a3b8] text-center">
+                                No Main Distribution Boxes registered yet.
+                              </Text>
+                            </View>
+                          ) : (
+                            boxes
+                              .filter((b) => b.category === "MAIN_BOX")
+                              .map((mb) => {
+                                const isSelected = newParentCode === mb.code;
+                                return (
+                                  <TouchableOpacity
+                                    key={mb.id}
+                                    onPress={() => {
+                                      setNewParentCode(mb.code);
+                                      setIsParentDropdownOpen(false);
+                                    }}
+                                    className="px-3 py-2.5 flex-row items-center border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors"
+                                  >
+                                    {/* Left Checkbox */}
+                                    <View
+                                      className={`w-4 h-4 rounded border mr-2.5 items-center justify-center ${
+                                        isSelected
+                                          ? "bg-[#4d6029] border-[#4d6029]"
+                                          : "border-slate-300 bg-white"
+                                      }`}
+                                    >
+                                      {isSelected && (
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={11}
+                                          color="#ffffff"
+                                        />
+                                      )}
+                                    </View>
+
+                                    <View className="flex-1">
+                                      <View className="flex-row items-center">
+                                        <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                                          {mb.code}
+                                        </Text>
+                                        <View className="ml-1.5 px-1.5 py-0.5 rounded-md bg-[#4d6029]/10 border border-[#4d6029]/30">
+                                          <Text className="text-[8px] font-poppins-bold text-[#4d6029]">
+                                            MAIN
+                                          </Text>
+                                        </View>
+                                      </View>
+                                      <Text
+                                        className="text-[10px] font-poppins text-[#64748b] mt-0.5"
+                                        numberOfLines={1}
+                                      >
+                                        {mb.siteName || mb.address || "Main Feeder Node"}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })
+                          )}
+                        </View>
+                      )}
                     </View>
-                  )}
+                  </View>
+                )}
                 </View>
 
                 {/* Site Name */}
@@ -2795,45 +2925,69 @@ export default function BoxManagementScreen() {
                 </View>
 
                 {/* Port Capacity Dropdown */}
-                <View className="mt-3">
+                <View
+                  className="mt-3"
+                  style={{
+                    zIndex: isPortsDropdownOpen ? 80 : 2,
+                  }}
+                >
                   <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
                     Total Optical / Terminal Ports:
                   </Text>
 
-                  {/* Dropdown Toggle Trigger Button */}
-                  <TouchableOpacity
-                    onPress={() => setIsPortsDropdownOpen(!isPortsDropdownOpen)}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
-                    activeOpacity={0.8}
-                  >
-                    <View className="flex-row items-center flex-1 mr-2">
-                      <MaterialCommunityIcons
-                        name="server-network"
+                  <View className="relative" style={{ zIndex: 80 }}>
+                    {/* Dropdown Toggle Trigger Button */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setIsPortsDropdownOpen(!isPortsDropdownOpen);
+                        if (!isPortsDropdownOpen) setIsEquipmentDropdownOpen(false);
+                      }}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                      activeOpacity={0.8}
+                    >
+                      <View className="flex-row items-center flex-1 mr-2">
+                        <MaterialCommunityIcons
+                          name="server-network"
+                          size={16}
+                          color="#4d6029"
+                        />
+                        <Text
+                          className={`text-xs ml-2 ${
+                            newPorts
+                              ? "font-poppins-semibold text-[#0f172a]"
+                              : "font-poppins-medium text-[#0f172a]"
+                          }`}
+                        >
+                          {newPorts
+                            ? `${newPorts} Ports`
+                            : "+ Add or Select Port"}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={isPortsDropdownOpen ? "chevron-up" : "chevron-down"}
                         size={16}
-                        color="#4d6029"
+                        color="#64748b"
                       />
-                      <Text
-                        className={`text-xs ml-2 ${
-                          newPorts
-                            ? "font-poppins-semibold text-[#0f172a]"
-                            : "font-poppins-medium text-[#0f172a]"
-                        }`}
-                      >
-                        {newPorts
-                          ? `${newPorts} Ports`
-                          : "+ Add or Select Port"}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={isPortsDropdownOpen ? "chevron-up" : "chevron-down"}
-                      size={16}
-                      color="#64748b"
-                    />
-                  </TouchableOpacity>
+                    </TouchableOpacity>
 
-                  {/* Expanded Dropdown Options Panel */}
-                  {isPortsDropdownOpen && (
-                    <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                    {/* Floating Absolute Overlay Dropdown Options Panel */}
+                    {isPortsDropdownOpen && (
+                      <View
+                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xl"
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: 0,
+                          right: 0,
+                          marginTop: 6,
+                          zIndex: 9999,
+                          elevation: 40,
+                          shadowColor: "#0f172a",
+                          shadowOffset: { width: 0, height: 8 },
+                          shadowOpacity: 0.22,
+                          shadowRadius: 16,
+                        }}
+                      >
                       {(newCategory === "SUB_BOX"
                         ? ["8", "16", "24"]
                         : ["8", "16", "24", "32", "48"]
@@ -2850,43 +3004,42 @@ export default function BoxManagementScreen() {
                               idx < arr.length - 1
                                 ? "border-b border-slate-100"
                                 : ""
-                            } ${
-                              isSelected
-                                ? "bg-[#AEAC78]/25"
-                                : "bg-white hover:bg-slate-50"
-                            }`}
+                            } bg-white hover:bg-slate-50`}
                             activeOpacity={0.7}
                           >
                             <View className="flex-row items-center flex-1 mr-2">
+                              {/* Left Checkbox */}
                               <View
-                                className={`w-2 h-2 rounded-full mr-2.5 ${
-                                  isSelected ? "bg-[#4d6029]" : "bg-slate-300"
+                                className={`w-4 h-4 rounded border mr-2.5 items-center justify-center ${
+                                  isSelected
+                                    ? "bg-[#4d6029] border-[#4d6029]"
+                                    : "border-slate-300 bg-white"
                                 }`}
-                              />
+                              >
+                                {isSelected && (
+                                  <Ionicons
+                                    name="checkmark"
+                                    size={11}
+                                    color="#ffffff"
+                                  />
+                                )}
+                              </View>
                               <Text
                                 className={`text-xs ${
                                   isSelected
-                                    ? "font-poppins-bold text-[#4d6029]"
+                                    ? "font-poppins-bold text-[#0f172a]"
                                     : "font-poppins-medium text-[#1e293b]"
                                 }`}
                               >
                                 {port} Ports
                               </Text>
                             </View>
-                            {isSelected ? (
-                              <Ionicons
-                                name="checkmark-circle"
-                                size={16}
-                                color="#4d6029"
-                              />
-                            ) : (
-                              <View className="w-4 h-4 rounded-full border border-slate-200" />
-                            )}
                           </TouchableOpacity>
                         );
                       })}
                     </View>
                   )}
+                  </View>
                 </View>
 
                 {/* Hardware Equipment Multi-Select Dropdown Section */}
@@ -2905,12 +3058,12 @@ export default function BoxManagementScreen() {
                       </View>
                     )}
                   </View>
-
                   {/* Dropdown Toggle Trigger Button */}
                   <TouchableOpacity
-                    onPress={() =>
-                      setIsEquipmentDropdownOpen(!isEquipmentDropdownOpen)
-                    }
+                    onPress={() => {
+                      setIsEquipmentDropdownOpen(!isEquipmentDropdownOpen);
+                      if (!isEquipmentDropdownOpen) setIsPortsDropdownOpen(false);
+                    }}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
                     activeOpacity={0.8}
                   >
@@ -3009,18 +3162,33 @@ export default function BoxManagementScreen() {
                             <TouchableOpacity
                               key={item.id}
                               onPress={() => handleToggleEquipment(item.name)}
-                              className="flex-row items-center justify-between p-2.5 rounded-xl border bg-white border-slate-200/80 mb-2"
+                              className="flex-row items-center justify-between p-2.5 rounded-xl border border-slate-200/80 mb-2 bg-white hover:bg-slate-50 transition-colors"
                               activeOpacity={0.7}
                             >
                               <View className="flex-row items-center flex-1 mr-2">
-                                <Ionicons
-                                  name={
-                                    isSelected ? "checkbox" : "square-outline"
-                                  }
-                                  size={18}
-                                  color={isSelected ? "#4d6029" : "#94a3b8"}
-                                />
-                                <Text className="text-xs ml-2.5 font-poppins-medium text-[#0f172a]">
+                                {/* Left Checkbox */}
+                                <View
+                                  className={`w-4 h-4 rounded border mr-2.5 items-center justify-center ${
+                                    isSelected
+                                      ? "bg-[#4d6029] border-[#4d6029]"
+                                      : "border-slate-300 bg-white"
+                                  }`}
+                                >
+                                  {isSelected && (
+                                    <Ionicons
+                                      name="checkmark"
+                                      size={11}
+                                      color="#ffffff"
+                                    />
+                                  )}
+                                </View>
+                                <Text
+                                  className={`text-xs ${
+                                    isSelected
+                                      ? "font-poppins-bold text-[#0f172a]"
+                                      : "font-poppins-medium text-[#1e293b]"
+                                  }`}
+                                >
                                   {item.name}
                                 </Text>
                               </View>

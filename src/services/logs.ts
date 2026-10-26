@@ -23,6 +23,10 @@ export interface AuditLogItem {
   description: string;
   deviceOrIp: string;
   gpsCoordinates?: string;
+  distanceMeters?: number | null;
+  locationVerified?: boolean;
+  scanLatitude?: number | string;
+  scanLongitude?: number | string;
   metadata?: Record<string, string>;
 }
 
@@ -40,6 +44,10 @@ export interface RecordScanPayload {
   padlockVerified?: boolean;
   auditNotes?: string;
   boxStatusAtScan?: string;
+  scanLatitude?: number | string;
+  scanLongitude?: number | string;
+  distanceMeters?: number | null;
+  locationVerified?: boolean;
 }
 
 export interface RecentScanItem {
@@ -58,6 +66,8 @@ export interface RecentScanItem {
   dateGroup?: 'TODAY' | 'YESTERDAY' | 'EARLIER';
   auditNote?: string;
   padlockVerified?: boolean;
+  distanceMeters?: number | null;
+  locationVerified?: boolean;
   createdAt?: string;
   timestamp: string;
   relativeTime: string;
@@ -88,7 +98,7 @@ export const logsService = {
 
       return data;
     } catch (error: any) {
-      console.error('logsService.getMyRecentScans error:', error);
+      console.warn('logsService.getMyRecentScans error:', error?.message || error);
       return {
         success: false,
         message: error.message || 'Network error fetching recent scans',
@@ -114,7 +124,7 @@ export const logsService = {
 
       return data;
     } catch (error: any) {
-      console.error('logsService.getAll error:', error);
+      console.warn('logsService.getAll error:', error?.message || error);
       return {
         success: false,
         message: error.message || 'Network error fetching activity logs',
@@ -141,7 +151,7 @@ export const logsService = {
 
       return data;
     } catch (error: any) {
-      console.error('logsService.recordScan error:', error);
+      console.warn('logsService.recordScan error:', error?.message || error);
       return {
         success: false,
         message: error.message || 'Network error recording scan audit',

@@ -20,10 +20,11 @@ import {
   type ScanLogEntry,
   type MaintenanceAction,
 } from "@/services/technicians";
+import { formatDistance } from "@/utils/geo";
 
 export type { Technician, ScanLogEntry, MaintenanceAction };
 
-type DutyFilter = "ALL" | "ON_DUTY" | "ON_BREAK" | "OFF_DUTY" | "HAS_ALARM";
+type TechFilter = "ALL" | "HAS_ALARM";
 
 export default function TechniciansScreen() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -32,7 +33,7 @@ export default function TechniciansScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<DutyFilter>("ALL");
+  const [activeFilter, setActiveFilter] = useState<TechFilter>("ALL");
   const { isCollapsed: isSidebarCollapsed, toggleSidebar: toggleSidebarCollapse } = useSidebarCollapse();
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function TechniciansScreen() {
 
     loadTechnicians();
 
-    // Auto-refresh every 8 seconds to reflect live duty status changes
+    // Auto-refresh every 8 seconds to reflect live technician telemetry
     const interval = setInterval(() => {
       loadTechnicians();
     }, 8000);
@@ -115,9 +116,6 @@ export default function TechniciansScreen() {
 
     if (!matchesQuery) return false;
 
-    if (activeFilter === "ON_DUTY") return tech.dutyStatus === "ON_DUTY";
-    if (activeFilter === "ON_BREAK") return tech.dutyStatus === "ON_BREAK";
-    if (activeFilter === "OFF_DUTY") return tech.dutyStatus === "OFF_DUTY";
     if (activeFilter === "HAS_ALARM") return tech.activeAlarmsCount > 0;
     return true;
   });
@@ -128,41 +126,6 @@ export default function TechniciansScreen() {
   const endIndex = Math.min(startIndex + pageSize, filteredTechs.length);
   const paginatedTechs = filteredTechs.slice(startIndex, endIndex);
 
-  const getDutyBadge = (status: Technician["dutyStatus"]) => {
-    switch (status) {
-      case "ON_DUTY":
-        return {
-          bg: "bg-emerald-50 border border-emerald-200",
-          dot: "bg-emerald-500",
-          text: "text-emerald-700",
-          label: "On-Duty (Field)",
-        };
-      case "ON_BREAK":
-        return {
-          bg: "bg-amber-50 border border-amber-200",
-          dot: "bg-amber-500",
-          text: "text-amber-800",
-          label: "On Break",
-        };
-      case "OFF_DUTY":
-        return {
-          bg: "bg-slate-100 border border-slate-200",
-          dot: "bg-slate-400",
-          text: "text-slate-600",
-          label: "Off-Duty",
-        };
-    }
-  };
-
-  const onDutyCount = technicians.filter(
-    (t) => t.dutyStatus === "ON_DUTY",
-  ).length;
-  const onBreakCount = technicians.filter(
-    (t) => t.dutyStatus === "ON_BREAK",
-  ).length;
-  const offDutyCount = technicians.filter(
-    (t) => t.dutyStatus === "OFF_DUTY",
-  ).length;
   const hasAlarmCount = technicians.filter(
     (t) => t.activeAlarmsCount > 0,
   ).length;
@@ -172,6 +135,10 @@ export default function TechniciansScreen() {
   );
   const totalAlarmsCount = technicians.reduce(
     (acc, t) => acc + t.activeAlarmsCount,
+    0,
+  );
+  const totalScansThisMonth = technicians.reduce(
+    (acc, t) => acc + t.totalScansThisMonth,
     0,
   );
 
@@ -209,7 +176,7 @@ export default function TechniciansScreen() {
                   </Text>
                 </View>
                 <Text className="text-xs font-poppins text-[#64748b] mt-1 ml-12">
-                  Monitor on-duty field personnel, track real-time QR scan
+                  Monitor field personnel, track real-time QR scan
                   telemetry, and audit maintenance visits.
                 </Text>
               </View>
@@ -266,32 +233,29 @@ export default function TechniciansScreen() {
 
             {/* 1. TOP ROW OF 4 SUMMARY METRIC CARDS */}
             <View className="flex-row flex-wrap -mx-2 mb-5">
-              {/* Card 1: Active Field Personnel */}
+              {/* Card 1: Registered Field Crew */}
               <View className="w-full sm:w-1/2 lg:w-1/4 px-2 mb-3">
                 <View className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm justify-between h-32">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-xs font-poppins-medium text-[#64748b]">
-                      Active Field Team
+                      Field Crew Roster
                     </Text>
                     <View className="w-8 h-8 rounded-xl bg-emerald-50 items-center justify-center border border-emerald-100">
-                      <Ionicons name="person" size={16} color="#059669" />
+                      <Ionicons name="people" size={16} color="#059669" />
                     </View>
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      {onDutyCount} / {technicians.length}
+                      {technicians.length}
                     </Text>
                     <View className="bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       <Text className="text-[10px] font-poppins-bold text-emerald-700">
-                        {technicians.length > 0
-                          ? Math.round((onDutyCount / technicians.length) * 100)
-                          : 0}
-                        % On-Duty
+                        Active Roster
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    {onDutyCount} Technicians Active in Field
+                    {technicians.length} Registered Field Personnel
                   </Text>
                 </View>
               </View>
@@ -356,16 +320,16 @@ export default function TechniciansScreen() {
                 </View>
               </View>
 
-              {/* Card 4: Total Technicians */}
+              {/* Card 4: Monthly Field Scans */}
               <View className="w-full sm:w-1/2 lg:w-1/4 px-2 mb-3">
                 <View className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm justify-between h-32">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-xs font-poppins-medium text-[#64748b]">
-                      Registered Field Crew
+                      Monthly Field Scans
                     </Text>
                     <View className="w-8 h-8 rounded-xl bg-sky-50 items-center justify-center border border-sky-100">
                       <Ionicons
-                        name="people-outline"
+                        name="calendar-outline"
                         size={16}
                         color="#0284c7"
                       />
@@ -373,16 +337,16 @@ export default function TechniciansScreen() {
                   </View>
                   <View className="flex-row items-baseline space-x-2">
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
-                      {technicians.length}
+                      {totalScansThisMonth}
                     </Text>
                     <View className="bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
                       <Text className="text-[10px] font-poppins-bold text-sky-700">
-                        Technicians
+                        All Nodes
                       </Text>
                     </View>
                   </View>
                   <Text className="text-[11px] font-poppins text-[#94a3b8]">
-                    Registered Field Personnel (Excl. Admin)
+                    Total Physical Verifications This Month
                   </Text>
                 </View>
               </View>
@@ -419,15 +383,12 @@ export default function TechniciansScreen() {
               <View className="flex-row items-center flex-wrap gap-1.5">
                 {[
                   { id: "ALL", label: `All (${technicians.length})` },
-                  { id: "ON_DUTY", label: `🟢 On-Duty (${onDutyCount})` },
-                  { id: "ON_BREAK", label: `🟡 On Break (${onBreakCount})` },
-                  { id: "OFF_DUTY", label: `🔴 Off-Duty (${offDutyCount})` },
                   { id: "HAS_ALARM", label: `⚠️ Alarms (${hasAlarmCount})` },
                 ].map((filter) => (
                   <TouchableOpacity
                     key={filter.id}
                     onPress={() => {
-                      setActiveFilter(filter.id as DutyFilter);
+                      setActiveFilter(filter.id as TechFilter);
                       setCurrentPage(1);
                     }}
                     activeOpacity={0.8}
@@ -480,27 +441,22 @@ export default function TechniciansScreen() {
                 <View className="w-full flex-1 min-w-[1000px]">
                   {/* Table Column Header */}
                   <View className="flex-row bg-[#f8fafc] border-b border-slate-200/80 px-6 py-3.5 items-center w-full">
-                    <View className="flex-[2] min-w-[220px] pr-2">
+                    <View className="flex-[2.5] min-w-[240px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Technician & Role
                       </Text>
                     </View>
-                    <View className="flex-[1.8] min-w-[180px] pr-2">
+                    <View className="flex-[2] min-w-[200px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Contact Info
                       </Text>
                     </View>
-                    <View className="flex-[1.3] min-w-[140px] pr-2">
-                      <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
-                        Duty Status
-                      </Text>
-                    </View>
-                    <View className="flex-[2.2] min-w-[220px] pr-3">
+                    <View className="flex-[2.8] min-w-[260px] pr-3">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Last Box Scanned
                       </Text>
                     </View>
-                    <View className="flex-[1.2] min-w-[120px] pr-2">
+                    <View className="flex-[1.5] min-w-[150px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Today&apos;s Activity
                       </Text>
@@ -533,153 +489,133 @@ export default function TechniciansScreen() {
                       </Text>
                     </View>
                   ) : (
-                    paginatedTechs.map((tech, index) => {
-                      const dutyMeta = getDutyBadge(tech.dutyStatus);
-
-                      return (
-                        <View
-                          key={tech.id}
-                          className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
-                            index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
-                          }`}
-                        >
-                          {/* 1. Technician & Role */}
-                          <View className="flex-[2] min-w-[220px] pr-2 flex-row items-center">
-                            <View
-                              className="w-10 h-10 rounded-2xl items-center justify-center mr-3 shadow-xs"
-                              style={{ backgroundColor: tech.avatarColor || '#4d6029' }}
-                            >
-                              <Text className="text-sm font-poppins-bold text-white">
-                                {tech.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </Text>
-                            </View>
-                            <View className="flex-1">
-                              <Text
-                                className="text-xs font-poppins-bold text-[#0f172a]"
-                                numberOfLines={1}
-                              >
-                                {tech.name}
-                              </Text>
-                              <View className="flex-row items-center mt-0.5">
-                                <Text className="text-[10px] font-poppins text-[#64748b]">
-                                  role: <Text className="font-poppins-semibold text-[#475569]">{tech.role}</Text>
-                                </Text>
-                              </View>
-                            </View>
+                    paginatedTechs.map((tech, index) => (
+                      <View
+                        key={tech.id}
+                        className={`flex-row items-center px-6 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors w-full ${
+                          index % 2 === 1 ? "bg-[#fafbfc]" : "bg-white"
+                        }`}
+                      >
+                        {/* 1. Technician & Role */}
+                        <View className="flex-[2.5] min-w-[240px] pr-2 flex-row items-center">
+                          <View
+                            className="w-10 h-10 rounded-2xl items-center justify-center mr-3 shadow-xs"
+                            style={{ backgroundColor: tech.avatarColor || '#4d6029' }}
+                          >
+                            <Text className="text-sm font-poppins-bold text-white">
+                              {tech.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")}
+                            </Text>
                           </View>
-
-                          {/* 2. Contact Info */}
-                          <View className="flex-[1.8] min-w-[180px] pr-2">
-                            <View className="flex-row items-center">
-                              <Ionicons
-                                name="call-outline"
-                                size={11}
-                                color="#4d6029"
-                              />
-                              <Text
-                                className="text-xs font-poppins-medium text-[#0f172a] ml-1.5"
-                                numberOfLines={1}
-                              >
-                                {tech.phone}
-                              </Text>
-                            </View>
+                          <View className="flex-1">
+                            <Text
+                              className="text-xs font-poppins-bold text-[#0f172a]"
+                              numberOfLines={1}
+                            >
+                              {tech.name}
+                            </Text>
                             <View className="flex-row items-center mt-0.5">
-                              <Ionicons
-                                name="mail-outline"
-                                size={11}
-                                color="#64748b"
-                              />
-                              <Text
-                                className="text-[10px] font-poppins text-[#64748b] ml-1.5"
-                                numberOfLines={1}
-                              >
-                                {tech.email}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* 3. Duty Status */}
-                          <View className="flex-[1.3] min-w-[140px] pr-2">
-                            <View
-                              className={`inline-flex self-start px-2.5 py-1 rounded-lg flex-row items-center ${dutyMeta.bg}`}
-                            >
-                              <View
-                                className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dutyMeta.dot}`}
-                              />
-                              <Text
-                                className={`text-[10px] font-poppins-bold ${dutyMeta.text}`}
-                              >
-                                {dutyMeta.label}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* 4. Last Box Scanned */}
-                          <View className="flex-[2.2] min-w-[220px] pr-3">
-                            <View className="flex-row items-center">
-                              <View className="bg-[#0f172a] px-2 py-0.5 rounded-md mr-1.5">
-                                <Text className="text-[10px] font-poppins-bold text-white">
-                                  {tech.lastBoxCode}
-                                </Text>
-                              </View>
-                              <Text
-                                className="text-xs font-poppins-bold text-[#0f172a] flex-1"
-                                numberOfLines={1}
-                              >
-                                {tech.lastBoxName}
-                              </Text>
-                            </View>
-                            <View className="flex-row items-center mt-1">
-                              <Ionicons
-                                name="time-outline"
-                                size={11}
-                                color="#64748b"
-                              />
-                              <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
-                                {tech.lastScanTime}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* 5. Today's Activity */}
-                          <View className="flex-[1.2] min-w-[120px] pr-2">
-                            <View className="flex-row items-center">
-                              <View className="w-6 h-6 rounded-full bg-slate-100 items-center justify-center mr-1.5 border border-slate-200">
-                                <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
-                                  {tech.todayScansCount}
-                                </Text>
-                              </View>
                               <Text className="text-[10px] font-poppins text-[#64748b]">
-                                Scans Today
+                                role: <Text className="font-poppins-semibold text-[#475569]">{tech.role}</Text>
                               </Text>
                             </View>
-                          </View>
-
-                          {/* 6. Actions */}
-                          <View className="w-[100px] min-w-[100px] flex-row items-center justify-end">
-                            <TouchableOpacity
-                              onPress={() => {
-                                setSelectedTechForDetails(tech);
-                                setActiveDetailsTab("LOGS");
-                              }}
-                              className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-lg flex-row items-center shadow-xs"
-                            >
-                              <Ionicons
-                                name="folder-open-outline"
-                                size={12}
-                                color="#ffffff"
-                              />
-                              <Text className="text-[10px] font-poppins-bold text-white ml-1">
-                                Inspect
-                              </Text>
-                            </TouchableOpacity>
                           </View>
                         </View>
-                      );
-                    })
+
+                        {/* 2. Contact Info */}
+                        <View className="flex-[2] min-w-[200px] pr-2">
+                          <View className="flex-row items-center">
+                            <Ionicons
+                              name="call-outline"
+                              size={11}
+                              color="#4d6029"
+                            />
+                            <Text
+                              className="text-xs font-poppins-medium text-[#0f172a] ml-1.5"
+                              numberOfLines={1}
+                            >
+                              {tech.phone}
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center mt-0.5">
+                            <Ionicons
+                              name="mail-outline"
+                              size={11}
+                              color="#64748b"
+                            />
+                            <Text
+                              className="text-[10px] font-poppins text-[#64748b] ml-1.5"
+                              numberOfLines={1}
+                            >
+                              {tech.email}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* 3. Last Box Scanned */}
+                        <View className="flex-[2.8] min-w-[260px] pr-3">
+                          <View className="flex-row items-center">
+                            <View className="bg-[#0f172a] px-2 py-0.5 rounded-md mr-1.5">
+                              <Text className="text-[10px] font-poppins-bold text-white">
+                                {tech.lastBoxCode}
+                              </Text>
+                            </View>
+                            <Text
+                              className="text-xs font-poppins-bold text-[#0f172a] flex-1"
+                              numberOfLines={1}
+                            >
+                              {tech.lastBoxName}
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center mt-1">
+                            <Ionicons
+                              name="time-outline"
+                              size={11}
+                              color="#64748b"
+                            />
+                            <Text className="text-[10px] font-poppins text-[#64748b] ml-1">
+                              {tech.lastScanTime}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* 4. Today's Activity */}
+                        <View className="flex-[1.5] min-w-[150px] pr-2">
+                          <View className="flex-row items-center">
+                            <View className="w-6 h-6 rounded-full bg-slate-100 items-center justify-center mr-1.5 border border-slate-200">
+                              <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                                {tech.todayScansCount}
+                              </Text>
+                            </View>
+                            <Text className="text-[10px] font-poppins text-[#64748b]">
+                              Scans Today
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* 5. Actions */}
+                        <View className="w-[100px] min-w-[100px] flex-row items-center justify-end">
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedTechForDetails(tech);
+                              setActiveDetailsTab("LOGS");
+                            }}
+                            className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-lg flex-row items-center shadow-xs"
+                          >
+                            <Ionicons
+                              name="folder-open-outline"
+                              size={12}
+                              color="#ffffff"
+                            />
+                            <Text className="text-[10px] font-poppins-bold text-white ml-1">
+                              Inspect
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
                   )}
                 </View>
               </ScrollView>
@@ -729,7 +665,7 @@ export default function TechniciansScreen() {
                   </View>
                 </View>
 
-                {/* Right: Previous / Page Numbers / Next */}
+                {/* Right: Previous / Next */}
                 <View className="flex-row items-center space-x-1">
                   {/* Previous Button */}
                   <TouchableOpacity
@@ -748,31 +684,6 @@ export default function TechniciansScreen() {
                       Previous
                     </Text>
                   </TouchableOpacity>
-
-                  {/* Page Numbers */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                    (pageNum) => (
-                      <TouchableOpacity
-                        key={pageNum}
-                        onPress={() => setCurrentPage(pageNum)}
-                        className={`w-8 h-8 rounded-xl items-center justify-center border mx-0.5 ${
-                          safeCurrentPage === pageNum
-                            ? "bg-[#4d6029] border-[#4d6029]"
-                            : "bg-white border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Text
-                          className={`text-xs font-poppins-bold ${
-                            safeCurrentPage === pageNum
-                              ? "text-white"
-                              : "text-[#475569]"
-                          }`}
-                        >
-                          {pageNum}
-                        </Text>
-                      </TouchableOpacity>
-                    ),
-                  )}
 
                   {/* Next Button */}
                   <TouchableOpacity
@@ -865,8 +776,8 @@ export default function TechniciansScreen() {
                   }`}
                 >
                   <MaterialCommunityIcons
-                    name="history"
-                    size={16}
+                    name="qrcode-scan"
+                    size={15}
                     color={activeDetailsTab === "LOGS" ? "#4d6029" : "#94a3b8"}
                   />
                   <Text
@@ -876,7 +787,7 @@ export default function TechniciansScreen() {
                         : "text-[#64748b]"
                     }`}
                   >
-                    Scan Audit Trail (
+                    Scan Boxes (
                     {selectedTechForDetails.scanHistory.length})
                   </Text>
                 </TouchableOpacity>
@@ -937,7 +848,7 @@ export default function TechniciansScreen() {
 
               {/* Tab Content Body */}
               <ScrollView className="p-6 flex-1 max-h-[50vh]">
-                {/* 1. Scan Audit Trail Tab */}
+                {/* 1. Scan Boxes Tab */}
                 {activeDetailsTab === "LOGS" && (
                   <View>
                     {selectedTechForDetails.scanHistory.length === 0 ? (
@@ -977,6 +888,75 @@ export default function TechniciansScreen() {
                             <Text className="text-[11px] font-poppins text-[#475569] mt-1 bg-white p-2.5 rounded-xl border border-slate-200/60">
                               💬 {scan.notes}
                             </Text>
+
+                            <View className="flex-row items-center justify-between mt-2 pt-2 border-t border-slate-200/50">
+                              {scan.distanceMeters !== undefined &&
+                              scan.distanceMeters !== null ? (
+                                <View
+                                  className={`px-2 py-0.5 rounded-full flex-row items-center ${
+                                    scan.locationVerified
+                                      ? "bg-emerald-50 border border-emerald-200"
+                                      : "bg-rose-50 border border-rose-300"
+                                  }`}
+                                >
+                                  <Ionicons
+                                    name={
+                                      scan.locationVerified
+                                        ? "location"
+                                        : "warning"
+                                    }
+                                    size={10}
+                                    color={
+                                      scan.locationVerified
+                                        ? "#059669"
+                                        : "#dc2626"
+                                    }
+                                  />
+                                  <Text
+                                    className={`text-[9px] font-poppins-bold ml-1 ${
+                                      scan.locationVerified
+                                        ? "text-emerald-700"
+                                        : "text-rose-700"
+                                    }`}
+                                  >
+                                    {scan.locationVerified
+                                      ? `On-Site (${formatDistance(
+                                          scan.distanceMeters
+                                        )})`
+                                      : `Mismatch (${formatDistance(
+                                          scan.distanceMeters
+                                        )})`}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <View className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
+                                  <Text className="text-[9px] font-poppins text-slate-500">
+                                    GPS N/A
+                                  </Text>
+                                </View>
+                              )}
+                              <View
+                                className={`px-2 py-0.5 rounded-md ${
+                                  scan.status === "ALARM"
+                                    ? "bg-rose-50"
+                                    : scan.status === "MAINTENANCE_DONE"
+                                    ? "bg-amber-50"
+                                    : "bg-slate-100"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-[9px] font-poppins-bold ${
+                                    scan.status === "ALARM"
+                                      ? "text-rose-700"
+                                      : scan.status === "MAINTENANCE_DONE"
+                                      ? "text-amber-700"
+                                      : "text-slate-600"
+                                  }`}
+                                >
+                                  {scan.status}
+                                </Text>
+                              </View>
+                            </View>
                           </View>
                         ))}
                       </View>
@@ -1071,24 +1051,6 @@ export default function TechniciansScreen() {
                           </Text>
                           <Text className="text-xs font-poppins-bold text-[#4d6029] mt-0.5">
                             {selectedTechForDetails.appVersion}
-                          </Text>
-                        </View>
-
-                        <View className="bg-white p-3 rounded-xl border border-slate-200">
-                          <Text className="text-[10px] font-poppins text-[#64748b]">
-                            Battery Level
-                          </Text>
-                          <Text className="text-xs font-poppins-bold text-emerald-700 mt-0.5">
-                            🔋 {selectedTechForDetails.lastBatteryLevel}
-                          </Text>
-                        </View>
-
-                        <View className="bg-white p-3 rounded-xl border border-slate-200">
-                          <Text className="text-[10px] font-poppins text-[#64748b]">
-                            Monthly Scans
-                          </Text>
-                          <Text className="text-xs font-poppins-bold text-[#0f172a] mt-0.5">
-                            {selectedTechForDetails.totalScansThisMonth} Boxes
                           </Text>
                         </View>
                       </View>

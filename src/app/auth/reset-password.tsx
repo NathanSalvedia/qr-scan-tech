@@ -1,3 +1,5 @@
+import { authService } from "@/services/auth";
+import { authState } from "@/services/auth-state";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -15,8 +17,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { authService } from "@/services/auth";
-import { authState } from "@/services/auth-state";
 
 export default function ResetPasswordScreen() {
   const defaultEmail = authState.getEmail() || "";
@@ -53,17 +53,26 @@ export default function ResetPasswordScreen() {
     }
 
     if (!newPassword || newPassword.length < 8) {
-      showAlert("Invalid Password", "New password must be at least 8 characters long.");
+      showAlert(
+        "Invalid Password",
+        "New password must be at least 8 characters long.",
+      );
       return;
     }
 
     if (newPassword.length > 12) {
-      showAlert("Password Too Long", "New password cannot exceed 12 characters.");
+      showAlert(
+        "Password Too Long",
+        "New password cannot exceed 12 characters.",
+      );
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showAlert("Password Mismatch", "New passwords do not match. Please verify.");
+      showAlert(
+        "Password Mismatch",
+        "New passwords do not match. Please verify.",
+      );
       return;
     }
 
@@ -72,7 +81,10 @@ export default function ResetPasswordScreen() {
       const res = await authService.resetPassword(cleanEmail, newPassword);
 
       if (!res.success) {
-        showAlert("Reset Failed", res.message || res.error || "Could not reset password.");
+        showAlert(
+          "Reset Failed",
+          res.message || res.error || "Could not reset password.",
+        );
         return;
       }
 
@@ -111,7 +123,11 @@ export default function ResetPasswordScreen() {
             {/* Top Brand Icon */}
             <View className="items-center mb-6">
               <View className="w-16 h-16 rounded-2xl bg-[#4d6029] items-center justify-center shadow-sm mb-4">
-                <MaterialCommunityIcons name="lock-reset" size={32} color="#ffffff" />
+                <MaterialCommunityIcons
+                  name="lock-reset"
+                  size={32}
+                  color="#ffffff"
+                />
               </View>
               <Text className="text-3xl font-poppins-bold text-[#0f172a] tracking-tight text-center">
                 Create New Password
@@ -148,7 +164,11 @@ export default function ResetPasswordScreen() {
                   New Password
                 </Text>
                 <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-slate-200">
-                  <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" />
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="#94a3b8"
+                  />
                   <TextInput
                     placeholder="8 to 12 characters"
                     placeholderTextColor="#94a3b8"
@@ -177,7 +197,11 @@ export default function ResetPasswordScreen() {
                   Confirm New Password
                 </Text>
                 <View className="flex-row items-center bg-white rounded-2xl px-4 py-3.5 border border-slate-200">
-                  <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" />
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="#94a3b8"
+                  />
                   <TextInput
                     placeholder="Confirm your new password"
                     placeholderTextColor="#94a3b8"
@@ -192,7 +216,9 @@ export default function ResetPasswordScreen() {
                     activeOpacity={0.7}
                   >
                     <Ionicons
-                      name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                      name={
+                        showConfirmPassword ? "eye-off-outline" : "eye-outline"
+                      }
                       size={20}
                       color="#94a3b8"
                     />
@@ -222,39 +248,6 @@ export default function ResetPasswordScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
-
-              {/* Navigation Hyperlinks */}
-              <View className="items-center justify-center space-y-2 mt-2">
-                {/* Forgot Password Hyperlink */}
-                <View className="flex-row items-center justify-center">
-                  <Text className="text-[#64748b] text-xs font-poppins">
-                    Need a new reset code?{" "}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => router.push("/auth/forgot-password")}
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-[#4d6029] font-poppins-bold text-xs underline">
-                      Forgot Password
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Back to Sign In */}
-                <View className="flex-row items-center justify-center mt-1">
-                  <Text className="text-[#64748b] text-xs font-poppins">
-                    Remember your password?{" "}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => router.replace("/auth/sign-in")}
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-[#4d6029] font-poppins-bold text-xs">
-                      Sign In
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
             </View>
           </View>
         </ScrollView>
@@ -265,6 +258,7 @@ export default function ResetPasswordScreen() {
         visible={showSuccessModal}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={handleProceedToSignIn}
       >
         <View className="flex-1 bg-slate-900/60 justify-center items-center px-4">
@@ -294,7 +288,8 @@ export default function ResetPasswordScreen() {
 
             {/* Subtitle / Description */}
             <Text className="text-xs font-poppins text-[#64748b] text-center mb-4 leading-relaxed px-2">
-              Your account password has been updated. You can now use your new password to sign in.
+              Your account password has been updated. You can now use your new
+              password to sign in.
             </Text>
 
             {/* Account Email Confirmation Pill */}

@@ -8,6 +8,8 @@ export interface ScanLogEntry {
   timestamp: string;
   status: 'NORMAL' | 'ALARM' | 'MAINTENANCE_DONE';
   notes: string;
+  distanceMeters?: number | null;
+  locationVerified?: boolean;
 }
 
 export interface MaintenanceAction {
@@ -27,7 +29,6 @@ export interface Technician {
   avatarColor?: string;
   phone: string;
   email: string;
-  dutyStatus: 'ON_DUTY' | 'ON_BREAK' | 'OFF_DUTY';
   lastBoxCode: string;
   lastBoxName: string;
   lastScanTime: string;

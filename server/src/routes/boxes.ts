@@ -36,6 +36,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     const boxes = rawBoxes.map((box) => {
       const boxClients = rawClients
         .filter((c) => c.boxId === box.id)
+        .sort((a, b) => (a.portNumber || 0) - (b.portNumber || 0))
         .map((c) => ({
           id: c.id,
           port: `Port ${c.portNumber}`,
@@ -44,6 +45,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           name: c.customerName,
           clientType: c.clientType || 'Residential',
           plan: c.servicePlan || '100 Mbps Fiber Plan',
+          signalDbm: c.signalDbm || null,
           status: c.status,
         }));
 
@@ -124,6 +126,8 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestScanDistanceMeters: latestScan?.distanceMeters !== undefined && latestScan?.distanceMeters !== null ? Number(latestScan.distanceMeters) : null,
+        latestScanLocationVerified: latestScan?.locationVerified !== undefined && latestScan?.locationVerified !== null ? Boolean(latestScan.locationVerified) : true,
         latestIssue,
       };
     });
@@ -178,16 +182,19 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       db.select().from(users),
     ]);
 
-    const mappedClients = boxClients.map((c) => ({
-      id: c.id,
-      port: `Port ${c.portNumber}`,
-      portNumber: c.portNumber,
-      accountNumber: c.accountNumber,
-      name: c.customerName,
-      clientType: c.clientType || 'Residential',
-      plan: c.servicePlan || '100 Mbps Fiber Plan',
-      status: c.status,
-    }));
+    const mappedClients = boxClients
+      .slice()
+      .sort((a, b) => (a.portNumber || 0) - (b.portNumber || 0))
+      .map((c) => ({
+        id: c.id,
+        port: `Port ${c.portNumber}`,
+        portNumber: c.portNumber,
+        accountNumber: c.accountNumber,
+        name: c.customerName,
+        clientType: c.clientType || 'Residential',
+        plan: c.servicePlan || '100 Mbps Fiber Plan',
+        status: c.status,
+      }));
 
     const equipList = rawEquipment.map((e) => {
       const match = catalogRows.find((c) => c.id === e.catalogId);
@@ -262,6 +269,8 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestScanDistanceMeters: latestScan?.distanceMeters !== undefined && latestScan?.distanceMeters !== null ? Number(latestScan.distanceMeters) : null,
+        latestScanLocationVerified: latestScan?.locationVerified !== undefined && latestScan?.locationVerified !== null ? Boolean(latestScan.locationVerified) : true,
         latestIssue,
       },
     });
@@ -521,6 +530,20 @@ router.post('/:id/clients', requireAuth, async (req: AuthenticatedRequest, res: 
     // Extract numeric port from "Port 5" or "5"
     const portNum = typeof port === 'number' ? port : parseInt(String(port).replace(/\D/g, ''), 10) || 1;
 
+    // Check if port is already occupied when preventOverwrite is requested (prevents two technicians from double-patching the same port)
+    const [existingOnPort] = await db
+      .select()
+      .from(clientConnections)
+      .where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum)))
+      .limit(1);
+
+    if (existingOnPort && req.body.preventOverwrite) {
+      return res.status(409).json({
+        success: false,
+        message: `Port ${portNum} was already assigned to ${existingOnPort.customerName} (${existingOnPort.accountNumber}). Please select another available port.`,
+      });
+    }
+
     // Delete any existing client on this port for this box
     await db
       .delete(clientConnections)
@@ -536,6 +559,7 @@ router.post('/:id/clients', requireAuth, async (req: AuthenticatedRequest, res: 
         customerName: String(name).trim(),
         clientType: clientType || 'RESIDENTIAL',
         servicePlan: plan || '100 Mbps Fiber Plan',
+        signalDbm: req.user?.id || null,
         status: 'CONNECTED',
       })
       .returning();

@@ -52,7 +52,6 @@ export interface ProfileUpdateResponse {
 
 const STORAGE_KEYS = {
   SCANNER_PREFERENCES: '@qr_scanner_preferences',
-  TECHNICIAN_ON_DUTY: '@technician_on_duty',
   OFFLINE_BOXES: '@offline_boxes_cache',
   OFFLINE_LAST_SYNC: '@offline_last_sync_timestamp',
   SYSTEM_SETTINGS: '@qr_system_settings_cache',
@@ -103,59 +102,7 @@ export const settingsService = {
     }
   },
 
-  // 2. On Duty Status
-  getOnDutyStatus: async (): Promise<boolean> => {
-    try {
-      const token = authState.getToken();
-      if (token) {
-        try {
-          const res = await apiFetch(`${API_URL}/auth/duty-status`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          const data = await res.json();
-          if (data.success && typeof data.isOnDuty === 'boolean') {
-            await AsyncStorage.setItem(STORAGE_KEYS.TECHNICIAN_ON_DUTY, String(data.isOnDuty));
-            return data.isOnDuty;
-          }
-        } catch {
-          // Fall back to local AsyncStorage cache if server request fails
-        }
-      }
-
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.TECHNICIAN_ON_DUTY);
-      if (stored !== null) {
-        return stored === 'true';
-      }
-    } catch (e) {
-      console.warn('Failed to load on-duty status:', e);
-    }
-    return true; // default On Duty
-  },
-
-  setOnDutyStatus: async (onDuty: boolean): Promise<void> => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.TECHNICIAN_ON_DUTY, String(onDuty));
-      const token = authState.getToken();
-      if (token) {
-        await apiFetch(`${API_URL}/auth/duty-status`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ onDuty }),
-        }).catch((err) => console.warn('Failed to sync duty status to backend:', err));
-      }
-    } catch (e) {
-      console.warn('Failed to save on-duty status:', e);
-    }
-  },
-
-  // 3. Offline Box Cache & Sync
+  // 2. Offline Box Cache & Sync
   getOfflineBoxes: async (): Promise<DistributionBox[]> => {
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.OFFLINE_BOXES);

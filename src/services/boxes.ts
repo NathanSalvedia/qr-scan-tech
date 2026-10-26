@@ -59,6 +59,7 @@ export interface BoxesApiResponse {
   success: boolean;
   boxes?: any[];
   box?: any;
+  client?: any;
   message?: string;
 }
 
@@ -133,7 +134,14 @@ export const boxService = {
   // 5. Assign Client to Port
   assignClient: async (
     boxId: string,
-    client: { port: string; accountNumber: string; name: string; plan?: string; clientType?: string }
+    client: {
+      port: string;
+      accountNumber: string;
+      name: string;
+      plan?: string;
+      clientType?: string;
+      preventOverwrite?: boolean;
+    }
   ): Promise<BoxesApiResponse> => {
     try {
       const token = authState.getToken();

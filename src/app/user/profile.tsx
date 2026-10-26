@@ -54,9 +54,6 @@ export default function UserProfileScreen() {
       : "Users";
   }, [user]);
 
-  // Technician On-Duty Status (Persisted in AsyncStorage)
-  const [isOnDuty, setIsOnDuty] = useState(true);
-
   // Scanner Preferences (Persisted in AsyncStorage)
   const [vibrateOnScan, setVibrateOnScan] = useState(true);
   const [autoFlashlight, setAutoFlashlight] = useState(false);
@@ -85,9 +82,8 @@ export default function UserProfileScreen() {
       let isMounted = true;
       (async () => {
         try {
-          const [prefs, duty, syncTs] = await Promise.all([
+          const [prefs, syncTs] = await Promise.all([
             settingsService.getScannerPreferences(),
-            settingsService.getOnDutyStatus(),
             settingsService.getLastSyncTimestamp(),
           ]);
           if (!isMounted) return;
@@ -97,7 +93,6 @@ export default function UserProfileScreen() {
           if (prefs.beepSoundStyle) {
             setBeepSoundStyle(prefs.beepSoundStyle);
           }
-          setIsOnDuty(duty);
           setLastSyncTime(settingsService.formatLastSyncTime(syncTs));
         } catch (e) {
           console.error("Failed to load user settings:", e);
@@ -108,13 +103,6 @@ export default function UserProfileScreen() {
       };
     }, []),
   );
-
-  // Handlers for Preferences
-  const handleToggleDuty = async () => {
-    const nextVal = !isOnDuty;
-    setIsOnDuty(nextVal);
-    await settingsService.setOnDutyStatus(nextVal);
-  };
 
   const handleToggleVibrate = async (val: boolean) => {
     setVibrateOnScan(val);
@@ -224,30 +212,6 @@ export default function UserProfileScreen() {
                   </Text>
                 </View>
               </View>
-
-              {/* On Duty Status Badge Toggle */}
-              <TouchableOpacity
-                onPress={handleToggleDuty}
-                activeOpacity={0.8}
-                className={`flex-row items-center px-2.5 py-1.5 rounded-full border ${
-                  isOnDuty
-                    ? "bg-emerald-50 border-emerald-200"
-                    : "bg-slate-100 border-slate-300"
-                }`}
-              >
-                <View
-                  className={`w-2 h-2 rounded-full mr-1.5 ${
-                    isOnDuty ? "bg-emerald-500" : "bg-slate-400"
-                  }`}
-                />
-                <Text
-                  className={`text-[10px] font-poppins-semibold ${
-                    isOnDuty ? "text-emerald-700" : "text-slate-600"
-                  }`}
-                >
-                  {isOnDuty ? "On Duty" : "Off Duty"}
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -484,6 +448,7 @@ export default function UserProfileScreen() {
         visible={showLogoutModal}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setShowLogoutModal(false)}
       >
         <View className="flex-1 bg-black/60 justify-center px-5">
@@ -493,7 +458,7 @@ export default function UserProfileScreen() {
             </View>
 
             <Text className="text-base font-poppins-bold text-[#0f172a] text-center">
-              Sign Out of Field Ops?
+              Sign Out?
             </Text>
             <Text className="text-xs font-poppins-regular text-[#64748b] text-center mt-1 mb-5">
               Are you sure you want to end your current session? You will need

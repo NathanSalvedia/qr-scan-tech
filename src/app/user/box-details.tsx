@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -16,6 +16,94 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { boxService } from "@/services/boxes";
 import { logsService } from "@/services/logs";
+import { SubscriberRecord, subscriberService } from "@/services/subscribers";
+import {
+  calculateDistanceInMeters,
+  evaluateProximity,
+  getCurrentLocationAsync,
+} from "@/utils/geo";
+
+const FALLBACK_PENDING_WORK_ORDERS: SubscriberRecord[] = [
+  {
+    accountNumber: "2608001018",
+    customerName: "Marco Polo Villanueva",
+    name: "Marco Polo Villanueva",
+    subscriberType: "Residential",
+    category: "Residential",
+    servicePlan: "200 Mbps Fiber Plan",
+    plan: "200 Mbps Fiber Plan",
+    contactNumber: "0917-552-8410",
+    address: "Purok 4, Tibanga, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "2608001026",
+    customerName: "Kape Iligan Roastery & Co.",
+    name: "Kape Iligan Roastery & Co.",
+    subscriberType: "Commercial",
+    category: "Commercial",
+    servicePlan: "300 Mbps Fiber Plan",
+    plan: "300 Mbps Fiber Plan",
+    contactNumber: "0918-334-9102",
+    address: "Quezon Ave, Poblacion, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "2608001034",
+    customerName: "Elena Grace Macapagal",
+    name: "Elena Grace Macapagal",
+    subscriberType: "Residential",
+    category: "Residential",
+    servicePlan: "100 Mbps Fiber Plan",
+    plan: "100 Mbps Fiber Plan",
+    contactNumber: "0998-741-2095",
+    address: "Zamora St, San Miguel, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "2608001042",
+    customerName: "Mindanao Tech Hub Solutions",
+    name: "Mindanao Tech Hub Solutions",
+    subscriberType: "Commercial",
+    category: "Commercial",
+    servicePlan: "300 Mbps Fiber Plan",
+    plan: "300 Mbps Fiber Plan",
+    contactNumber: "0917-890-4412",
+    address: "Andres Bonifacio Ave, Saray, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "2608001059",
+    customerName: "Dr. Rafael Mendoza Clinic",
+    name: "Dr. Rafael Mendoza Clinic",
+    subscriberType: "Commercial",
+    category: "Commercial",
+    servicePlan: "200 Mbps Fiber Plan",
+    plan: "200 Mbps Fiber Plan",
+    contactNumber: "0920-614-3381",
+    address: "Roxas Ave, Mahayahay, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+  {
+    accountNumber: "2608001067",
+    customerName: "Hannah Mae Alcantara",
+    name: "Hannah Mae Alcantara",
+    subscriberType: "Residential",
+    category: "Residential",
+    servicePlan: "100 Mbps Fiber Plan",
+    plan: "100 Mbps Fiber Plan",
+    contactNumber: "0915-409-7731",
+    address: "Bro. Jeffrey Rd, Pala-o, Iligan City",
+    status: "PENDING_PROVISIONING",
+  },
+];
+
+const FIBER_PLAN_OPTIONS = [
+  "50 Mbps Fiber Plan",
+  "100 Mbps Fiber Plan",
+  "200 Mbps Fiber Plan",
+  "300 Mbps Fiber Plan",
+];
 
 export interface HardwareEquipmentItem {
   id: string;
@@ -70,6 +158,8 @@ export interface BoxDetailData {
   tier?: string | null;
   subscriberType?: string | null;
   clientType?: string | null;
+  latestScanDistanceMeters?: number | null;
+  latestScanLocationVerified?: boolean;
   latestIssue?: {
     notes: string;
     reportedBy?: string;
@@ -80,8 +170,20 @@ export interface BoxDetailData {
 }
 
 export default function BoxDetailsScreen() {
-  const localParams = useLocalSearchParams<{ code?: string; id?: string }>();
-  const globalParams = useGlobalSearchParams<{ code?: string; id?: string }>();
+  const localParams = useLocalSearchParams<{
+    code?: string;
+    id?: string;
+    distanceMeters?: string;
+    locationVerified?: string;
+    proximityStatus?: string;
+  }>();
+  const globalParams = useGlobalSearchParams<{
+    code?: string;
+    id?: string;
+    distanceMeters?: string;
+    locationVerified?: string;
+    proximityStatus?: string;
+  }>();
   const params = (localParams && (localParams.id || localParams.code)) ? localParams : globalParams;
   const boxIdentifier = (params.id || params.code || "DB-MN-01").trim();
 
@@ -90,6 +192,24 @@ export default function BoxDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Proximity evaluation: check route params from scan first, then fallback to box data
+  const resolvedDistanceMeters = useMemo(() => {
+    if (params.distanceMeters !== undefined && params.distanceMeters !== "") {
+      const num = Number(params.distanceMeters);
+      return Number.isNaN(num) ? null : num;
+    }
+    if (box?.latestScanDistanceMeters !== undefined && box?.latestScanDistanceMeters !== null) {
+      const num = Number(box.latestScanDistanceMeters);
+      return Number.isNaN(num) ? null : num;
+    }
+    return null;
+  }, [params.distanceMeters, box?.latestScanDistanceMeters]);
+
+  const proximityInfo = useMemo(
+    () => evaluateProximity(resolvedDistanceMeters),
+    [resolvedDistanceMeters]
+  );
 
   // Field audit modal state
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -102,6 +222,36 @@ export default function BoxDetailsScreen() {
     "Defective Port / Splitter"
   );
 
+  // Interactive Port Assignment & Drop Cable Activation state
+  const [selectedPortNumber, setSelectedPortNumber] = useState<number | null>(
+    null
+  );
+  const [isAssignPortModalOpen, setIsAssignPortModalOpen] = useState(false);
+  const [selectedPortClient, setSelectedPortClient] =
+    useState<ClientConnectionItem | null>(null);
+  const [isPortInspectorModalOpen, setIsPortInspectorModalOpen] =
+    useState(false);
+  const [showConfirmReleasePort, setShowConfirmReleasePort] = useState(false);
+  const [isSubmittingPortAction, setIsSubmittingPortAction] = useState(false);
+
+  // Pending installation work orders & subscriber assignment fields
+  const [pendingWorkOrders, setPendingWorkOrders] = useState<
+    SubscriberRecord[]
+  >(FALLBACK_PENDING_WORK_ORDERS);
+  const [loadingWorkOrders, setLoadingWorkOrders] = useState(false);
+  const [workOrderSearch, setWorkOrderSearch] = useState("");
+  const [selectedWorkOrderAcc, setSelectedWorkOrderAcc] = useState<
+    string | null
+  >(null);
+  const [assignAccountNumber, setAssignAccountNumber] = useState("");
+  const [assignSubscriberName, setAssignSubscriberName] = useState("");
+  const [assignSubscriberType, setAssignSubscriberType] = useState<
+    "Residential" | "Commercial"
+  >("Residential");
+  const [assignServicePlan, setAssignServicePlan] = useState<string>(
+    "100 Mbps Fiber Plan"
+  );
+
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error">("success");
@@ -112,6 +262,232 @@ export default function BoxDetailsScreen() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  // Load pending installation work orders for drop cable activation
+  const loadPendingWorkOrders = useCallback(
+    async (currentClients: ClientConnectionItem[] = []) => {
+      try {
+        setLoadingWorkOrders(true);
+        const res = await subscriberService.getAllSubscribers();
+        const connectedAccounts = new Set(
+          currentClients.map((c) => String(c.accountNumber).trim())
+        );
+
+        if (res.success && Array.isArray(res.subscribers) && res.subscribers.length > 0) {
+          const pendingOnly = res.subscribers.filter(
+            (s) =>
+              !connectedAccounts.has(String(s.accountNumber).trim()) &&
+              (s.status === "PENDING_PROVISIONING" || !s.assignedBoxId)
+          );
+          if (pendingOnly.length > 0) {
+            setPendingWorkOrders(pendingOnly);
+            return;
+          }
+        }
+        // Fallback to local pending work orders not already on this box
+        setPendingWorkOrders(
+          FALLBACK_PENDING_WORK_ORDERS.filter(
+            (s) => !connectedAccounts.has(String(s.accountNumber).trim())
+          )
+        );
+      } catch {
+        setPendingWorkOrders(FALLBACK_PENDING_WORK_ORDERS);
+      } finally {
+        setLoadingWorkOrders(false);
+      }
+    },
+    []
+  );
+
+  const handleTapPortTile = (
+    portNum: number,
+    occupant: ClientConnectionItem | null
+  ) => {
+    setSelectedPortNumber(portNum);
+    if (occupant) {
+      setSelectedPortClient(occupant);
+      setShowConfirmReleasePort(false);
+      setIsPortInspectorModalOpen(true);
+    } else {
+      setWorkOrderSearch("");
+      setSelectedWorkOrderAcc(null);
+      setAssignAccountNumber("");
+      setAssignSubscriberName("");
+      setAssignSubscriberType("Residential");
+      setAssignServicePlan("100 Mbps Fiber Plan");
+      setIsAssignPortModalOpen(true);
+      loadPendingWorkOrders(box?.clients || []);
+    }
+  };
+
+  const handleSelectWorkOrder = (order: SubscriberRecord) => {
+    const cleanAcc = String(order.accountNumber).trim();
+    setSelectedWorkOrderAcc(cleanAcc);
+    setAssignAccountNumber(cleanAcc);
+    setAssignSubscriberName(order.customerName || order.name || "");
+    const rawType = (order.subscriberType || order.category || "").toUpperCase();
+    setAssignSubscriberType(
+      rawType.includes("COMMERCIAL") ? "Commercial" : "Residential"
+    );
+    setAssignServicePlan(
+      order.servicePlan || order.plan || "100 Mbps Fiber Plan"
+    );
+  };
+
+  const handleGenerateAccountNumber = async () => {
+    try {
+      const res = await subscriberService.getNextAccountNumber();
+      if (res.success && res.accountNumber) {
+        setAssignAccountNumber(res.accountNumber);
+        setSelectedWorkOrderAcc(null);
+      }
+    } catch {
+      // Fallback handled in service
+    }
+  };
+
+  const handleConfirmAssignDropWire = async () => {
+    if (!box || !selectedPortNumber) return;
+    const cleanName = assignSubscriberName.trim();
+    const cleanAcc = assignAccountNumber.trim();
+
+    if (!cleanName) {
+      showToast("Please select a pending work order or enter subscriber name.", "error");
+      return;
+    }
+    if (!cleanAcc) {
+      showToast("Please enter or generate a subscriber account number.", "error");
+      return;
+    }
+
+    try {
+      setIsSubmittingPortAction(true);
+      const res = await boxService.assignClient(box.id, {
+        port: `Port ${selectedPortNumber}`,
+        accountNumber: cleanAcc,
+        name: cleanName,
+        clientType: assignSubscriberType,
+        plan: assignServicePlan,
+        preventOverwrite: true,
+      });
+
+      if (!res.success) {
+        showToast(
+          res.message || `Port P${selectedPortNumber} could not be assigned.`,
+          "error"
+        );
+        fetchBoxDetails(true);
+        return;
+      }
+
+      // Optimistically update local box state immediately so P{portNum} locks in green
+      const newClientItem: ClientConnectionItem = {
+        id: res.client?.id || `port-${selectedPortNumber}-${cleanAcc}`,
+        port: `Port ${selectedPortNumber}`,
+        portNumber: selectedPortNumber,
+        accountNumber: cleanAcc,
+        name: cleanName,
+        clientType: assignSubscriberType,
+        plan: assignServicePlan,
+        status: "CONNECTED",
+      };
+
+      setBox((prev) => {
+        if (!prev) return prev;
+        const filtered = (prev.clients || []).filter(
+          (c) =>
+            c.portNumber !== selectedPortNumber &&
+            c.port !== `Port ${selectedPortNumber}` &&
+            parseInt(String(c.port || "").replace(/\D/g, ""), 10) !==
+              selectedPortNumber
+        );
+        const nextClients = [...filtered, newClientItem].sort((a, b) => {
+          const pA =
+            a.portNumber ||
+            parseInt(String(a.port || "").replace(/\D/g, ""), 10) ||
+            0;
+          const pB =
+            b.portNumber ||
+            parseInt(String(b.port || "").replace(/\D/g, ""), 10) ||
+            0;
+          return pA - pB;
+        });
+        const nextActive = nextClients.filter(
+          (c) => c.status === "CONNECTED" || c.status === "ACTIVE"
+        ).length;
+        return {
+          ...prev,
+          clients: nextClients,
+          clientsCount: nextClients.length,
+          activePorts: nextActive,
+          portsUsed: nextActive,
+        };
+      });
+
+      setIsAssignPortModalOpen(false);
+      showToast(
+        `Drop wire activated on Port P${selectedPortNumber} for ${cleanName}!`
+      );
+      fetchBoxDetails(true);
+    } catch (err: any) {
+      showToast(err.message || "Failed to activate drop wire.", "error");
+    } finally {
+      setIsSubmittingPortAction(false);
+    }
+  };
+
+  const handleTogglePortStatus = async () => {
+    if (!box || !selectedPortNumber || !selectedPortClient) return;
+    try {
+      setIsSubmittingPortAction(true);
+      const res = await boxService.toggleClientStatus(
+        box.id,
+        String(selectedPortNumber)
+      );
+      if (res.success) {
+        const nextStatus =
+          selectedPortClient.status === "CONNECTED"
+            ? "DISCONNECTED"
+            : "CONNECTED";
+        setSelectedPortClient({ ...selectedPortClient, status: nextStatus });
+        showToast(
+          `Port P${selectedPortNumber} marked as ${nextStatus}.`
+        );
+        fetchBoxDetails(true);
+      } else {
+        showToast(res.message || "Failed to update port status.", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to update port status.", "error");
+    } finally {
+      setIsSubmittingPortAction(false);
+    }
+  };
+
+  const handleReleasePort = async () => {
+    if (!box || !selectedPortNumber) return;
+    try {
+      setIsSubmittingPortAction(true);
+      const res = await boxService.removeClient(
+        box.id,
+        String(selectedPortNumber)
+      );
+      if (res.success) {
+        setShowConfirmReleasePort(false);
+        setIsPortInspectorModalOpen(false);
+        showToast(
+          `Port P${selectedPortNumber} disconnected and released for field allocation.`
+        );
+        fetchBoxDetails(true);
+      } else {
+        showToast(res.message || "Failed to release port.", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to release port.", "error");
+    } finally {
+      setIsSubmittingPortAction(false);
+    }
   };
 
   // Load box details from backend API
@@ -295,6 +671,27 @@ export default function BoxDetailsScreen() {
             : "Field inspection complete. Pending QR placard affixing.";
       }
 
+      let scanLat: number | null = null;
+      let scanLon: number | null = null;
+      let distanceMeters: number | null = null;
+      let locationVerified = true;
+
+      const deviceCoords = await getCurrentLocationAsync(3500);
+      if (deviceCoords) {
+        scanLat = deviceCoords.latitude;
+        scanLon = deviceCoords.longitude;
+
+        if (box.latitude && box.longitude) {
+          const bLat = Number(box.latitude);
+          const bLon = Number(box.longitude);
+          if (!Number.isNaN(bLat) && !Number.isNaN(bLon)) {
+            distanceMeters = calculateDistanceInMeters(bLat, bLon, scanLat, scanLon);
+            const evaluation = evaluateProximity(distanceMeters);
+            locationVerified = evaluation.isVerified;
+          }
+        }
+      }
+
       const res = await logsService.recordScan({
         boxId: box.id,
         boxCode: box.code,
@@ -302,6 +699,10 @@ export default function BoxDetailsScreen() {
         padlockVerified,
         auditNotes: fullNotes,
         boxStatusAtScan: auditStatus,
+        scanLatitude: scanLat ?? undefined,
+        scanLongitude: scanLon ?? undefined,
+        distanceMeters,
+        locationVerified,
       });
 
       if (res.success) {
@@ -474,6 +875,58 @@ export default function BoxDetailsScreen() {
 
   if (!box) return null;
 
+  // Untagged Box: Block view until physical QR tag is affixed
+  if (box.status === "NEEDS_TAG") {
+    return (
+      <SafeAreaView
+        edges={["top"]}
+        className="flex-1 bg-[#f8fafc] items-center justify-center p-6"
+      >
+        <StatusBar style="dark" />
+        <View className="w-16 h-16 rounded-3xl bg-amber-100 items-center justify-center mb-4 border border-amber-200">
+          <Ionicons name="pricetag-outline" size={32} color="#d97706" />
+        </View>
+        <Text className="text-lg font-poppins-bold text-[#0f172a] text-center mb-1">
+          Box Details Unavailable
+        </Text>
+        <View className="bg-amber-100 border border-amber-200 px-3 py-1 rounded-full mb-3">
+          <Text className="text-xs font-poppins-bold text-amber-800">
+            {box.code} · Needs Tag
+          </Text>
+        </View>
+        <Text className="text-xs font-poppins text-[#64748b] text-center mb-6 max-w-xs leading-relaxed">
+          This distribution box has not been affixed with a physical QR placard on-site. Specifications, port configurations, and hardware telemetry cannot be viewed until the box is physically tagged.
+        </Text>
+        <View className="flex-row gap-3">
+          <TouchableOpacity
+            onPress={handleGoBack}
+            className="bg-slate-200 px-5 py-2.5 rounded-xl"
+            activeOpacity={0.8}
+          >
+            <Text className="text-xs font-poppins-semibold text-[#334155]">
+              Go Back
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.replace("/user/scanner")}
+            className="bg-[#4d6029] px-5 py-2.5 rounded-xl flex-row items-center shadow-xs"
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="qr-code-outline"
+              size={14}
+              color="#ffffff"
+              style={{ marginRight: 6 }}
+            />
+            <Text className="text-xs font-poppins-bold text-white">
+              Open Scanner
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const displayEquipment = getDisplayEquipment(box);
   const statusInfo = getStatusBadge(box.status);
   const portsOccupied =
@@ -574,6 +1027,79 @@ export default function BoxDetailsScreen() {
         }
       >
         <View className="max-w-2xl w-full self-center">
+          {/* GPS Proximity Guard: Location Mismatch Alert Banner */}
+          {proximityInfo.status === "MISMATCH" && (
+            <View className="bg-rose-50 border-2 border-rose-300 rounded-3xl p-4 mb-4 shadow-sm">
+              <View className="flex-row items-center justify-between mb-1.5">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5">
+                    <Ionicons name="location-outline" size={18} color="#dc2626" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-poppins-bold text-rose-900">
+                      Scan Location Mismatch Detected
+                    </Text>
+                    <Text className="text-[10px] font-poppins text-rose-600">
+                      Anti-Cheating Geolocation Guard
+                    </Text>
+                  </View>
+                </View>
+                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg">
+                  <Text className="text-[9px] font-poppins-bold text-rose-800">
+                    FLAGGED ({proximityInfo.formattedDistance})
+                  </Text>
+                </View>
+              </View>
+              <Text className="text-xs font-poppins text-rose-800 ml-10">
+                You scanned this box <Text className="font-poppins-bold">{proximityInfo.formattedDistance}</Text> away from its registered pole coordinates. This physical audit scan has been flagged in central security logs for review.
+              </Text>
+            </View>
+          )}
+
+          {/* GPS Proximity Guard: Verified On-Site Banner */}
+          {proximityInfo.status === "ON_SITE" && (
+            <View className="bg-emerald-50 border border-emerald-200/90 rounded-2xl px-3.5 py-2.5 mb-4 flex-row items-center justify-between shadow-xs">
+              <View className="flex-row items-center flex-1 mr-2">
+                <Ionicons name="shield-checkmark" size={16} color="#059669" />
+                <View className="ml-2">
+                  <Text className="text-xs font-poppins-bold text-emerald-800">
+                    Physical On-Site Verified
+                  </Text>
+                  <Text className="text-[10px] font-poppins text-emerald-600">
+                    Scanned {proximityInfo.formattedDistance} from registered pole coordinates
+                  </Text>
+                </View>
+              </View>
+              <View className="bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-md">
+                <Text className="text-[9px] font-poppins-bold text-emerald-700">
+                  SECURE
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* GPS Proximity Guard: Nearby Tolerance Banner */}
+          {proximityInfo.status === "NEARBY" && (
+            <View className="bg-amber-50 border border-amber-200/90 rounded-2xl px-3.5 py-2.5 mb-4 flex-row items-center justify-between shadow-xs">
+              <View className="flex-row items-center flex-1 mr-2">
+                <Ionicons name="location" size={16} color="#d97706" />
+                <View className="ml-2">
+                  <Text className="text-xs font-poppins-bold text-amber-800">
+                    Nearby Pole ({proximityInfo.formattedDistance})
+                  </Text>
+                  <Text className="text-[10px] font-poppins text-amber-600">
+                    Within acceptable physical setback tolerance
+                  </Text>
+                </View>
+              </View>
+              <View className="bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-md">
+                <Text className="text-[9px] font-poppins-bold text-amber-700">
+                  ACCEPTABLE
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Active Hardware Issue Alert Banner */}
           {box.status === "ISSUE" && (
             <View className="bg-rose-50 border border-rose-200/90 rounded-3xl p-4 mb-4 shadow-xs">
@@ -692,6 +1218,28 @@ export default function BoxDetailsScreen() {
                     {Number(box.longitude).toFixed(4)}
                   </Text>
                 </Text>
+
+                <View className="flex-row items-center mt-3 pt-2.5 border-t border-slate-100 justify-between">
+                  <View className="flex-row items-center">
+                    <Ionicons
+                      name={proximityInfo.isVerified ? "shield-checkmark" : "warning"}
+                      size={13}
+                      color={proximityInfo.isVerified ? "#059669" : "#dc2626"}
+                    />
+                    <Text className="text-[10px] font-poppins-semibold text-slate-500 ml-1.5">
+                      Proximity Guard:
+                    </Text>
+                  </View>
+                  <View
+                    className={`px-2 py-0.5 rounded-md border ${proximityInfo.badgeBg} ${proximityInfo.badgeBorder}`}
+                  >
+                    <Text
+                      className={`text-[10px] font-poppins-bold ${proximityInfo.badgeText}`}
+                    >
+                      {proximityInfo.badgeLabel}
+                    </Text>
+                  </View>
+                </View>
               </View>
             </View>
           </View>
@@ -767,9 +1315,9 @@ export default function BoxDetailsScreen() {
             </View>
           </View>
 
-          {/* 4. Splitter Port Matrix */}
+          {/* 4. Splitter Port Matrix (Interactive Technician Drop Cable Activation) */}
           <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
-            <View className="flex-row items-center justify-between mb-3">
+            <View className="flex-row items-center justify-between mb-2">
               <View className="flex-row items-center">
                 <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
                   <MaterialCommunityIcons
@@ -778,13 +1326,34 @@ export default function BoxDetailsScreen() {
                     color="#4d6029"
                   />
                 </View>
-                <Text className="text-sm font-poppins-bold text-[#0f172a]">
-                  Port Allocation
-                </Text>
+                <View>
+                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                    Port Allocation
+                  </Text>
+                  <Text className="text-[10px] font-poppins text-[#64748b]">
+                    Tap empty port to assign drop wire
+                  </Text>
+                </View>
               </View>
               <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
                 <Text className="text-[11px] font-poppins-bold text-[#4d6029]">
                   {portsOccupied} / {box.totalPorts} Assigned
+                </Text>
+              </View>
+            </View>
+
+            {/* Interactive Port Legend */}
+            <View className="flex-row items-center flex-wrap gap-3 mb-3 px-1">
+              <View className="flex-row items-center">
+                <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-1.5" />
+                <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                  Occupied (Tap to Inspect)
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 mr-1.5" />
+                <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                  Available (Tap to Assign)
                 </Text>
               </View>
             </View>
@@ -794,33 +1363,60 @@ export default function BoxDetailsScreen() {
                 const portNum = i + 1;
                 const clientOnPort = (box.clients || []).find(
                   (c) =>
-                    c.portNumber === portNum || c.port === `Port ${portNum}`,
+                    c.portNumber === portNum ||
+                    c.port === `Port ${portNum}` ||
+                    c.port === `Port 0${portNum}` ||
+                    parseInt(String(c.port || "").replace(/\D/g, ""), 10) ===
+                      portNum
                 );
-                const isOccupied =
-                  Boolean(clientOnPort) || portNum <= portsOccupied;
+                const hasExplicitClients =
+                  Array.isArray(box.clients) && box.clients.length > 0;
+                const isOccupied = hasExplicitClients
+                  ? Boolean(clientOnPort)
+                  : portNum <= portsOccupied;
+                const isSuspended = clientOnPort?.status === "DISCONNECTED";
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={portNum}
+                    onPress={() =>
+                      handleTapPortTile(
+                        portNum,
+                        isOccupied
+                          ? clientOnPort || {
+                              port: `Port ${portNum}`,
+                              portNumber: portNum,
+                              accountNumber: `26080000${String(portNum).padStart(2, "0")}`,
+                              name: `Assigned Subscriber (P${portNum})`,
+                              clientType: "Residential",
+                              plan: "100 Mbps Fiber Plan",
+                              status: "CONNECTED",
+                            }
+                          : null
+                      )
+                    }
+                    activeOpacity={0.75}
                     className={`w-11 h-12 rounded-2xl items-center justify-center border ${
                       isOccupied
-                        ? "bg-[#4d6029] border-[#3e4e20] shadow-xs"
+                        ? isSuspended
+                          ? "bg-amber-600 border-amber-700 shadow-xs"
+                          : "bg-[#4d6029] border-[#3e4e20] shadow-xs"
                         : "bg-white border-slate-200 shadow-xs"
                     }`}
                   >
                     <Ionicons
-                      name="hardware-chip"
+                      name={isOccupied ? "hardware-chip" : "add-circle-outline"}
                       size={14}
-                      color={isOccupied ? "#ffffff" : "#94a3b8"}
+                      color={isOccupied ? "#ffffff" : "#64748b"}
                     />
                     <Text
                       className={`text-[9px] font-poppins-bold mt-0.5 ${
-                        isOccupied ? "text-white" : "text-[#94a3b8]"
+                        isOccupied ? "text-white" : "text-[#64748b]"
                       }`}
                     >
                       P{portNum}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -849,73 +1445,103 @@ export default function BoxDetailsScreen() {
                   No Active Subscribers
                 </Text>
                 <Text className="text-[11px] font-poppins text-slate-400 text-center mt-0.5">
-                  All {box.totalPorts} ports currently open for field
-                  allocation.
+                  Tap any empty port above (e.g. P1) to assign a drop wire from
+                  pending work orders.
                 </Text>
               </View>
             ) : (
               <View className="gap-2.5">
-                {box.clients.map((sub, idx) => (
-                  <View
-                    key={sub.id || idx}
-                    className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
-                  >
-                    <View className="flex-row items-center flex-1 mr-2">
-                      <View className="w-8 h-8 rounded-xl bg-[#4d6029] items-center justify-center mr-3">
-                        <Text className="text-[10px] font-poppins-bold text-white">
-                          P
-                          {sub.portNumber ||
-                            sub.port.replace(/[^0-9]/g, "") ||
-                            idx + 1}
-                        </Text>
-                      </View>
-                      <View className="flex-1">
-                        <View className="flex-row items-center flex-wrap">
-                          <Text
-                            className="text-xs font-poppins-bold text-[#0f172a] mr-1.5"
-                            numberOfLines={1}
-                          >
-                            {sub.name}
+                {box.clients.map((sub, idx) => {
+                  const resolvedPortNum =
+                    sub.portNumber ||
+                    parseInt(String(sub.port || "").replace(/[^0-9]/g, ""), 10) ||
+                    idx + 1;
+                  const isSubDisconnected = sub.status === "DISCONNECTED";
+                  return (
+                    <TouchableOpacity
+                      key={sub.id || idx}
+                      onPress={() => handleTapPortTile(resolvedPortNum, sub)}
+                      activeOpacity={0.8}
+                      className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
+                    >
+                      <View className="flex-row items-center flex-1 mr-2">
+                        <View
+                          className={`w-8 h-8 rounded-xl items-center justify-center mr-3 ${
+                            isSubDisconnected ? "bg-amber-600" : "bg-[#4d6029]"
+                          }`}
+                        >
+                          <Text className="text-[10px] font-poppins-bold text-white">
+                            P{resolvedPortNum}
                           </Text>
-                          {sub.clientType && (
-                            <View
-                              className={`px-1.5 py-0.2 rounded border ${
-                                sub.clientType.toUpperCase().includes("COMMERCIAL")
-                                  ? "bg-blue-50 border-blue-200"
-                                  : "bg-emerald-50 border-emerald-200"
-                              }`}
+                        </View>
+                        <View className="flex-1">
+                          <View className="flex-row items-center flex-wrap">
+                            <Text
+                              className="text-xs font-poppins-bold text-[#0f172a] mr-1.5"
+                              numberOfLines={1}
                             >
-                              <Text
-                                className={`text-[8px] font-poppins-bold ${
-                                  sub.clientType.toUpperCase().includes("COMMERCIAL")
-                                    ? "text-blue-700"
-                                    : "text-emerald-700"
+                              {sub.name}
+                            </Text>
+                            {sub.clientType && (
+                              <View
+                                className={`px-1.5 py-0.2 rounded border ${
+                                  sub.clientType
+                                    .toUpperCase()
+                                    .includes("COMMERCIAL")
+                                    ? "bg-blue-50 border-blue-200"
+                                    : "bg-emerald-50 border-emerald-200"
                                 }`}
                               >
-                                {sub.clientType.toUpperCase().includes("COMMERCIAL")
-                                  ? "Commercial"
-                                  : "Residential"}
-                              </Text>
-                            </View>
-                          )}
+                                <Text
+                                  className={`text-[8px] font-poppins-bold ${
+                                    sub.clientType
+                                      .toUpperCase()
+                                      .includes("COMMERCIAL")
+                                      ? "text-blue-700"
+                                      : "text-emerald-700"
+                                  }`}
+                                >
+                                  {sub.clientType
+                                    .toUpperCase()
+                                    .includes("COMMERCIAL")
+                                    ? "Commercial"
+                                    : "Residential"}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text
+                            className="text-[10px] font-poppins text-[#64748b] mt-0.5"
+                            numberOfLines={1}
+                          >
+                            {sub.accountNumber} · {sub.plan || "Standard Fiber"}
+                          </Text>
                         </View>
+                      </View>
+
+                      <View
+                        className={`px-2 py-0.5 rounded-lg flex-row items-center border ${
+                          isSubDisconnected
+                            ? "bg-amber-50 border-amber-300"
+                            : "bg-[#AEAC78]/25 border-[#AEAC78]/80"
+                        }`}
+                      >
+                        <View
+                          className={`w-1.5 h-1.5 rounded-full mr-1 ${
+                            isSubDisconnected ? "bg-amber-500" : "bg-[#AEAC78]"
+                          }`}
+                        />
                         <Text
-                          className="text-[10px] font-poppins text-[#64748b] mt-0.5"
-                          numberOfLines={1}
+                          className={`text-[9px] font-poppins-bold ${
+                            isSubDisconnected ? "text-amber-800" : "text-[#2d3416]"
+                          }`}
                         >
-                          {sub.accountNumber} · {sub.plan || "Standard Fiber"}
+                          {sub.status || "CONNECTED"}
                         </Text>
                       </View>
-                    </View>
-
-                    <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-lg flex-row items-center">
-                      <View className="w-1.5 h-1.5 rounded-full bg-[#AEAC78] mr-1" />
-                      <Text className="text-[9px] font-poppins-bold text-[#2d3416]">
-                        {sub.status || "CONNECTED"}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -1457,6 +2083,575 @@ export default function BoxDetailsScreen() {
           </View>
         </Modal>
       )}
+
+      {/* 8. Assign Drop Wire Modal (Technician Drop Cable Activation on Empty Port) */}
+      {isAssignPortModalOpen && selectedPortNumber !== null && (
+        <Modal
+          visible={isAssignPortModalOpen}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsAssignPortModalOpen(false)}
+        >
+          <View className="flex-1 bg-black/75 items-center justify-center p-4">
+            <View className="bg-white rounded-3xl p-5 max-w-lg w-full max-h-[88%] shadow-2xl border border-slate-100">
+              {/* Modal Header */}
+              <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-10 h-10 rounded-2xl bg-[#4d6029] items-center justify-center mr-3 shadow-xs">
+                    <Text className="text-xs font-poppins-bold text-white">
+                      P{selectedPortNumber}
+                    </Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-base font-poppins-bold text-[#0f172a]">
+                      Assign Drop Wire · Port P{selectedPortNumber}
+                    </Text>
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Select pending installation work order or enter subscriber
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsAssignPortModalOpen(false)}
+                  className="p-1.5 rounded-full bg-slate-100 active:opacity-70"
+                >
+                  <Ionicons name="close" size={18} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Step 1: Pending Installation Work Orders */}
+                <View className="mb-3.5">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <View className="flex-row items-center">
+                      <Ionicons
+                        name="clipboard-outline"
+                        size={14}
+                        color="#4d6029"
+                      />
+                      <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                        Pending Installation Work Orders
+                      </Text>
+                    </View>
+                    <View className="bg-[#4d6029]/10 px-2 py-0.5 rounded-full">
+                      <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                        {pendingWorkOrders.length} Ready
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Search Pending Work Orders */}
+                  <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 mb-2">
+                    <Ionicons name="search" size={14} color="#64748b" />
+                    <TextInput
+                      placeholder="Search work order name, account #, or address..."
+                      placeholderTextColor="#94a3b8"
+                      value={workOrderSearch}
+                      onChangeText={setWorkOrderSearch}
+                      className="flex-1 ml-2 text-xs font-poppins text-[#0f172a] py-0.5"
+                    />
+                    {workOrderSearch.length > 0 && (
+                      <TouchableOpacity onPress={() => setWorkOrderSearch("")}>
+                        <Ionicons
+                          name="close-circle"
+                          size={14}
+                          color="#94a3b8"
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Work Orders List */}
+                  {loadingWorkOrders ? (
+                    <View className="py-4 items-center justify-center bg-slate-50 rounded-2xl border border-slate-200/80">
+                      <ActivityIndicator size="small" color="#4d6029" />
+                      <Text className="text-[11px] font-poppins text-[#64748b] mt-1.5">
+                        Loading pending work orders...
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="max-h-44 bg-slate-50/70 rounded-2xl border border-slate-200/80 p-2">
+                      <ScrollView
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator={true}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {pendingWorkOrders
+                          .filter((wo) => {
+                            if (!workOrderSearch.trim()) return true;
+                            const q = workOrderSearch.toLowerCase().trim();
+                            return (
+                              (wo.customerName || wo.name || "")
+                                .toLowerCase()
+                                .includes(q) ||
+                              String(wo.accountNumber)
+                                .toLowerCase()
+                                .includes(q) ||
+                              (wo.address || "").toLowerCase().includes(q) ||
+                              (wo.servicePlan || wo.plan || "")
+                                .toLowerCase()
+                                .includes(q)
+                            );
+                          })
+                          .map((wo, idx) => {
+                            const isSelected =
+                              selectedWorkOrderAcc ===
+                              String(wo.accountNumber).trim();
+                            const woType = (
+                              wo.subscriberType ||
+                              wo.category ||
+                              "Residential"
+                            ).toUpperCase();
+                            const isCommercial = woType.includes("COMMERCIAL");
+
+                            return (
+                              <TouchableOpacity
+                                key={wo.accountNumber || idx}
+                                onPress={() => handleSelectWorkOrder(wo)}
+                                activeOpacity={0.8}
+                                className={`p-2.5 rounded-xl mb-1.5 border flex-row items-center justify-between ${
+                                  isSelected
+                                    ? "bg-[#4d6029]/12 border-[#4d6029]"
+                                    : "bg-white border-slate-200/90"
+                                }`}
+                              >
+                                <View className="flex-1 mr-2">
+                                  <View className="flex-row items-center flex-wrap">
+                                    <Text
+                                      className="text-xs font-poppins-bold text-[#0f172a] mr-1.5"
+                                      numberOfLines={1}
+                                    >
+                                      {wo.customerName || wo.name}
+                                    </Text>
+                                    <View
+                                      className={`px-1.5 py-0.2 rounded border ${
+                                        isCommercial
+                                          ? "bg-blue-50 border-blue-200"
+                                          : "bg-emerald-50 border-emerald-200"
+                                      }`}
+                                    >
+                                      <Text
+                                        className={`text-[8px] font-poppins-bold ${
+                                          isCommercial
+                                            ? "text-blue-700"
+                                            : "text-emerald-700"
+                                        }`}
+                                      >
+                                        {isCommercial
+                                          ? "Commercial"
+                                          : "Residential"}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  <Text
+                                    className="text-[10px] font-poppins text-[#475569] mt-0.5"
+                                    numberOfLines={1}
+                                  >
+                                    WO #{wo.accountNumber} ·{" "}
+                                    {wo.servicePlan || wo.plan}
+                                  </Text>
+                                  {wo.address ? (
+                                    <Text
+                                      className="text-[9px] font-poppins text-[#64748b] mt-0.5"
+                                      numberOfLines={1}
+                                    >
+                                      {wo.address}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                <Ionicons
+                                  name={
+                                    isSelected
+                                      ? "checkmark-circle"
+                                      : "ellipse-outline"
+                                  }
+                                  size={18}
+                                  color={isSelected ? "#4d6029" : "#cbd5e1"}
+                                />
+                              </TouchableOpacity>
+                            );
+                          })}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* Step 2: Subscriber & Drop Wire Details */}
+                <View className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                      Subscriber Drop Cable Details
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handleGenerateAccountNumber}
+                      className="flex-row items-center bg-[#4d6029]/10 px-2 py-0.5 rounded-lg border border-[#4d6029]/25"
+                    >
+                      <Ionicons
+                        name="sparkles-outline"
+                        size={11}
+                        color="#4d6029"
+                      />
+                      <Text className="text-[9px] font-poppins-bold text-[#4d6029] ml-1">
+                        Generate Acc #
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Account Number */}
+                  <View>
+                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
+                      Account / Work Order Number
+                    </Text>
+                    <TextInput
+                      placeholder="10-digit account number (e.g. 2608001018)"
+                      placeholderTextColor="#94a3b8"
+                      value={assignAccountNumber}
+                      onChangeText={(val) => {
+                        setAssignAccountNumber(
+                          val.replace(/\D/g, "").slice(0, 10)
+                        );
+                        setSelectedWorkOrderAcc(null);
+                      }}
+                      keyboardType="numeric"
+                      maxLength={10}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
+                    />
+                  </View>
+
+                  {/* Subscriber Name */}
+                  <View className="mt-2">
+                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
+                      Subscriber / Business Name
+                    </Text>
+                    <TextInput
+                      placeholder="Full customer or business name"
+                      placeholderTextColor="#94a3b8"
+                      value={assignSubscriberName}
+                      onChangeText={setAssignSubscriberName}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
+                    />
+                  </View>
+
+                  {/* Subscriber Type */}
+                  <View className="mt-2">
+                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
+                      Subscriber Classification
+                    </Text>
+                    <View className="flex-row gap-2">
+                      {(["Residential", "Commercial"] as const).map((type) => {
+                        const active = assignSubscriberType === type;
+                        return (
+                          <TouchableOpacity
+                            key={type}
+                            onPress={() => setAssignSubscriberType(type)}
+                            className={`flex-1 py-2 rounded-xl items-center border ${
+                              active
+                                ? "bg-[#4d6029] border-[#3e4e20]"
+                                : "bg-white border-slate-200"
+                            }`}
+                          >
+                            <Text
+                              className={`text-[11px] font-poppins-bold ${
+                                active ? "text-white" : "text-[#475569]"
+                              }`}
+                            >
+                              {type}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Service Plan Chips */}
+                  <View className="mt-2">
+                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
+                      Subscribed Fiber Plan
+                    </Text>
+                    <View className="flex-row flex-wrap gap-1.5">
+                      {FIBER_PLAN_OPTIONS.map((planOption) => {
+                        const active = assignServicePlan === planOption;
+                        return (
+                          <TouchableOpacity
+                            key={planOption}
+                            onPress={() => setAssignServicePlan(planOption)}
+                            className={`px-2.5 py-1.5 rounded-xl border ${
+                              active
+                                ? "bg-[#4d6029] border-[#3e4e20]"
+                                : "bg-white border-slate-200"
+                            }`}
+                          >
+                            <Text
+                              className={`text-[10px] font-poppins-bold ${
+                                active ? "text-white" : "text-[#475569]"
+                              }`}
+                            >
+                              {planOption.replace(" Fiber Plan", "")}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </View>
+              </ScrollView>
+
+              {/* Modal Footer Buttons */}
+              <View className="flex-row pt-3.5 mt-3 border-t border-slate-100 gap-2">
+                <TouchableOpacity
+                  onPress={handleConfirmAssignDropWire}
+                  disabled={isSubmittingPortAction}
+                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
+                >
+                  {isSubmittingPortAction ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="flash" size={15} color="#ffffff" />
+                      <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                        Assign Drop Wire & Activate P{selectedPortNumber}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setIsAssignPortModalOpen(false)}
+                  disabled={isSubmittingPortAction}
+                  className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
+                >
+                  <Text className="text-[#475569] text-xs font-poppins-bold">
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* 9. Port Subscriber Inspector Modal (Occupied Port Details & Actions) */}
+      {isPortInspectorModalOpen &&
+        selectedPortNumber !== null &&
+        selectedPortClient && (
+          <Modal
+            visible={isPortInspectorModalOpen}
+            transparent
+            statusBarTranslucent
+            animationType="fade"
+            onRequestClose={() => {
+              setShowConfirmReleasePort(false);
+              setIsPortInspectorModalOpen(false);
+            }}
+          >
+            <View className="flex-1 bg-black/75 items-center justify-center p-4">
+              <View className="bg-white rounded-3xl p-5 max-w-md w-full shadow-2xl border border-slate-100">
+                {/* Header */}
+                <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
+                  <View className="flex-row items-center">
+                    <View
+                      className={`w-10 h-10 rounded-2xl items-center justify-center mr-3 ${
+                        selectedPortClient.status === "DISCONNECTED"
+                          ? "bg-amber-600"
+                          : "bg-[#4d6029]"
+                      }`}
+                    >
+                      <Text className="text-xs font-poppins-bold text-white">
+                        P{selectedPortNumber}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text className="text-base font-poppins-bold text-[#0f172a]">
+                        Port P{selectedPortNumber} · Occupied
+                      </Text>
+                      <Text className="text-[11px] font-poppins text-[#64748b]">
+                        {box.code} · Active Drop Cable Assignment
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowConfirmReleasePort(false);
+                      setIsPortInspectorModalOpen(false);
+                    }}
+                    className="p-1.5 rounded-full bg-slate-100 active:opacity-70"
+                  >
+                    <Ionicons name="close" size={18} color="#475569" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Subscriber Details Card */}
+                <View className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 mb-4 space-y-2.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Port Status
+                    </Text>
+                    <View
+                      className={`px-2.5 py-0.5 rounded-lg border flex-row items-center ${
+                        selectedPortClient.status === "DISCONNECTED"
+                          ? "bg-amber-100 border-amber-300"
+                          : "bg-[#AEAC78]/30 border-[#AEAC78]/90"
+                      }`}
+                    >
+                      <View
+                        className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                          selectedPortClient.status === "DISCONNECTED"
+                            ? "bg-amber-600"
+                            : "bg-[#4d6029]"
+                        }`}
+                      />
+                      <Text
+                        className={`text-[10px] font-poppins-bold ${
+                          selectedPortClient.status === "DISCONNECTED"
+                            ? "text-amber-800"
+                            : "text-[#2d3416]"
+                        }`}
+                      >
+                        {selectedPortClient.status || "CONNECTED"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View className="flex-row items-center justify-between pt-2 border-t border-slate-200/60">
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Subscriber Name
+                    </Text>
+                    <Text
+                      className="text-xs font-poppins-bold text-[#0f172a] max-w-[60%] text-right"
+                      numberOfLines={1}
+                    >
+                      {selectedPortClient.name}
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-between pt-2 border-t border-slate-200/60">
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Account Number
+                    </Text>
+                    <Text className="text-xs font-mono font-bold text-[#0f172a]">
+                      {selectedPortClient.accountNumber}
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-between pt-2 border-t border-slate-200/60">
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Classification
+                    </Text>
+                    <Text className="text-xs font-poppins-semibold text-[#334155]">
+                      {selectedPortClient.clientType || "Residential"}
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-between pt-2 border-t border-slate-200/60">
+                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                      Fiber Service Plan
+                    </Text>
+                    <Text className="text-xs font-poppins-bold text-[#4d6029]">
+                      {selectedPortClient.plan || "100 Mbps Fiber Plan"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Port Lock Notice */}
+                <View className="bg-[#AEAC78]/20 border border-[#AEAC78]/60 rounded-2xl p-3 mb-4 flex-row items-center">
+                  <Ionicons name="lock-closed" size={16} color="#4d6029" />
+                  <Text className="text-[10px] font-poppins text-[#2d3416] ml-2 flex-1">
+                    Port P{selectedPortNumber} is locked to prevent duplicate
+                    field drop-wire patching.
+                  </Text>
+                </View>
+
+                {showConfirmReleasePort ? (
+                  <View className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 mb-2">
+                    <Text className="text-xs font-poppins-bold text-rose-900 mb-1">
+                      Disconnect & Release Port P{selectedPortNumber}?
+                    </Text>
+                    <Text className="text-[11px] font-poppins text-rose-700 mb-3">
+                      This will unassign {selectedPortClient.name} from Port P
+                      {selectedPortNumber} and make the port available again.
+                    </Text>
+                    <View className="flex-row gap-2">
+                      <TouchableOpacity
+                        onPress={() => setShowConfirmReleasePort(false)}
+                        disabled={isSubmittingPortAction}
+                        className="flex-1 py-2.5 bg-white border border-slate-200 rounded-xl items-center"
+                      >
+                        <Text className="text-xs font-poppins-bold text-[#475569]">
+                          Keep Assigned
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={handleReleasePort}
+                        disabled={isSubmittingPortAction}
+                        className="flex-1 py-2.5 bg-rose-600 rounded-xl items-center justify-center flex-row"
+                      >
+                        {isSubmittingPortAction ? (
+                          <ActivityIndicator size="small" color="#ffffff" />
+                        ) : (
+                          <Text className="text-xs font-poppins-bold text-white">
+                            Confirm Release
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View className="gap-2">
+                    <View className="flex-row gap-2">
+                      <TouchableOpacity
+                        onPress={handleTogglePortStatus}
+                        disabled={isSubmittingPortAction}
+                        className="flex-1 py-2.5 bg-slate-100 border border-slate-200 rounded-xl items-center justify-center flex-row"
+                      >
+                        <Ionicons
+                          name={
+                            selectedPortClient.status === "DISCONNECTED"
+                              ? "flash-outline"
+                              : "pause-circle-outline"
+                          }
+                          size={15}
+                          color="#334155"
+                        />
+                        <Text className="text-xs font-poppins-bold text-[#334155] ml-1.5">
+                          {selectedPortClient.status === "DISCONNECTED"
+                            ? "Reconnect Port"
+                            : "Suspend Port"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setShowConfirmReleasePort(true)}
+                        disabled={isSubmittingPortAction}
+                        className="flex-1 py-2.5 bg-rose-50 border border-rose-200 rounded-xl items-center justify-center flex-row"
+                      >
+                        <Ionicons
+                          name="unlink-outline"
+                          size={15}
+                          color="#dc2626"
+                        />
+                        <Text className="text-xs font-poppins-bold text-rose-700 ml-1.5">
+                          Release Port
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => setIsPortInspectorModalOpen(false)}
+                      className="w-full py-2.5 bg-[#4d6029] rounded-xl items-center justify-center mt-1"
+                    >
+                      <Text className="text-xs font-poppins-bold text-white">
+                        Done
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          </Modal>
+        )}
     </SafeAreaView>
   );
 }

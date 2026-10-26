@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   Text,
@@ -24,19 +25,26 @@ export default function UserBoxesScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<BoxFilter>("ALL");
 
+  const filterTaggedBoxesOnly = useCallback((items: RecentScanItem[]) => {
+    return items.filter((item) => {
+      const status = item.status || item.boxStatus || "ACTIVE";
+      return status !== "NEEDS_TAG";
+    });
+  }, []);
+
   const fetchScans = useCallback(async () => {
     setRefreshing(true);
     try {
       const res = await logsService.getMyRecentScans(50);
       if (res.success && Array.isArray(res.scans)) {
-        setScans(res.scans);
+        setScans(filterTaggedBoxesOnly(res.scans));
       }
     } catch (err) {
       console.error("Failed to fetch scan history:", err);
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [filterTaggedBoxesOnly]);
 
   useEffect(() => {
     let isMounted = true;
@@ -45,7 +53,7 @@ export default function UserBoxesScreen() {
       try {
         const res = await logsService.getMyRecentScans(50);
         if (isMounted && res.success && Array.isArray(res.scans)) {
-          setScans(res.scans);
+          setScans(filterTaggedBoxesOnly(res.scans));
         }
       } catch (err) {
         console.error("Failed to load initial scan history:", err);
@@ -59,7 +67,7 @@ export default function UserBoxesScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [filterTaggedBoxesOnly]);
 
   // Automatically refresh when screen comes into focus
   useFocusEffect(
@@ -69,7 +77,7 @@ export default function UserBoxesScreen() {
         try {
           const res = await logsService.getMyRecentScans(50);
           if (isCurrent && res.success && Array.isArray(res.scans)) {
-            setScans(res.scans);
+            setScans(filterTaggedBoxesOnly(res.scans));
           }
         } catch (e) {
           console.error("Focus refresh scan error:", e);
@@ -78,13 +86,16 @@ export default function UserBoxesScreen() {
       return () => {
         isCurrent = false;
       };
-    }, [])
+    }, [filterTaggedBoxesOnly])
   );
 
-  // Dynamic filter with unique boxes (each box appears once with its latest scan)
+  // Dynamic filter with unique tagged boxes (each box appears once with its latest scan)
   const filteredHistory = useMemo(() => {
     const seen = new Set<string>();
     return scans.filter((entry) => {
+      const status = entry.status || entry.boxStatus || "ACTIVE";
+      if (status === "NEEDS_TAG") return false;
+
       const key = entry.boxId || entry.boxCode;
       if (key) {
         if (seen.has(key)) return false;
@@ -167,6 +178,30 @@ export default function UserBoxesScreen() {
     });
   };
 
+  const isBoxNeedsTag = (item: RecentScanItem) => {
+    const status = item.status || item.boxStatus;
+    return status === "NEEDS_TAG" || (status !== "ACTIVE" && status !== "ISSUE");
+  };
+
+  const handleBoxPress = (item: RecentScanItem) => {
+    if (isBoxNeedsTag(item)) {
+      Alert.alert(
+        "Tagging Required",
+        `Distribution box "${item.boxCode}" has not been tagged with a physical QR placard yet.\n\nBox specifications, port configurations, and telemetry will become viewable once the tag is affixed and activated on-site.`,
+        [
+          { text: "Dismiss", style: "cancel" },
+          {
+            text: "Open Scanner",
+            onPress: () => router.push("/user/scanner"),
+          },
+        ]
+      );
+      return;
+    }
+
+    handleOpenBoxDetails(item.boxCode);
+  };
+
   const getCategoryBadge = (category: string) => {
     const isMain = category === "MAIN_BOX";
     return (
@@ -207,8 +242,17 @@ export default function UserBoxesScreen() {
       );
     }
     if (status === "ISSUE") {
-      const match = auditNotes?.match(/^\[(.*?)\]/);
-      const issueLabel = match ? match[1] : "Hardware Issue";
+      const matches = auditNotes?.match(/\[(.*?)\]/g);
+      let issueLabel = "Hardware Issue";
+      if (matches) {
+        for (const m of matches) {
+          const inner = m.slice(1, -1).trim();
+          if (inner && !inner.includes("LOCATION MISMATCH")) {
+            issueLabel = inner;
+            break;
+          }
+        }
+      }
 
       return (
         <View className="bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full flex-row items-center max-w-[150px]">
@@ -452,12 +496,17 @@ export default function UserBoxesScreen() {
                       | "ACTIVE"
                       | "NEEDS_TAG"
                       | "ISSUE";
+                    const isNeedsTag = isBoxNeedsTag(item);
                     return (
                       <TouchableOpacity
                         key={item.id}
-                        onPress={() => handleOpenBoxDetails(item.boxCode)}
-                        className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 active:bg-slate-50"
-                        activeOpacity={0.78}
+                        onPress={() => handleBoxPress(item)}
+                        className={`bg-white rounded-2xl p-4 mb-3 border ${
+                          isNeedsTag
+                            ? "border-amber-200/90 shadow-xs"
+                            : "border-slate-200/80 shadow-sm shadow-slate-200/40"
+                        } active:bg-slate-50`}
+                        activeOpacity={isNeedsTag ? 0.85 : 0.78}
                       >
                         <View className="flex-row items-center justify-between mb-2">
                           <View className="flex-row items-center flex-1 pr-2">
@@ -490,29 +539,54 @@ export default function UserBoxesScreen() {
                           {getStatusPill(status, item.auditNote)}
                         </View>
 
-                        {/* Technical Specs Row */}
-                        <View className="flex-row items-center justify-between bg-[#f8fafc] rounded-xl p-2.5 my-1.5 border border-slate-100">
-                          <View className="flex-row items-center">
-                            <MaterialCommunityIcons
-                              name="lan"
-                              size={13}
-                              color="#64748b"
-                            />
-                            <Text className="text-[11px] font-poppins-medium text-[#475569] ml-1">
-                              {item.portsUsed ?? 0}/{item.totalPorts ?? 24} Ports
-                            </Text>
+                        {/* Technical Specs Row / Needs Tag Locked Row */}
+                        {isNeedsTag ? (
+                          <View className="flex-row items-center justify-between bg-amber-50/70 rounded-xl p-2.5 my-1.5 border border-amber-200/60">
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="lock-closed"
+                                size={12}
+                                color="#d97706"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-amber-800 ml-1.5">
+                                Details locked · Tagging required
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="time-outline"
+                                size={13}
+                                color="#b45309"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-amber-700 ml-1">
+                                {formatScanTime(item.createdAt, item.timeLabel)}
+                              </Text>
+                            </View>
                           </View>
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="time-outline"
-                              size={13}
-                              color="#64748b"
-                            />
-                            <Text className="text-[11px] font-poppins-medium text-[#64748b] ml-1">
-                              {formatScanTime(item.createdAt, item.timeLabel)}
-                            </Text>
+                        ) : (
+                          <View className="flex-row items-center justify-between bg-[#f8fafc] rounded-xl p-2.5 my-1.5 border border-slate-100">
+                            <View className="flex-row items-center">
+                              <MaterialCommunityIcons
+                                name="lan"
+                                size={13}
+                                color="#64748b"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-[#475569] ml-1">
+                                {item.portsUsed ?? 0}/{item.totalPorts ?? 24} Ports
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="time-outline"
+                                size={13}
+                                color="#64748b"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-[#64748b] ml-1">
+                                {formatScanTime(item.createdAt, item.timeLabel)}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
+                        )}
                       </TouchableOpacity>
                     );
                   })}
@@ -530,12 +604,17 @@ export default function UserBoxesScreen() {
                       | "ACTIVE"
                       | "NEEDS_TAG"
                       | "ISSUE";
+                    const isNeedsTag = isBoxNeedsTag(item);
                     return (
                       <TouchableOpacity
                         key={item.id}
-                        onPress={() => handleOpenBoxDetails(item.boxCode)}
-                        className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 active:bg-slate-50"
-                        activeOpacity={0.78}
+                        onPress={() => handleBoxPress(item)}
+                        className={`bg-white rounded-2xl p-4 mb-3 border ${
+                          isNeedsTag
+                            ? "border-amber-200/90 shadow-xs"
+                            : "border-slate-200/80 shadow-sm shadow-slate-200/40"
+                        } active:bg-slate-50`}
+                        activeOpacity={isNeedsTag ? 0.85 : 0.78}
                       >
                         <View className="flex-row items-center justify-between mb-2">
                           <View className="flex-row items-center flex-1 pr-2">
@@ -568,28 +647,54 @@ export default function UserBoxesScreen() {
                           {getStatusPill(status, item.auditNote)}
                         </View>
 
-                        <View className="flex-row items-center justify-between bg-[#f8fafc] rounded-xl p-2.5 my-1.5 border border-slate-100">
-                          <View className="flex-row items-center">
-                            <MaterialCommunityIcons
-                              name="lan"
-                              size={13}
-                              color="#64748b"
-                            />
-                            <Text className="text-[11px] font-poppins-medium text-[#475569] ml-1">
-                              {item.portsUsed ?? 0}/{item.totalPorts ?? 24} Ports
-                            </Text>
+                        {/* Technical Specs Row / Needs Tag Locked Row */}
+                        {isNeedsTag ? (
+                          <View className="flex-row items-center justify-between bg-amber-50/70 rounded-xl p-2.5 my-1.5 border border-amber-200/60">
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="lock-closed"
+                                size={12}
+                                color="#d97706"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-amber-800 ml-1.5">
+                                Details locked · Tagging required
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="time-outline"
+                                size={13}
+                                color="#b45309"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-amber-700 ml-1">
+                                {formatScanTime(item.createdAt, item.timeLabel)}
+                              </Text>
+                            </View>
                           </View>
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="time-outline"
-                              size={13}
-                              color="#64748b"
-                            />
-                            <Text className="text-[11px] font-poppins-medium text-[#64748b] ml-1">
-                              {formatScanTime(item.createdAt, item.timeLabel)}
-                            </Text>
+                        ) : (
+                          <View className="flex-row items-center justify-between bg-[#f8fafc] rounded-xl p-2.5 my-1.5 border border-slate-100">
+                            <View className="flex-row items-center">
+                              <MaterialCommunityIcons
+                                name="lan"
+                                size={13}
+                                color="#64748b"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-[#475569] ml-1">
+                                {item.portsUsed ?? 0}/{item.totalPorts ?? 24} Ports
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons
+                                name="time-outline"
+                                size={13}
+                                color="#64748b"
+                              />
+                              <Text className="text-[11px] font-poppins-medium text-[#64748b] ml-1">
+                                {formatScanTime(item.createdAt, item.timeLabel)}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
+                        )}
                       </TouchableOpacity>
                     );
                   })}

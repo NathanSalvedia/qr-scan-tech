@@ -24,7 +24,6 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: userRoleEnum('role').default('user').notNull(),
   isActive: boolean('is_active').default(false).notNull(),
-  dutyStatus: varchar('duty_status', { length: 20 }).default('OFF_DUTY').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -122,6 +121,10 @@ export const scanAuditLogs = pgTable('scan_audit_logs', {
   padlockVerified: boolean('padlock_verified').default(true).notNull(),
   auditNotes: text('audit_notes'),
   boxStatusAtScan: varchar('box_status_at_scan', { length: 50 }).notNull(),
+  scanLatitude: numeric('scan_latitude'),
+  scanLongitude: numeric('scan_longitude'),
+  distanceMeters: integer('distance_meters'),
+  locationVerified: boolean('location_verified').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

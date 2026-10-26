@@ -2,13 +2,13 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { useAuth } from "@/services/auth-state";
 import { boxService } from "@/services/boxes";
 import { logsService, type RecentScanItem } from "@/services/logs";
-import { settingsService } from "@/services/settings";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Image,
   Platform,
@@ -34,9 +34,18 @@ const getGreeting = (date: Date = new Date()): string => {
 };
 
 const getScanBadge = (scan: RecentScanItem) => {
-  if (scan.isAlarm || scan.boxStatus === "ISSUE") {
-    const match = scan.auditNote?.match(/^\[(.*?)\]/);
-    const label = match ? match[1] : (scan.isAlarm ? "Alarm" : "Issue");
+  if (scan.isAlarm || scan.boxStatus === "ISSUE" || scan.status === "ISSUE") {
+    const matches = scan.auditNote?.match(/\[(.*?)\]/g);
+    let label = scan.isAlarm ? "Alarm" : "Issue";
+    if (matches) {
+      for (const m of matches) {
+        const inner = m.slice(1, -1).trim();
+        if (inner && !inner.includes("LOCATION MISMATCH")) {
+          label = inner;
+          break;
+        }
+      }
+    }
     return {
       label,
       icon: "alert-circle" as const,
@@ -72,14 +81,6 @@ const getScanBadge = (scan: RecentScanItem) => {
 export default function UserDashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [isOnDuty, setIsOnDuty] = useState(true);
-
-  // Proactively ensure logged-in technician is synced as ON_DUTY on server
-  useEffect(() => {
-    if (user && user.role !== "admin") {
-      settingsService.setOnDutyStatus(true).catch(() => {});
-    }
-  }, [user]);
 
   const [stats, setStats] = useState({
     total: 0,
@@ -180,10 +181,13 @@ export default function UserDashboardScreen() {
     "User";
 
   const isWeb = Platform.OS === "web";
-  // Deduplicate by box so each box only appears once showing its latest scan (Top 5 unique boxes)
+  // Deduplicate by box so each tagged box only appears once showing its latest scan (Top 5 unique boxes)
   const displayedScans = useMemo(() => {
     const uniqueMap = new Map<string, RecentScanItem>();
     for (const scan of recentScans) {
+      if (scan.status === "NEEDS_TAG" || scan.boxStatus === "NEEDS_TAG") {
+        continue;
+      }
       const key = scan.boxId || scan.boxCode;
       if (key && !uniqueMap.has(key)) {
         uniqueMap.set(key, scan);
@@ -225,30 +229,6 @@ export default function UserDashboardScreen() {
               {greeting}, {displayName}!
             </Text>
           </View>
-
-          {/* On Duty Status Pill */}
-          <TouchableOpacity
-            onPress={() => setIsOnDuty(!isOnDuty)}
-            activeOpacity={0.8}
-            className={`flex-row items-center px-3 py-1.5 rounded-full border ${
-              isOnDuty
-                ? "bg-emerald-50 border-emerald-200"
-                : "bg-slate-100 border-slate-300"
-            }`}
-          >
-            <View
-              className={`w-2 h-2 rounded-full mr-1.5 ${
-                isOnDuty ? "bg-emerald-500" : "bg-slate-400"
-              }`}
-            />
-            <Text
-              className={`text-[11px] font-poppins-semibold ${
-                isOnDuty ? "text-emerald-700" : "text-slate-600"
-              }`}
-            >
-              {isOnDuty ? "On Duty" : "Off Duty"}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Hero Quick Scan Card */}
@@ -443,17 +423,38 @@ export default function UserDashboardScreen() {
                 .filter(Boolean)
                 .join(" · ");
 
+              const isNeedsTag =
+                scan.boxStatus === "NEEDS_TAG" || scan.status === "NEEDS_TAG";
+
               return (
                 <TouchableOpacity
                   key={scan.id}
-                  onPress={() =>
+                  onPress={() => {
+                    if (isNeedsTag) {
+                      Alert.alert(
+                        "Tagging Required",
+                        `Distribution box "${scan.boxCode}" has not been tagged with a physical QR placard yet.\n\nBox specifications and telemetry will become viewable once the tag is affixed and activated on-site.`,
+                        [
+                          { text: "Dismiss", style: "cancel" },
+                          {
+                            text: "Open Scanner",
+                            onPress: () => router.push("/user/scanner"),
+                          },
+                        ]
+                      );
+                      return;
+                    }
                     router.push({
                       pathname: "/user/box-details",
                       params: { code: scan.boxCode, id: scan.boxId },
-                    })
-                  }
-                  className="bg-white rounded-2xl p-4 mb-3 border border-slate-200/80 shadow-sm shadow-slate-200/40 flex-row items-center justify-between active:bg-slate-50"
-                  activeOpacity={0.75}
+                    });
+                  }}
+                  className={`bg-white rounded-2xl p-4 mb-3 border ${
+                    isNeedsTag
+                      ? "border-amber-200/90 shadow-xs"
+                      : "border-slate-200/80 shadow-sm shadow-slate-200/40"
+                  } flex-row items-center justify-between active:bg-slate-50`}
+                  activeOpacity={isNeedsTag ? 0.85 : 0.75}
                 >
                   <View className="flex-row items-center flex-1 mr-3">
                     <View

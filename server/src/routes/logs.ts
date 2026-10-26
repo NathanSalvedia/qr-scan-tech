@@ -34,8 +34,30 @@ export interface AuditLogItem {
   description: string;
   deviceOrIp: string;
   gpsCoordinates?: string;
+  distanceMeters?: number | null;
+  locationVerified?: boolean;
+  scanLatitude?: string | null;
+  scanLongitude?: string | null;
   metadata?: Record<string, string>;
   rawDate: number;
+}
+
+function computeDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (angle: number) => (angle * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+function formatDistanceLabel(meters: number): string {
+  if (meters < 1000) return `${meters} m`;
+  const km = (meters / 1000).toFixed(1);
+  return `${km} km`;
 }
 
 function formatTimestamp(date: Date): string {
@@ -68,6 +90,21 @@ function formatRelativeTime(date: Date): string {
   return `${Math.floor(diffDays / 7)}w ago`;
 }
 
+async function withDbRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // =========================================================================
 // GET ALL AUDIT ACTIVITY LOGS
 // Aggregates live logs across:
@@ -79,13 +116,15 @@ function formatRelativeTime(date: Date): string {
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const [allBoxes, allUsers, allScans, allDispatches, allClients] =
-      await Promise.all([
-        db.select().from(distributionBoxes),
-        db.select().from(users),
-        db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
-        db.select().from(qrDispatches).orderBy(desc(qrDispatches.printedAt)),
-        db.select().from(clientConnections).orderBy(desc(clientConnections.connectedAt)),
-      ]);
+      await withDbRetry(() =>
+        Promise.all([
+          db.select().from(distributionBoxes),
+          db.select().from(users),
+          db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
+          db.select().from(qrDispatches).orderBy(desc(qrDispatches.printedAt)),
+          db.select().from(clientConnections).orderBy(desc(clientConnections.connectedAt)),
+        ])
+      );
 
     const boxMap = new Map(allBoxes.map((b) => [b.id, b]));
     const userMap = new Map(allUsers.map((u) => [u.id, u]));
@@ -131,6 +170,16 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         'Cabinet Status': scan.padlockVerified ? 'Closed & Padlocked' : 'Padlock Unlatched',
       };
       if (box?.qrToken) metadata['QR Token Read'] = box.qrToken;
+      if (scan.distanceMeters !== null && scan.distanceMeters !== undefined) {
+        const distNum = Number(scan.distanceMeters);
+        metadata['Pole Distance'] = formatDistanceLabel(distNum);
+        metadata['Proximity Status'] = scan.locationVerified
+          ? `Verified On-Site (${formatDistanceLabel(distNum)})`
+          : `⚠️ Location Mismatch (${formatDistanceLabel(distNum)} away)`;
+      }
+      if (scan.scanLatitude && scan.scanLongitude) {
+        metadata['Device GPS'] = `${Number(scan.scanLatitude).toFixed(4)}° N, ${Number(scan.scanLongitude).toFixed(4)}° E`;
+      }
 
       aggregatedLogs.push({
         id: `LOG-SCN-${scan.id.slice(0, 8)}`,
@@ -157,6 +206,10 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           box?.latitude && box?.longitude
             ? `${Number(box.latitude).toFixed(4)}° N, ${Number(box.longitude).toFixed(4)}° E`
             : undefined,
+        distanceMeters: scan.distanceMeters ? Number(scan.distanceMeters) : null,
+        locationVerified: scan.locationVerified !== null ? Boolean(scan.locationVerified) : true,
+        scanLatitude: scan.scanLatitude ? String(scan.scanLatitude) : null,
+        scanLongitude: scan.scanLongitude ? String(scan.scanLongitude) : null,
         metadata,
         rawDate: scanDate.getTime(),
       });
@@ -233,25 +286,35 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       const box = boxMap.get(client.boxId);
       const boxCode = box?.code || 'BOX';
       const boxName = box?.siteName || 'Distribution Node';
+      const assignedByUser = client.signalDbm ? userMap.get(client.signalDbm) : undefined;
+      const isFieldTech = assignedByUser?.role === 'user';
+      const portActorName = assignedByUser
+        ? `${assignedByUser.firstName} ${assignedByUser.lastName}`.trim()
+        : adminName;
 
       aggregatedLogs.push({
         id: `LOG-PRT-${client.id.slice(0, 8)}`,
         timestamp: formatTimestamp(connDate),
         relativeTime: formatRelativeTime(connDate),
         category: 'PORT_CHANGE',
-        actorType: 'ADMIN',
-        actorName: adminName,
-        actorId: 'ADMIN',
+        actorType: isFieldTech ? 'USER' : 'ADMIN',
+        actorName: portActorName,
+        actorId: isFieldTech ? 'User' : 'ADMIN',
         targetBoxCode: boxCode,
         targetBoxName: boxName,
-        title: `Subscriber Port Provisioned`,
-        description: `Connected subscriber ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} with plan ${client.servicePlan || 'Fiber'}.`,
-        deviceOrIp: 'Provisioning Gateway',
+        title: isFieldTech
+          ? `Field Drop Wire Activated (${boxCode} · P${client.portNumber})`
+          : `Subscriber Port Provisioned`,
+        description: isFieldTech
+          ? `Field technician activated drop wire for ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} (${client.servicePlan || 'Fiber'}).`
+          : `Connected subscriber ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} with plan ${client.servicePlan || 'Fiber'}.`,
+        deviceOrIp: isFieldTech ? 'Mobile Scanner App' : 'Provisioning Gateway',
         metadata: {
           'Port Assigned': `Port ${client.portNumber}`,
           'Account Number': client.accountNumber,
           Subscriber: client.customerName,
           'Service Plan': client.servicePlan || 'Fiber',
+          'Provisioned By': portActorName,
         },
         rawDate: connDate.getTime(),
       });
@@ -325,31 +388,62 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
 
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '50'), 10) || 50, 1), 100);
 
-    let [scans, boxes, clients] = await Promise.all([
-      db
-        .select()
-        .from(scanAuditLogs)
-        .where(eq(scanAuditLogs.technicianId, technicianId))
-        .orderBy(desc(scanAuditLogs.createdAt))
-        .limit(Math.max(limit * 5, 100)),
-      db.select().from(distributionBoxes),
-      db.select().from(clientConnections),
-    ]);
+    let [techScans, allRecentScans, boxes, clients] = await withDbRetry(() =>
+      Promise.all([
+        db
+          .select()
+          .from(scanAuditLogs)
+          .where(eq(scanAuditLogs.technicianId, technicianId))
+          .orderBy(desc(scanAuditLogs.createdAt))
+          .limit(Math.max(limit * 5, 100)),
+        db
+          .select()
+          .from(scanAuditLogs)
+          .orderBy(desc(scanAuditLogs.createdAt))
+          .limit(Math.max(limit * 5, 150)),
+        db.select().from(distributionBoxes),
+        db.select().from(clientConnections),
+      ])
+    );
 
-    // If signed-in technician has not personally scanned any box yet, fall back to recent scan audit records
-    if (scans.length === 0) {
-      scans = await db
-        .select()
-        .from(scanAuditLogs)
-        .orderBy(desc(scanAuditLogs.createdAt))
-        .limit(Math.max(limit * 5, 100));
+    const boxMap = new Map(boxes.map((b) => [b.id, b]));
+
+    // Track the latest ISSUE audit scan per box so reported issue notes are always preserved
+    const latestIssueScanByBox = new Map<string, (typeof allRecentScans)[number]>();
+    for (const s of allRecentScans) {
+      if (
+        (s.boxStatusAtScan === 'ISSUE' || s.boxStatusAtScan === 'WARNING') &&
+        !latestIssueScanByBox.has(s.boxId)
+      ) {
+        latestIssueScanByBox.set(s.boxId, s);
+      }
     }
 
-    // Deduplicate so each box appears only once with its most recent scan
-    const seenBoxIds = new Set<string>();
-    const uniqueScans: typeof scans = [];
+    // Combine technician's own scans with any reported ISSUE scans so reported issue boxes are always stored in Scan History
+    const issueScans = allRecentScans.filter((s) => {
+      const box = boxMap.get(s.boxId);
+      return box?.status === 'ISSUE' || s.boxStatusAtScan === 'ISSUE';
+    });
 
-    for (const scan of scans) {
+    const combinedScans =
+      techScans.length > 0
+        ? [...techScans, ...issueScans].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+        : allRecentScans;
+
+    // Deduplicate so each box appears only once with its most recent scan
+    // Include tagged (ACTIVE) and reported ISSUE boxes; exclude NEEDS_TAG boxes
+    const seenBoxIds = new Set<string>();
+    const uniqueScans: typeof allRecentScans = [];
+
+    for (const scan of combinedScans) {
+      const box = boxMap.get(scan.boxId);
+      const effectiveStatus = box?.status || scan.boxStatusAtScan || 'ACTIVE';
+      if (effectiveStatus === 'NEEDS_TAG') {
+        continue;
+      }
+
       if (!seenBoxIds.has(scan.boxId)) {
         seenBoxIds.add(scan.boxId);
         uniqueScans.push(scan);
@@ -359,7 +453,6 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
       }
     }
 
-    const boxMap = new Map(boxes.map((b) => [b.id, b]));
     const clientMap = new Map<string, number>();
     for (const c of clients) {
       if (c.status === 'CONNECTED' || c.status === 'ACTIVE') {
@@ -375,8 +468,16 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
 
     const recentScans = uniqueScans.map((scan) => {
       const box = boxMap.get(scan.boxId);
-      const scanDate = new Date(scan.createdAt);
+      const effectiveStatus = (box?.status || scan.boxStatusAtScan || 'ACTIVE') as
+        | 'ACTIVE'
+        | 'NEEDS_TAG'
+        | 'ISSUE';
+      const issueScan = latestIssueScanByBox.get(scan.boxId);
+      const scanDate = new Date(
+        effectiveStatus === 'ISSUE' && issueScan ? issueScan.createdAt : scan.createdAt
+      );
       const isAlarm =
+        effectiveStatus === 'ISSUE' ||
         scan.boxStatusAtScan === 'ISSUE' ||
         scan.boxStatusAtScan === 'WARNING';
 
@@ -399,6 +500,14 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
       const connectedCount = clientMap.get(scan.boxId);
       const portsUsed = connectedCount ?? 0;
 
+      const resolvedAuditNote =
+        effectiveStatus === 'ISSUE'
+          ? issueScan?.auditNotes ||
+            scan.auditNotes ||
+            box?.notes ||
+            '[Hardware Issue] Hardware problem reported during field inspection'
+          : scan.auditNotes || 'Routine audit passed. Enclosure inspected.';
+
       return {
         id: scan.id,
         boxId: scan.boxId,
@@ -406,20 +515,81 @@ router.get('/my-recent-scans', requireAuth, async (req: AuthenticatedRequest, re
         siteName: box?.siteName || 'Distribution Node',
         tier: box?.category === 'MAIN_BOX' ? 'Tier 1 · Main Feeder' : 'Tier 2 · Sub-Distribution',
         category: (box?.category || 'SUB_BOX') as 'MAIN_BOX' | 'SUB_BOX',
-        status: (box?.status || scan.boxStatusAtScan || 'ACTIVE') as 'ACTIVE' | 'NEEDS_TAG' | 'ISSUE',
-        boxStatus: box?.status || scan.boxStatusAtScan || 'ACTIVE',
+        status: effectiveStatus,
+        boxStatus: effectiveStatus,
         isAlarm,
         portsUsed,
         totalPorts,
         timeLabel,
         dateGroup,
-        auditNote: scan.auditNotes || 'Routine audit passed. Enclosure inspected.',
+        auditNote: resolvedAuditNote,
         padlockVerified: Boolean(scan.padlockVerified),
-        createdAt: scan.createdAt ? new Date(scan.createdAt).toISOString() : new Date().toISOString(),
+        distanceMeters: scan.distanceMeters ? Number(scan.distanceMeters) : null,
+        locationVerified: scan.locationVerified !== null ? Boolean(scan.locationVerified) : true,
+        createdAt: scanDate.toISOString(),
         timestamp: formatTimestamp(scanDate),
         relativeTime: formatRelativeTime(scanDate),
       };
     });
+
+    // Ensure any box in distributionBoxes with status === 'ISSUE' is included in Scan History even if not in uniqueScans yet
+    for (const box of boxes) {
+      if (box.status === 'ISSUE' && !seenBoxIds.has(box.id)) {
+        seenBoxIds.add(box.id);
+        const issueScan = latestIssueScanByBox.get(box.id);
+        const scanDate = issueScan?.createdAt
+          ? new Date(issueScan.createdAt)
+          : box.updatedAt
+            ? new Date(box.updatedAt)
+            : new Date();
+        const scanDateStr = scanDate.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
+        const dateGroup =
+          scanDateStr === todayStr
+            ? 'TODAY'
+            : scanDateStr === yesterdayStr
+              ? 'YESTERDAY'
+              : 'EARLIER';
+        const timeLabel = scanDate.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Manila',
+        });
+        const totalPorts = box.totalPorts || 24;
+        const portsUsed = clientMap.get(box.id) ?? 0;
+
+        recentScans.push({
+          id: issueScan?.id || `issue-${box.id}`,
+          boxId: box.id,
+          boxCode: box.code || 'BOX',
+          siteName: box.siteName || 'Distribution Node',
+          tier: box.category === 'MAIN_BOX' ? 'Tier 1 · Main Feeder' : 'Tier 2 · Sub-Distribution',
+          category: (box.category || 'SUB_BOX') as 'MAIN_BOX' | 'SUB_BOX',
+          status: 'ISSUE',
+          boxStatus: 'ISSUE',
+          isAlarm: true,
+          portsUsed,
+          totalPorts,
+          timeLabel,
+          dateGroup,
+          auditNote:
+            issueScan?.auditNotes ||
+            box.notes ||
+            '[Hardware Issue] Hardware problem reported during field inspection',
+          padlockVerified: issueScan ? Boolean(issueScan.padlockVerified) : false,
+          distanceMeters: issueScan?.distanceMeters ? Number(issueScan.distanceMeters) : null,
+          locationVerified:
+            issueScan?.locationVerified !== undefined && issueScan?.locationVerified !== null
+              ? Boolean(issueScan.locationVerified)
+              : true,
+          createdAt: scanDate.toISOString(),
+          timestamp: formatTimestamp(scanDate),
+          relativeTime: formatRelativeTime(scanDate),
+        });
+      }
+    }
+
+    recentScans.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return res.json({ success: true, scans: recentScans });
   } catch (error: any) {
@@ -449,10 +619,19 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       padlockVerified = true,
       auditNotes,
       boxStatusAtScan = 'ACTIVE',
+      scanLatitude,
+      scanLongitude,
+      distanceMeters,
+      locationVerified,
     } = req.body;
 
     let targetBoxId = boxId;
-    if (!targetBoxId && boxCode) {
+    let resolvedBox: any = null;
+
+    if (targetBoxId) {
+      const [matched] = await db.select().from(distributionBoxes).where(eq(distributionBoxes.id, targetBoxId));
+      resolvedBox = matched;
+    } else if (boxCode) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(boxCode);
       const [matchedBox] = isUuid
         ? await db.select().from(distributionBoxes).where(eq(distributionBoxes.id, boxCode))
@@ -467,11 +646,38 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
             );
       if (matchedBox) {
         targetBoxId = matchedBox.id;
+        resolvedBox = matchedBox;
       }
     }
 
     if (!targetBoxId) {
       return res.status(400).json({ success: false, message: 'Valid boxId or boxCode is required' });
+    }
+
+    // Geolocation Distance Proximity Guard & Anti-Cheating Verification
+    let finalScanLat = scanLatitude !== undefined && scanLatitude !== null ? String(scanLatitude) : null;
+    let finalScanLon = scanLongitude !== undefined && scanLongitude !== null ? String(scanLongitude) : null;
+    let finalDistanceMeters: number | null = typeof distanceMeters === 'number' ? distanceMeters : null;
+    let finalLocationVerified = typeof locationVerified === 'boolean' ? locationVerified : true;
+
+    if (finalScanLat && finalScanLon && resolvedBox?.latitude && resolvedBox?.longitude) {
+      const bLat = Number(resolvedBox.latitude);
+      const bLon = Number(resolvedBox.longitude);
+      const sLat = Number(finalScanLat);
+      const sLon = Number(finalScanLon);
+
+      if (!Number.isNaN(bLat) && !Number.isNaN(bLon) && !Number.isNaN(sLat) && !Number.isNaN(sLon)) {
+        finalDistanceMeters = computeDistanceInMeters(bLat, bLon, sLat, sLon);
+        // Anti-cheating guard: flagged if outside 150m tolerance threshold
+        finalLocationVerified = finalDistanceMeters <= 150;
+      }
+    }
+
+    let finalNotes = auditNotes ? String(auditNotes) : null;
+    if (finalDistanceMeters !== null && !finalLocationVerified) {
+      const distLabel = formatDistanceLabel(finalDistanceMeters);
+      const flagNotice = `[⚠️ LOCATION MISMATCH: Scanned ${distLabel} away from registered pole]`;
+      finalNotes = finalNotes ? `${finalNotes} ${flagNotice}` : flagNotice;
     }
 
     // Normalize scanType to match standard system audit types
@@ -487,6 +693,13 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       safeScanType = 'CAMERA_QR';
     }
 
+    // For passive camera/search scans, preserve the box's authoritative status from DB
+    const isExplicitStatusChange =
+      safeScanType === 'ROUTINE_AUDIT' || safeScanType === 'TAG_AFFIXED';
+    const effectiveStatusAtScan = isExplicitStatusChange
+      ? String(boxStatusAtScan)
+      : String(resolvedBox?.status || boxStatusAtScan || 'ACTIVE');
+
     const [newLog] = await db
       .insert(scanAuditLogs)
       .values({
@@ -494,13 +707,23 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
         technicianId,
         scanType: safeScanType,
         padlockVerified: Boolean(padlockVerified),
-        auditNotes: auditNotes ? String(auditNotes) : null,
-        boxStatusAtScan: String(boxStatusAtScan),
+        auditNotes: finalNotes,
+        boxStatusAtScan: effectiveStatusAtScan,
+        scanLatitude: finalScanLat,
+        scanLongitude: finalScanLon,
+        distanceMeters: finalDistanceMeters,
+        locationVerified: finalLocationVerified,
       })
       .returning();
 
-    // Automatically synchronize box status when an audit changes it
-    if (boxStatusAtScan && (boxStatusAtScan === 'ACTIVE' || boxStatusAtScan === 'ISSUE' || boxStatusAtScan === 'NEEDS_TAG')) {
+    // Automatically synchronize box status when an explicit inspection/tag audit changes it
+    if (
+      isExplicitStatusChange &&
+      boxStatusAtScan &&
+      (boxStatusAtScan === 'ACTIVE' ||
+        boxStatusAtScan === 'ISSUE' ||
+        boxStatusAtScan === 'NEEDS_TAG')
+    ) {
       await db
         .update(distributionBoxes)
         .set({ status: boxStatusAtScan, updatedAt: new Date() })

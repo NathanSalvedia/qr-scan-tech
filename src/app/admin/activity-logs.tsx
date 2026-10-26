@@ -19,6 +19,7 @@ import {
   type AuditLogItem,
   type EventCategory,
 } from "@/services/logs";
+import { formatDistance } from "@/utils/geo";
 
 export type { AuditLogItem, EventCategory };
 
@@ -195,6 +196,8 @@ export default function ActivityLogsScreen() {
       "Title",
       "Description",
       "Device / IP",
+      "Distance to Pole",
+      "Location Verified",
     ];
     const rows = logs.map((l) => [
       `"${(l.timestamp || "").replace(/"/g, '""')}"`,
@@ -206,6 +209,8 @@ export default function ActivityLogsScreen() {
       `"${(l.title || "").replace(/"/g, '""')}"`,
       `"${(l.description || "").replace(/"/g, '""')}"`,
       `"${(l.deviceOrIp || "").replace(/"/g, '""')}"`,
+      `"${l.distanceMeters !== undefined && l.distanceMeters !== null ? formatDistance(l.distanceMeters) : "N/A"}"`,
+      `"${l.locationVerified === false ? "MISMATCH" : l.distanceMeters !== undefined && l.distanceMeters !== null ? "VERIFIED" : "N/A"}"`,
     ]);
 
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -689,6 +694,38 @@ export default function ActivityLogsScreen() {
                                 {catMeta.label}
                               </Text>
                             </View>
+
+                            {/* GPS Proximity Guard Badge */}
+                            {item.distanceMeters !== undefined && item.distanceMeters !== null && (
+                              <View
+                                className={`inline-flex self-start px-2 py-0.5 rounded-md flex-row items-center mt-1 border ${
+                                  item.locationVerified === false
+                                    ? "bg-rose-50 border-rose-300"
+                                    : item.distanceMeters <= 50
+                                    ? "bg-emerald-50 border-emerald-200"
+                                    : "bg-amber-50 border-amber-200"
+                                }`}
+                              >
+                                <Ionicons
+                                  name={item.locationVerified === false ? "warning" : "shield-checkmark"}
+                                  size={10}
+                                  color={item.locationVerified === false ? "#dc2626" : "#059669"}
+                                />
+                                <Text
+                                  className={`text-[9px] font-poppins-bold ml-1 ${
+                                    item.locationVerified === false
+                                      ? "text-rose-700"
+                                      : item.distanceMeters <= 50
+                                      ? "text-emerald-700"
+                                      : "text-amber-800"
+                                  }`}
+                                >
+                                  {item.locationVerified === false
+                                    ? `Mismatch (${formatDistance(item.distanceMeters)})`
+                                    : `On-Site (${formatDistance(item.distanceMeters)})`}
+                                </Text>
+                              </View>
+                            )}
                           </View>
 
                           {/* 3. Actor / User */}
@@ -814,7 +851,7 @@ export default function ActivityLogsScreen() {
                   </View>
                 </View>
 
-                {/* Right: Previous / Page Numbers / Next */}
+                {/* Right: Previous / Next */}
                 <View className="flex-row items-center space-x-1">
                   {/* Previous Button */}
                   <TouchableOpacity
@@ -833,31 +870,6 @@ export default function ActivityLogsScreen() {
                       Previous
                     </Text>
                   </TouchableOpacity>
-
-                  {/* Page Numbers */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                    (pageNum) => (
-                      <TouchableOpacity
-                        key={pageNum}
-                        onPress={() => setCurrentPage(pageNum)}
-                        className={`w-8 h-8 rounded-xl items-center justify-center border mx-0.5 ${
-                          safeCurrentPage === pageNum
-                            ? "bg-[#4d6029] border-[#4d6029]"
-                            : "bg-white border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Text
-                          className={`text-xs font-poppins-bold ${
-                            safeCurrentPage === pageNum
-                              ? "text-white"
-                              : "text-[#475569]"
-                          }`}
-                        >
-                          {pageNum}
-                        </Text>
-                      </TouchableOpacity>
-                    ),
-                  )}
 
                   {/* Next Button */}
                   <TouchableOpacity
@@ -995,6 +1007,101 @@ export default function ActivityLogsScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* GPS Proximity Guard Inspection Card */}
+                {selectedLogForDetails.distanceMeters !== undefined &&
+                  selectedLogForDetails.distanceMeters !== null && (
+                    <View
+                      className={`mb-3.5 p-3.5 rounded-2xl border ${
+                        selectedLogForDetails.locationVerified
+                          ? "bg-emerald-50/70 border-emerald-200"
+                          : "bg-rose-50 border-rose-300"
+                      }`}
+                    >
+                      <View className="flex-row items-center justify-between mb-1.5">
+                        <View className="flex-row items-center space-x-1.5">
+                          <Ionicons
+                            name={
+                              selectedLogForDetails.locationVerified
+                                ? "shield-checkmark"
+                                : "warning"
+                            }
+                            size={16}
+                            color={
+                              selectedLogForDetails.locationVerified
+                                ? "#059669"
+                                : "#dc2626"
+                            }
+                          />
+                          <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1">
+                            GPS Proximity Guard
+                          </Text>
+                        </View>
+                        <View
+                          className={`px-2 py-0.5 rounded-full ${
+                            selectedLogForDetails.locationVerified
+                              ? "bg-emerald-100"
+                              : "bg-rose-100"
+                          }`}
+                        >
+                          <Text
+                            className={`text-[10px] font-poppins-bold ${
+                              selectedLogForDetails.locationVerified
+                                ? "text-emerald-800"
+                                : "text-rose-800"
+                            }`}
+                          >
+                            {selectedLogForDetails.locationVerified
+                              ? "Physical On-Site Verified"
+                              : "Location Mismatch Flagged"}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text className="text-[11px] font-poppins text-[#475569] mb-2">
+                        {selectedLogForDetails.locationVerified
+                          ? `Device coordinates verified within physical tolerance (${formatDistance(
+                              selectedLogForDetails.distanceMeters
+                            )}) of the registered pole.`
+                          : `Scan submitted ${formatDistance(
+                              selectedLogForDetails.distanceMeters
+                            )} away from registered pole coordinates. Anti-cheating guard flagged this record.`}
+                      </Text>
+                      <View className="bg-white/80 p-2.5 rounded-xl border border-slate-200/60 flex-row justify-between items-center">
+                        <View>
+                          <Text className="text-[9px] font-poppins text-[#64748b] uppercase">
+                            Distance to Pole
+                          </Text>
+                          <Text
+                            className={`text-xs font-poppins-bold ${
+                              selectedLogForDetails.locationVerified
+                                ? "text-emerald-700"
+                                : "text-rose-600"
+                            }`}
+                          >
+                            {formatDistance(selectedLogForDetails.distanceMeters)}
+                          </Text>
+                        </View>
+                        {selectedLogForDetails.scanLatitude &&
+                          selectedLogForDetails.scanLongitude && (
+                            <View className="items-end">
+                              <Text className="text-[9px] font-poppins text-[#64748b] uppercase">
+                                Scan Device GPS
+                              </Text>
+                              <Text className="text-[11px] font-mono text-[#0f172a]">
+                                {Number(
+                                  selectedLogForDetails.scanLatitude
+                                ).toFixed(4)}
+                                °,{" "}
+                                {Number(
+                                  selectedLogForDetails.scanLongitude
+                                ).toFixed(4)}
+                                °
+                              </Text>
+                            </View>
+                          )}
+                      </View>
+                    </View>
+                  )}
 
                 {/* Telemetry & Device Metadata */}
                 <View className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70">

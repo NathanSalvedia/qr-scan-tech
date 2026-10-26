@@ -25,12 +25,14 @@ export function useAdminLogWatcher() {
       // 1. User signs up an account ('USER_REGISTER')
       // 2. Boxes scanned ('SCAN' / 'ALARM')
       // 3. Physical QR placard affixing / Box activation ('BOX_UPDATE')
+      // 4. Drop cable port activation ('PORT_CHANGE')
       const targetLogs = unnotified.filter(
         (log) =>
           log.category === 'USER_REGISTER' ||
           log.category === 'SCAN' ||
           log.category === 'ALARM' ||
-          log.category === 'BOX_UPDATE'
+          log.category === 'BOX_UPDATE' ||
+          log.category === 'PORT_CHANGE'
       );
 
       if (targetLogs.length === 0) return;
@@ -49,7 +51,7 @@ export function useAdminLogWatcher() {
             category = 'SCAN';
           } else if (log.category === 'ALARM') {
             category = 'ALARM';
-          } else if (log.category === 'BOX_UPDATE') {
+          } else if (log.category === 'BOX_UPDATE' || log.category === 'PORT_CHANGE') {
             category = 'BOX_UPDATE';
           }
 

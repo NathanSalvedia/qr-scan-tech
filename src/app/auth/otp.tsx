@@ -4,8 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -31,10 +31,11 @@ export default function OtpVerificationScreen() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [showResentModal, setShowResentModal] = useState(false);
+  const [resentRecipient, setResentRecipient] = useState<string>("");
 
   const inputRef = useRef<TextInput | null>(null);
   const isResendActive = resendTimer === 0;
-  const isWeb = Platform.OS === "web";
 
   // Auto focus input on mount
   useEffect(() => {
@@ -78,30 +79,16 @@ export default function OtpVerificationScreen() {
 
     try {
       if (otpType === "sms") {
-        const phoneToUse = userPhone || authState.getPendingRegistration()?.phone;
+        const phoneToUse = userPhone || authState.getPendingRegistration()?.phone || "";
         const newConfirmation = await sendFirebasePhoneOtp(phoneToUse);
         authState.setConfirmationResult(newConfirmation);
-        setSuccessToast("A new 6-digit SMS code has been sent.");
-        setTimeout(() => setSuccessToast(null), 3500);
-
-        if (!isWeb) {
-          Alert.alert(
-            "Code Resent",
-            `A new 6-digit SMS verification code has been sent to ${phoneToUse}.`
-          );
-        }
+        setResentRecipient(phoneToUse);
+        setShowResentModal(true);
       } else {
         const res = await authService.resendOtp(userEmail, mode);
         if (res.success) {
-          setSuccessToast("A new 6-digit code has been sent.");
-          setTimeout(() => setSuccessToast(null), 3500);
-
-          if (!isWeb) {
-            Alert.alert(
-              "Code Resent",
-              `A new 6-digit verification code has been sent to ${userEmail}.`
-            );
-          }
+          setResentRecipient(userEmail);
+          setShowResentModal(true);
         } else {
           setErrorMessage(res.message || res.error || "Failed to resend code.");
         }
@@ -437,6 +424,82 @@ export default function OtpVerificationScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Customized Code Resent Success Modal */}
+      <Modal
+        visible={showResentModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {
+          setShowResentModal(false);
+          inputRef.current?.focus();
+        }}
+      >
+        <View className="flex-1 bg-slate-900/60 justify-center items-center px-4">
+          <View
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl items-center border border-slate-100"
+            style={{
+              elevation: 20,
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+            }}
+          >
+            {/* Header Icon */}
+            <View className="w-16 h-16 rounded-3xl bg-[#4d6029]/10 border border-[#4d6029]/20 items-center justify-center mb-4">
+              <MaterialCommunityIcons
+                name="email-fast-outline"
+                size={34}
+                color="#4d6029"
+              />
+            </View>
+
+            {/* Modal Title */}
+            <Text className="text-xl font-poppins-bold text-[#0f172a] text-center mb-1.5">
+              Code Resent!
+            </Text>
+
+            {/* Subtitle / Description */}
+            <Text className="text-xs font-poppins text-[#64748b] text-center mb-4 leading-relaxed px-2">
+              A new 6-digit verification code has been dispatched. Please check your inbox or messages.
+            </Text>
+
+            {/* Recipient Pill */}
+            {Boolean(resentRecipient) && (
+              <View className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-5 flex-row items-center justify-center">
+                <Ionicons
+                  name={otpType === "sms" ? "phone-portrait" : "mail"}
+                  size={16}
+                  color="#4d6029"
+                />
+                <Text
+                  className="text-xs font-poppins-bold text-[#0f172a] ml-2 shrink"
+                  numberOfLines={1}
+                >
+                  {resentRecipient}
+                </Text>
+              </View>
+            )}
+
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowResentModal(false);
+                inputRef.current?.focus();
+              }}
+              className="w-full bg-[#4d6029] active:opacity-90 py-3.5 rounded-2xl items-center justify-center flex-row shadow-sm shadow-[#4d6029]/30"
+              activeOpacity={0.85}
+            >
+              <Ionicons name="keypad-outline" size={18} color="#ffffff" />
+              <Text className="text-white text-sm font-poppins-bold ml-2">
+                Enter Code
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

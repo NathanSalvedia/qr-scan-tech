@@ -6,14 +6,14 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { authService } from '@/services/auth';
 
 export default function ChangePasswordScreen() {
@@ -30,6 +30,7 @@ export default function ChangePasswordScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const isLengthValid = newPassword.length >= 8 && newPassword.length <= 12;
   const isMatching = newPassword.length > 0 && newPassword === confirmPassword;
@@ -76,17 +77,7 @@ export default function ChangePasswordScreen() {
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
-
-        if (Platform.OS === 'web') {
-          window.alert('Success: Your password has been successfully updated.');
-          router.back();
-        } else {
-          Alert.alert(
-            'Password Updated',
-            'Your password has been successfully changed.',
-            [{ text: 'OK', onPress: () => router.back() }]
-          );
-        }
+        setShowSuccessModal(true);
       } else {
         setErrorMessage(
           res.message || 'Failed to update password. Please check your current password.'
@@ -350,6 +341,65 @@ export default function ChangePasswordScreen() {
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Customized Password Update Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {
+          setShowSuccessModal(false);
+          router.back();
+        }}
+      >
+        <View className="flex-1 bg-slate-900/60 justify-center items-center px-4">
+          <View
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl items-center border border-slate-100"
+            style={{
+              elevation: 20,
+              shadowColor: '#0f172a',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+            }}
+          >
+            {/* Success Icon */}
+            <View className="w-16 h-16 rounded-3xl bg-[#4d6029]/10 border border-[#4d6029]/20 items-center justify-center mb-4">
+              <MaterialCommunityIcons
+                name="check-decagram"
+                size={38}
+                color="#4d6029"
+              />
+            </View>
+
+            {/* Modal Title */}
+            <Text className="text-xl font-poppins-bold text-[#0f172a] text-center mb-1.5">
+              Password Changed!
+            </Text>
+
+            {/* Subtitle / Description */}
+            <Text className="text-xs font-poppins text-[#64748b] text-center mb-5 leading-relaxed px-2">
+              Your password has been successfully updated. You can continue using your account securely.
+            </Text>
+
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowSuccessModal(false);
+                router.back();
+              }}
+              className="w-full bg-[#4d6029] active:opacity-90 py-3.5 rounded-2xl items-center justify-center flex-row shadow-sm shadow-[#4d6029]/30"
+              activeOpacity={0.85}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#ffffff" />
+              <Text className="text-white text-sm font-poppins-bold ml-2">
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

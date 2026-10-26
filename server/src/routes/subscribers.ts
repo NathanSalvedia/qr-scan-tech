@@ -170,6 +170,58 @@ router.get('/lookup/:accountNumber', requireAuth, async (req: AuthenticatedReque
   }
 });
 
+// Default pending installation work orders seeded if no pending orders exist yet
+const DEFAULT_PENDING_WORK_ORDERS = [
+  {
+    accountNumber: '2608001018',
+    customerName: 'Marco Polo Villanueva',
+    subscriberType: 'Residential',
+    servicePlan: '200 Mbps Fiber Plan',
+    contactNumber: '0917-552-8410',
+    address: 'Purok 4, Tibanga, Iligan City',
+  },
+  {
+    accountNumber: '2608001026',
+    customerName: 'Kape Iligan Roastery & Co.',
+    subscriberType: 'Commercial',
+    servicePlan: '300 Mbps Fiber Plan',
+    contactNumber: '0918-334-9102',
+    address: 'Quezon Ave, Poblacion, Iligan City',
+  },
+  {
+    accountNumber: '2608001034',
+    customerName: 'Elena Grace Macapagal',
+    subscriberType: 'Residential',
+    servicePlan: '100 Mbps Fiber Plan',
+    contactNumber: '0998-741-2095',
+    address: 'Zamora St, San Miguel, Iligan City',
+  },
+  {
+    accountNumber: '2608001042',
+    customerName: 'Mindanao Tech Hub Solutions',
+    subscriberType: 'Commercial',
+    servicePlan: '300 Mbps Fiber Plan',
+    contactNumber: '0917-890-4412',
+    address: 'Andres Bonifacio Ave, Saray, Iligan City',
+  },
+  {
+    accountNumber: '2608001059',
+    customerName: 'Dr. Rafael Mendoza Clinic',
+    subscriberType: 'Commercial',
+    servicePlan: '200 Mbps Fiber Plan',
+    contactNumber: '0920-614-3381',
+    address: 'Roxas Ave, Mahayahay, Iligan City',
+  },
+  {
+    accountNumber: '2608001067',
+    customerName: 'Hannah Mae Alcantara',
+    subscriberType: 'Residential',
+    servicePlan: '100 Mbps Fiber Plan',
+    contactNumber: '0915-409-7731',
+    address: 'Bro. Jeffrey Rd, Pala-o, Iligan City',
+  },
+];
+
 // =========================================================================
 // 3. LIST / SEARCH CENTRAL SUBSCRIBERS DIRECTORY
 // =========================================================================
@@ -177,11 +229,28 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { search, status } = req.query;
 
-    let query = db.select().from(subscribers);
+    let allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
 
-    let allSubs = await query.orderBy(desc(subscribers.createdAt));
-
-
+    // Ensure default pending installation work orders exist for field technician drop wire assignment
+    const hasPending = allSubs.some((s) => s.status === 'PENDING_PROVISIONING' && !s.assignedBoxId);
+    if (!hasPending) {
+      try {
+        for (const item of DEFAULT_PENDING_WORK_ORDERS) {
+          await db.execute(sql`
+            INSERT INTO subscribers (
+              account_number, customer_name, subscriber_type, service_plan, contact_number, address, status
+            )
+            VALUES (
+              ${item.accountNumber}, ${item.customerName}, ${item.subscriberType}, ${item.servicePlan}, ${item.contactNumber}, ${item.address}, 'PENDING_PROVISIONING'
+            )
+            ON CONFLICT (account_number) DO NOTHING;
+          `);
+        }
+        allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
+      } catch (seedErr) {
+        console.warn('Non-fatal: could not seed default pending work orders', seedErr);
+      }
+    }
 
     if (search && typeof search === 'string') {
       const q = search.toLowerCase().trim();
@@ -190,7 +259,8 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           s.customerName.toLowerCase().includes(q) ||
           s.accountNumber.includes(q) ||
           s.servicePlan.toLowerCase().includes(q) ||
-          s.subscriberType.toLowerCase().includes(q)
+          s.subscriberType.toLowerCase().includes(q) ||
+          (s.address && s.address.toLowerCase().includes(q))
       );
     }
 
@@ -212,6 +282,8 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         contactNumber: s.contactNumber,
         address: s.address,
         status: s.status,
+        assignedBoxId: s.assignedBoxId,
+        assignedPort: s.assignedPort,
       })),
     });
   } catch (error: any) {

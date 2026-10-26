@@ -74818,7 +74818,6 @@ var users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").default("user").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
-  dutyStatus: varchar("duty_status", { length: 20 }).default("OFF_DUTY").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
@@ -74900,6 +74899,10 @@ var scanAuditLogs = pgTable("scan_audit_logs", {
   padlockVerified: boolean("padlock_verified").default(true).notNull(),
   auditNotes: text("audit_notes"),
   boxStatusAtScan: varchar("box_status_at_scan", { length: 50 }).notNull(),
+  scanLatitude: numeric("scan_latitude"),
+  scanLongitude: numeric("scan_longitude"),
+  distanceMeters: integer("distance_meters"),
+  locationVerified: boolean("location_verified").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 var systemSettings = pgTable("system_settings", {
@@ -74940,8 +74943,14 @@ var isLocal = !connectionString || connectionString.includes("localhost") || con
 var pool = new Pool({
   connectionString,
   max: process.env.VERCEL ? 3 : 10,
-  idleTimeoutMillis: 3e4,
+  idleTimeoutMillis: 1e4,
+  connectionTimeoutMillis: 1e4,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 1e4,
   ssl: isLocal ? false : { rejectUnauthorized: false }
+});
+pool.on("error", (err) => {
+  console.warn("[DB Pool] Idle client connection error (recycled):", err.message);
 });
 var db = drizzle(pool, { schema: schema_exports });
 
@@ -88884,7 +88893,7 @@ router.post("/verify-otp", async (req, res) => {
         email: cleanEmail
       });
     }
-    const [updatedUser] = await db.update(users).set({ isActive: true, dutyStatus: "ON_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, cleanEmail)).returning();
+    const [updatedUser] = await db.update(users).set({ isActive: true, updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, cleanEmail)).returning();
     if (!updatedUser) {
       return res.status(404).json({ success: false, message: "User not found." });
     }
@@ -88903,8 +88912,7 @@ router.post("/verify-otp", async (req, res) => {
         name: `${updatedUser.firstName} ${updatedUser.lastName}`,
         email: updatedUser.email,
         role: updatedUser.role,
-        isActive: updatedUser.isActive,
-        dutyStatus: updatedUser.dutyStatus
+        isActive: updatedUser.isActive
       },
       token
     });
@@ -88967,11 +88975,6 @@ router.post("/login", async (req, res) => {
         message: "Invalid email or password."
       });
     }
-    let currentDutyStatus = user.dutyStatus || "OFF_DUTY";
-    if (user.role !== "admin") {
-      currentDutyStatus = "ON_DUTY";
-      await db.update(users).set({ dutyStatus: "ON_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, user.id));
-    }
     const token = import_jsonwebtoken2.default.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET || "secret",
@@ -88987,8 +88990,7 @@ router.post("/login", async (req, res) => {
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role,
-        isActive: user.isActive,
-        dutyStatus: currentDutyStatus
+        isActive: user.isActive
       },
       token
     });
@@ -89340,8 +89342,7 @@ router.post("/register-with-phone", async (req, res) => {
       phoneNumber: normalizedTarget ? normalizedTarget.standard : targetPhone || null,
       passwordHash: hashedPassword,
       role: "user",
-      isActive: true,
-      dutyStatus: "ON_DUTY"
+      isActive: true
     }).returning();
     const token = import_jsonwebtoken2.default.sign(
       { id: newUser.id, email: newUser.email, role: newUser.role },
@@ -89359,8 +89360,7 @@ router.post("/register-with-phone", async (req, res) => {
         email: newUser.email,
         phoneNumber: newUser.phoneNumber,
         role: newUser.role,
-        isActive: newUser.isActive,
-        dutyStatus: newUser.dutyStatus
+        isActive: newUser.isActive
       },
       token
     });
@@ -89393,65 +89393,16 @@ router.post("/logout", async (req, res) => {
       targetEmail = String(req.body.email).toLowerCase().trim();
     }
     if (targetUserId) {
-      await db.update(users).set({ dutyStatus: "OFF_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, targetUserId));
+      await db.update(users).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, targetUserId));
     } else if (targetEmail) {
-      await db.update(users).set({ dutyStatus: "OFF_DUTY", updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, targetEmail));
+      await db.update(users).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.email, targetEmail));
     }
     return res.json({
       success: true,
-      message: "Logged out successfully. Duty status set to OFF_DUTY."
+      message: "Logged out successfully."
     });
   } catch (err) {
     console.error("Logout error:", err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-router.get("/duty-status", requireAuth, async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Authentication required." });
-    }
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId)
-    });
-    return res.json({
-      success: true,
-      dutyStatus: user?.dutyStatus || "OFF_DUTY",
-      isOnDuty: user?.dutyStatus === "ON_DUTY"
-    });
-  } catch (err) {
-    console.error("Get duty status error:", err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-router.post("/duty-status", requireAuth, async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Authentication required." });
-    }
-    const { dutyStatus, onDuty } = req.body;
-    let newStatus = "OFF_DUTY";
-    if (dutyStatus && ["ON_DUTY", "OFF_DUTY", "ON_BREAK"].includes(dutyStatus)) {
-      newStatus = dutyStatus;
-    } else if (typeof onDuty === "boolean") {
-      newStatus = onDuty ? "ON_DUTY" : "OFF_DUTY";
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid duty status. Expected dutyStatus ("ON_DUTY" | "OFF_DUTY" | "ON_BREAK") or boolean onDuty.'
-      });
-    }
-    await db.update(users).set({ dutyStatus: newStatus, updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, userId));
-    return res.json({
-      success: true,
-      message: `Duty status updated to ${newStatus}`,
-      dutyStatus: newStatus,
-      isOnDuty: newStatus === "ON_DUTY"
-    });
-  } catch (err) {
-    console.error("Update duty status error:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -89524,7 +89475,7 @@ router3.get("/", requireAuth, async (req, res) => {
     const zoneMap = new Map(zoneRows.map((z) => [z.id, z.name]));
     const userMap = new Map(userRows.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
     const boxes = rawBoxes.map((box) => {
-      const boxClients = rawClients.filter((c) => c.boxId === box.id).map((c) => ({
+      const boxClients = rawClients.filter((c) => c.boxId === box.id).sort((a, b) => (a.portNumber || 0) - (b.portNumber || 0)).map((c) => ({
         id: c.id,
         port: `Port ${c.portNumber}`,
         portNumber: c.portNumber,
@@ -89532,6 +89483,7 @@ router3.get("/", requireAuth, async (req, res) => {
         name: c.customerName,
         clientType: c.clientType || "Residential",
         plan: c.servicePlan || "100 Mbps Fiber Plan",
+        signalDbm: c.signalDbm || null,
         status: c.status
       }));
       const activePorts = boxClients.filter(
@@ -89590,6 +89542,8 @@ router3.get("/", requireAuth, async (req, res) => {
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestScanDistanceMeters: latestScan?.distanceMeters !== void 0 && latestScan?.distanceMeters !== null ? Number(latestScan.distanceMeters) : null,
+        latestScanLocationVerified: latestScan?.locationVerified !== void 0 && latestScan?.locationVerified !== null ? Boolean(latestScan.locationVerified) : true,
         latestIssue
       };
     });
@@ -89632,7 +89586,7 @@ router3.get("/:id", requireAuth, async (req, res) => {
       db.select().from(scanAuditLogs).where(eq(scanAuditLogs.boxId, boxId)).orderBy(desc(scanAuditLogs.createdAt)),
       db.select().from(users)
     ]);
-    const mappedClients = boxClients.map((c) => ({
+    const mappedClients = boxClients.slice().sort((a, b) => (a.portNumber || 0) - (b.portNumber || 0)).map((c) => ({
       id: c.id,
       port: `Port ${c.portNumber}`,
       portNumber: c.portNumber,
@@ -89700,6 +89654,8 @@ router3.get("/:id", requireAuth, async (req, res) => {
         voltage,
         lastScannedBy,
         lastScannedAt,
+        latestScanDistanceMeters: latestScan?.distanceMeters !== void 0 && latestScan?.distanceMeters !== null ? Number(latestScan.distanceMeters) : null,
+        latestScanLocationVerified: latestScan?.locationVerified !== void 0 && latestScan?.locationVerified !== null ? Boolean(latestScan.locationVerified) : true,
         latestIssue
       }
     });
@@ -89898,6 +89854,13 @@ router3.post("/:id/clients", requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, message: "Box not found" });
     }
     const portNum = typeof port === "number" ? port : parseInt(String(port).replace(/\D/g, ""), 10) || 1;
+    const [existingOnPort] = await db.select().from(clientConnections).where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum))).limit(1);
+    if (existingOnPort && req.body.preventOverwrite) {
+      return res.status(409).json({
+        success: false,
+        message: `Port ${portNum} was already assigned to ${existingOnPort.customerName} (${existingOnPort.accountNumber}). Please select another available port.`
+      });
+    }
     await db.delete(clientConnections).where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum)));
     const [newClient] = await db.insert(clientConnections).values({
       boxId: id,
@@ -89906,6 +89869,7 @@ router3.post("/:id/clients", requireAuth, async (req, res) => {
       customerName: String(name2).trim(),
       clientType: clientType || "RESIDENTIAL",
       servicePlan: plan || "100 Mbps Fiber Plan",
+      signalDbm: req.user?.id || null,
       status: "CONNECTED"
     }).returning();
     try {
@@ -90131,7 +90095,6 @@ router4.get("/", requireAuth, async (req, res) => {
       phoneNumber: users.phoneNumber,
       role: users.role,
       isActive: users.isActive,
-      dutyStatus: users.dutyStatus,
       createdAt: users.createdAt
     }).from(users).where(ne(users.role, "admin")).orderBy(users.createdAt);
     const allAudits = await db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt));
@@ -90169,10 +90132,11 @@ router4.get("/", requireAuth, async (req, res) => {
           siteName: box?.siteName || "Enclosure Node",
           timestamp: formatScanTime(new Date(audit.createdAt)),
           status: audit.boxStatusAtScan === "ISSUE" ? "ALARM" : audit.boxStatusAtScan === "MAINTENANCE" ? "MAINTENANCE_DONE" : "NORMAL",
-          notes: audit.auditNotes || `Physical inspection performed. Padlock verified: ${audit.padlockVerified ? "Yes" : "No"}.`
+          notes: audit.auditNotes || `Physical inspection performed. Padlock verified: ${audit.padlockVerified ? "Yes" : "No"}.`,
+          distanceMeters: audit.distanceMeters !== null && audit.distanceMeters !== void 0 ? Number(audit.distanceMeters) : null,
+          locationVerified: audit.locationVerified !== null ? Boolean(audit.locationVerified) : true
         };
       });
-      const dutyStatus = user.dutyStatus === "ON_DUTY" || user.dutyStatus === "ON_BREAK" || user.dutyStatus === "OFF_DUTY" ? user.dutyStatus : !user.isActive ? "OFF_DUTY" : "ON_DUTY";
       return {
         id: user.id,
         employeeId: `TECH-ILG-${(index + 1).toString().padStart(2, "0")}`,
@@ -90182,7 +90146,6 @@ router4.get("/", requireAuth, async (req, res) => {
         avatarColor: AVATAR_HEX_COLORS[index % AVATAR_HEX_COLORS.length],
         phone: user.phoneNumber || "+63 917 000 0000",
         email: user.email,
-        dutyStatus,
         lastBoxCode,
         lastBoxName,
         lastScanTime,
@@ -90220,7 +90183,6 @@ router4.get("/:id", requireAuth, async (req, res) => {
       phoneNumber: users.phoneNumber,
       role: users.role,
       isActive: users.isActive,
-      dutyStatus: users.dutyStatus,
       createdAt: users.createdAt
     }).from(users).where(and(eq(users.id, id), ne(users.role, "admin")));
     if (!user) {
@@ -90251,7 +90213,6 @@ router4.get("/:id", requireAuth, async (req, res) => {
         email: user.email,
         phone: user.phoneNumber || "+63 917 000 0000",
         isActive: user.isActive,
-        dutyStatus: user.dutyStatus === "ON_DUTY" || user.dutyStatus === "ON_BREAK" || user.dutyStatus === "OFF_DUTY" ? user.dutyStatus : user.isActive ? "ON_DUTY" : "OFF_DUTY",
         scanHistory
       }
     });
@@ -90268,6 +90229,20 @@ var technicians_default = router4;
 // server/src/routes/logs.ts
 var import_express5 = __toESM(require_express2());
 var router5 = (0, import_express5.Router)();
+function computeDistanceInMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = (angle) => angle * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+function formatDistanceLabel(meters) {
+  if (meters < 1e3) return `${meters} m`;
+  const km = (meters / 1e3).toFixed(1);
+  return `${km} km`;
+}
 function formatTimestamp(date2) {
   const dateStr = date2.toLocaleDateString("en-US", {
     month: "short",
@@ -90296,15 +90271,31 @@ function formatRelativeTime(date2) {
   if (diffDays < 7) return `${diffDays} days ago`;
   return `${Math.floor(diffDays / 7)}w ago`;
 }
+async function withDbRetry(fn, retries = 2) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise((r2) => setTimeout(r2, 150 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
 router5.get("/", requireAuth, async (req, res) => {
   try {
-    const [allBoxes, allUsers, allScans, allDispatches, allClients] = await Promise.all([
-      db.select().from(distributionBoxes),
-      db.select().from(users),
-      db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
-      db.select().from(qrDispatches).orderBy(desc(qrDispatches.printedAt)),
-      db.select().from(clientConnections).orderBy(desc(clientConnections.connectedAt))
-    ]);
+    const [allBoxes, allUsers, allScans, allDispatches, allClients] = await withDbRetry(
+      () => Promise.all([
+        db.select().from(distributionBoxes),
+        db.select().from(users),
+        db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
+        db.select().from(qrDispatches).orderBy(desc(qrDispatches.printedAt)),
+        db.select().from(clientConnections).orderBy(desc(clientConnections.connectedAt))
+      ])
+    );
     const boxMap = new Map(allBoxes.map((b) => [b.id, b]));
     const userMap = new Map(allUsers.map((u) => [u.id, u]));
     const defaultAdmin = allUsers.find((u) => u.role === "admin");
@@ -90335,6 +90326,14 @@ router5.get("/", requireAuth, async (req, res) => {
         "Cabinet Status": scan.padlockVerified ? "Closed & Padlocked" : "Padlock Unlatched"
       };
       if (box?.qrToken) metadata["QR Token Read"] = box.qrToken;
+      if (scan.distanceMeters !== null && scan.distanceMeters !== void 0) {
+        const distNum = Number(scan.distanceMeters);
+        metadata["Pole Distance"] = formatDistanceLabel(distNum);
+        metadata["Proximity Status"] = scan.locationVerified ? `Verified On-Site (${formatDistanceLabel(distNum)})` : `\u26A0\uFE0F Location Mismatch (${formatDistanceLabel(distNum)} away)`;
+      }
+      if (scan.scanLatitude && scan.scanLongitude) {
+        metadata["Device GPS"] = `${Number(scan.scanLatitude).toFixed(4)}\xB0 N, ${Number(scan.scanLongitude).toFixed(4)}\xB0 E`;
+      }
       aggregatedLogs.push({
         id: `LOG-SCN-${scan.id.slice(0, 8)}`,
         timestamp: formatTimestamp(scanDate),
@@ -90349,6 +90348,10 @@ router5.get("/", requireAuth, async (req, res) => {
         description: scan.auditNotes || (isTagAffixed ? `Physical QR placard affixed and ${boxCode} (${boxName}) activated on-site.` : isUntaggedInspect ? `Physical QR placard detected for ${boxCode} (${boxName}) - awaiting on-site tag affixing.` : isAlarm ? `Alarm state (${scan.boxStatusAtScan}) observed during field inspection.` : `Conducted routine on-site inspection for ${boxCode}. Telemetry verified nominal.`),
         deviceOrIp: "Mobile Scanner App",
         gpsCoordinates: box?.latitude && box?.longitude ? `${Number(box.latitude).toFixed(4)}\xB0 N, ${Number(box.longitude).toFixed(4)}\xB0 E` : void 0,
+        distanceMeters: scan.distanceMeters ? Number(scan.distanceMeters) : null,
+        locationVerified: scan.locationVerified !== null ? Boolean(scan.locationVerified) : true,
+        scanLatitude: scan.scanLatitude ? String(scan.scanLatitude) : null,
+        scanLongitude: scan.scanLongitude ? String(scan.scanLongitude) : null,
         metadata,
         rawDate: scanDate.getTime()
       });
@@ -90414,24 +90417,28 @@ router5.get("/", requireAuth, async (req, res) => {
       const box = boxMap.get(client.boxId);
       const boxCode = box?.code || "BOX";
       const boxName = box?.siteName || "Distribution Node";
+      const assignedByUser = client.signalDbm ? userMap.get(client.signalDbm) : void 0;
+      const isFieldTech = assignedByUser?.role === "user";
+      const portActorName = assignedByUser ? `${assignedByUser.firstName} ${assignedByUser.lastName}`.trim() : adminName;
       aggregatedLogs.push({
         id: `LOG-PRT-${client.id.slice(0, 8)}`,
         timestamp: formatTimestamp(connDate),
         relativeTime: formatRelativeTime(connDate),
         category: "PORT_CHANGE",
-        actorType: "ADMIN",
-        actorName: adminName,
-        actorId: "ADMIN",
+        actorType: isFieldTech ? "USER" : "ADMIN",
+        actorName: portActorName,
+        actorId: isFieldTech ? "User" : "ADMIN",
         targetBoxCode: boxCode,
         targetBoxName: boxName,
-        title: `Subscriber Port Provisioned`,
-        description: `Connected subscriber ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} with plan ${client.servicePlan || "Fiber"}.`,
-        deviceOrIp: "Provisioning Gateway",
+        title: isFieldTech ? `Field Drop Wire Activated (${boxCode} \xB7 P${client.portNumber})` : `Subscriber Port Provisioned`,
+        description: isFieldTech ? `Field technician activated drop wire for ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} (${client.servicePlan || "Fiber"}).` : `Connected subscriber ${client.customerName} (${client.accountNumber}) on Port ${client.portNumber} with plan ${client.servicePlan || "Fiber"}.`,
+        deviceOrIp: isFieldTech ? "Mobile Scanner App" : "Provisioning Gateway",
         metadata: {
           "Port Assigned": `Port ${client.portNumber}`,
           "Account Number": client.accountNumber,
           Subscriber: client.customerName,
-          "Service Plan": client.servicePlan || "Fiber"
+          "Service Plan": client.servicePlan || "Fiber",
+          "Provisioned By": portActorName
         },
         rawDate: connDate.getTime()
       });
@@ -90486,17 +90493,36 @@ router5.get("/my-recent-scans", requireAuth, async (req, res) => {
       return res.status(401).json({ success: false, message: "Authentication required" });
     }
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1), 100);
-    let [scans, boxes, clients] = await Promise.all([
-      db.select().from(scanAuditLogs).where(eq(scanAuditLogs.technicianId, technicianId)).orderBy(desc(scanAuditLogs.createdAt)).limit(Math.max(limit * 5, 100)),
-      db.select().from(distributionBoxes),
-      db.select().from(clientConnections)
-    ]);
-    if (scans.length === 0) {
-      scans = await db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)).limit(Math.max(limit * 5, 100));
+    let [techScans, allRecentScans, boxes, clients] = await withDbRetry(
+      () => Promise.all([
+        db.select().from(scanAuditLogs).where(eq(scanAuditLogs.technicianId, technicianId)).orderBy(desc(scanAuditLogs.createdAt)).limit(Math.max(limit * 5, 100)),
+        db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)).limit(Math.max(limit * 5, 150)),
+        db.select().from(distributionBoxes),
+        db.select().from(clientConnections)
+      ])
+    );
+    const boxMap = new Map(boxes.map((b) => [b.id, b]));
+    const latestIssueScanByBox = /* @__PURE__ */ new Map();
+    for (const s2 of allRecentScans) {
+      if ((s2.boxStatusAtScan === "ISSUE" || s2.boxStatusAtScan === "WARNING") && !latestIssueScanByBox.has(s2.boxId)) {
+        latestIssueScanByBox.set(s2.boxId, s2);
+      }
     }
+    const issueScans = allRecentScans.filter((s2) => {
+      const box = boxMap.get(s2.boxId);
+      return box?.status === "ISSUE" || s2.boxStatusAtScan === "ISSUE";
+    });
+    const combinedScans = techScans.length > 0 ? [...techScans, ...issueScans].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ) : allRecentScans;
     const seenBoxIds = /* @__PURE__ */ new Set();
     const uniqueScans = [];
-    for (const scan of scans) {
+    for (const scan of combinedScans) {
+      const box = boxMap.get(scan.boxId);
+      const effectiveStatus = box?.status || scan.boxStatusAtScan || "ACTIVE";
+      if (effectiveStatus === "NEEDS_TAG") {
+        continue;
+      }
       if (!seenBoxIds.has(scan.boxId)) {
         seenBoxIds.add(scan.boxId);
         uniqueScans.push(scan);
@@ -90505,7 +90531,6 @@ router5.get("/my-recent-scans", requireAuth, async (req, res) => {
         }
       }
     }
-    const boxMap = new Map(boxes.map((b) => [b.id, b]));
     const clientMap = /* @__PURE__ */ new Map();
     for (const c of clients) {
       if (c.status === "CONNECTED" || c.status === "ACTIVE") {
@@ -90519,8 +90544,12 @@ router5.get("/my-recent-scans", requireAuth, async (req, res) => {
     const yesterdayStr = yesterday.toLocaleDateString("en-US", { timeZone: "Asia/Manila" });
     const recentScans = uniqueScans.map((scan) => {
       const box = boxMap.get(scan.boxId);
-      const scanDate = new Date(scan.createdAt);
-      const isAlarm = scan.boxStatusAtScan === "ISSUE" || scan.boxStatusAtScan === "WARNING";
+      const effectiveStatus = box?.status || scan.boxStatusAtScan || "ACTIVE";
+      const issueScan = latestIssueScanByBox.get(scan.boxId);
+      const scanDate = new Date(
+        effectiveStatus === "ISSUE" && issueScan ? issueScan.createdAt : scan.createdAt
+      );
+      const isAlarm = effectiveStatus === "ISSUE" || scan.boxStatusAtScan === "ISSUE" || scan.boxStatusAtScan === "WARNING";
       const scanDateStr = scanDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila" });
       const dateGroup = scanDateStr === todayStr ? "TODAY" : scanDateStr === yesterdayStr ? "YESTERDAY" : "EARLIER";
       const timeLabel = scanDate.toLocaleTimeString("en-US", {
@@ -90532,6 +90561,7 @@ router5.get("/my-recent-scans", requireAuth, async (req, res) => {
       const totalPorts = box?.totalPorts || 24;
       const connectedCount = clientMap.get(scan.boxId);
       const portsUsed = connectedCount ?? 0;
+      const resolvedAuditNote = effectiveStatus === "ISSUE" ? issueScan?.auditNotes || scan.auditNotes || box?.notes || "[Hardware Issue] Hardware problem reported during field inspection" : scan.auditNotes || "Routine audit passed. Enclosure inspected.";
       return {
         id: scan.id,
         boxId: scan.boxId,
@@ -90539,20 +90569,62 @@ router5.get("/my-recent-scans", requireAuth, async (req, res) => {
         siteName: box?.siteName || "Distribution Node",
         tier: box?.category === "MAIN_BOX" ? "Tier 1 \xB7 Main Feeder" : "Tier 2 \xB7 Sub-Distribution",
         category: box?.category || "SUB_BOX",
-        status: box?.status || scan.boxStatusAtScan || "ACTIVE",
-        boxStatus: box?.status || scan.boxStatusAtScan || "ACTIVE",
+        status: effectiveStatus,
+        boxStatus: effectiveStatus,
         isAlarm,
         portsUsed,
         totalPorts,
         timeLabel,
         dateGroup,
-        auditNote: scan.auditNotes || "Routine audit passed. Enclosure inspected.",
+        auditNote: resolvedAuditNote,
         padlockVerified: Boolean(scan.padlockVerified),
-        createdAt: scan.createdAt ? new Date(scan.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+        distanceMeters: scan.distanceMeters ? Number(scan.distanceMeters) : null,
+        locationVerified: scan.locationVerified !== null ? Boolean(scan.locationVerified) : true,
+        createdAt: scanDate.toISOString(),
         timestamp: formatTimestamp(scanDate),
         relativeTime: formatRelativeTime(scanDate)
       };
     });
+    for (const box of boxes) {
+      if (box.status === "ISSUE" && !seenBoxIds.has(box.id)) {
+        seenBoxIds.add(box.id);
+        const issueScan = latestIssueScanByBox.get(box.id);
+        const scanDate = issueScan?.createdAt ? new Date(issueScan.createdAt) : box.updatedAt ? new Date(box.updatedAt) : /* @__PURE__ */ new Date();
+        const scanDateStr = scanDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila" });
+        const dateGroup = scanDateStr === todayStr ? "TODAY" : scanDateStr === yesterdayStr ? "YESTERDAY" : "EARLIER";
+        const timeLabel = scanDate.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+          timeZone: "Asia/Manila"
+        });
+        const totalPorts = box.totalPorts || 24;
+        const portsUsed = clientMap.get(box.id) ?? 0;
+        recentScans.push({
+          id: issueScan?.id || `issue-${box.id}`,
+          boxId: box.id,
+          boxCode: box.code || "BOX",
+          siteName: box.siteName || "Distribution Node",
+          tier: box.category === "MAIN_BOX" ? "Tier 1 \xB7 Main Feeder" : "Tier 2 \xB7 Sub-Distribution",
+          category: box.category || "SUB_BOX",
+          status: "ISSUE",
+          boxStatus: "ISSUE",
+          isAlarm: true,
+          portsUsed,
+          totalPorts,
+          timeLabel,
+          dateGroup,
+          auditNote: issueScan?.auditNotes || box.notes || "[Hardware Issue] Hardware problem reported during field inspection",
+          padlockVerified: issueScan ? Boolean(issueScan.padlockVerified) : false,
+          distanceMeters: issueScan?.distanceMeters ? Number(issueScan.distanceMeters) : null,
+          locationVerified: issueScan?.locationVerified !== void 0 && issueScan?.locationVerified !== null ? Boolean(issueScan.locationVerified) : true,
+          createdAt: scanDate.toISOString(),
+          timestamp: formatTimestamp(scanDate),
+          relativeTime: formatRelativeTime(scanDate)
+        });
+      }
+    }
+    recentScans.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return res.json({ success: true, scans: recentScans });
   } catch (error2) {
     console.error("Error fetching recent scans:", error2);
@@ -90574,10 +90646,18 @@ router5.post("/scan", requireAuth, async (req, res) => {
       scanType = "CAMERA_QR",
       padlockVerified = true,
       auditNotes,
-      boxStatusAtScan = "ACTIVE"
+      boxStatusAtScan = "ACTIVE",
+      scanLatitude,
+      scanLongitude,
+      distanceMeters,
+      locationVerified
     } = req.body;
     let targetBoxId = boxId;
-    if (!targetBoxId && boxCode) {
+    let resolvedBox = null;
+    if (targetBoxId) {
+      const [matched] = await db.select().from(distributionBoxes).where(eq(distributionBoxes.id, targetBoxId));
+      resolvedBox = matched;
+    } else if (boxCode) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(boxCode);
       const [matchedBox] = isUuid ? await db.select().from(distributionBoxes).where(eq(distributionBoxes.id, boxCode)) : await db.select().from(distributionBoxes).where(
         or(
@@ -90587,10 +90667,31 @@ router5.post("/scan", requireAuth, async (req, res) => {
       );
       if (matchedBox) {
         targetBoxId = matchedBox.id;
+        resolvedBox = matchedBox;
       }
     }
     if (!targetBoxId) {
       return res.status(400).json({ success: false, message: "Valid boxId or boxCode is required" });
+    }
+    let finalScanLat = scanLatitude !== void 0 && scanLatitude !== null ? String(scanLatitude) : null;
+    let finalScanLon = scanLongitude !== void 0 && scanLongitude !== null ? String(scanLongitude) : null;
+    let finalDistanceMeters = typeof distanceMeters === "number" ? distanceMeters : null;
+    let finalLocationVerified = typeof locationVerified === "boolean" ? locationVerified : true;
+    if (finalScanLat && finalScanLon && resolvedBox?.latitude && resolvedBox?.longitude) {
+      const bLat = Number(resolvedBox.latitude);
+      const bLon = Number(resolvedBox.longitude);
+      const sLat = Number(finalScanLat);
+      const sLon = Number(finalScanLon);
+      if (!Number.isNaN(bLat) && !Number.isNaN(bLon) && !Number.isNaN(sLat) && !Number.isNaN(sLon)) {
+        finalDistanceMeters = computeDistanceInMeters(bLat, bLon, sLat, sLon);
+        finalLocationVerified = finalDistanceMeters <= 150;
+      }
+    }
+    let finalNotes = auditNotes ? String(auditNotes) : null;
+    if (finalDistanceMeters !== null && !finalLocationVerified) {
+      const distLabel = formatDistanceLabel(finalDistanceMeters);
+      const flagNotice = `[\u26A0\uFE0F LOCATION MISMATCH: Scanned ${distLabel} away from registered pole]`;
+      finalNotes = finalNotes ? `${finalNotes} ${flagNotice}` : flagNotice;
     }
     const rawScanType = String(scanType || "CAMERA_QR").toUpperCase().trim();
     let safeScanType = "CAMERA_QR";
@@ -90603,15 +90704,21 @@ router5.post("/scan", requireAuth, async (req, res) => {
     } else if (rawScanType === "CAMERA_QR") {
       safeScanType = "CAMERA_QR";
     }
+    const isExplicitStatusChange = safeScanType === "ROUTINE_AUDIT" || safeScanType === "TAG_AFFIXED";
+    const effectiveStatusAtScan = isExplicitStatusChange ? String(boxStatusAtScan) : String(resolvedBox?.status || boxStatusAtScan || "ACTIVE");
     const [newLog] = await db.insert(scanAuditLogs).values({
       boxId: targetBoxId,
       technicianId,
       scanType: safeScanType,
       padlockVerified: Boolean(padlockVerified),
-      auditNotes: auditNotes ? String(auditNotes) : null,
-      boxStatusAtScan: String(boxStatusAtScan)
+      auditNotes: finalNotes,
+      boxStatusAtScan: effectiveStatusAtScan,
+      scanLatitude: finalScanLat,
+      scanLongitude: finalScanLon,
+      distanceMeters: finalDistanceMeters,
+      locationVerified: finalLocationVerified
     }).returning();
-    if (boxStatusAtScan && (boxStatusAtScan === "ACTIVE" || boxStatusAtScan === "ISSUE" || boxStatusAtScan === "NEEDS_TAG")) {
+    if (isExplicitStatusChange && boxStatusAtScan && (boxStatusAtScan === "ACTIVE" || boxStatusAtScan === "ISSUE" || boxStatusAtScan === "NEEDS_TAG")) {
       await db.update(distributionBoxes).set({ status: boxStatusAtScan, updatedAt: /* @__PURE__ */ new Date() }).where(eq(distributionBoxes.id, targetBoxId));
     }
     return res.status(201).json({
@@ -90863,15 +90970,83 @@ router7.get("/lookup/:accountNumber", requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: error2.message || "Lookup failed." });
   }
 });
+var DEFAULT_PENDING_WORK_ORDERS = [
+  {
+    accountNumber: "2608001018",
+    customerName: "Marco Polo Villanueva",
+    subscriberType: "Residential",
+    servicePlan: "200 Mbps Fiber Plan",
+    contactNumber: "0917-552-8410",
+    address: "Purok 4, Tibanga, Iligan City"
+  },
+  {
+    accountNumber: "2608001026",
+    customerName: "Kape Iligan Roastery & Co.",
+    subscriberType: "Commercial",
+    servicePlan: "300 Mbps Fiber Plan",
+    contactNumber: "0918-334-9102",
+    address: "Quezon Ave, Poblacion, Iligan City"
+  },
+  {
+    accountNumber: "2608001034",
+    customerName: "Elena Grace Macapagal",
+    subscriberType: "Residential",
+    servicePlan: "100 Mbps Fiber Plan",
+    contactNumber: "0998-741-2095",
+    address: "Zamora St, San Miguel, Iligan City"
+  },
+  {
+    accountNumber: "2608001042",
+    customerName: "Mindanao Tech Hub Solutions",
+    subscriberType: "Commercial",
+    servicePlan: "300 Mbps Fiber Plan",
+    contactNumber: "0917-890-4412",
+    address: "Andres Bonifacio Ave, Saray, Iligan City"
+  },
+  {
+    accountNumber: "2608001059",
+    customerName: "Dr. Rafael Mendoza Clinic",
+    subscriberType: "Commercial",
+    servicePlan: "200 Mbps Fiber Plan",
+    contactNumber: "0920-614-3381",
+    address: "Roxas Ave, Mahayahay, Iligan City"
+  },
+  {
+    accountNumber: "2608001067",
+    customerName: "Hannah Mae Alcantara",
+    subscriberType: "Residential",
+    servicePlan: "100 Mbps Fiber Plan",
+    contactNumber: "0915-409-7731",
+    address: "Bro. Jeffrey Rd, Pala-o, Iligan City"
+  }
+];
 router7.get("/", requireAuth, async (req, res) => {
   try {
     const { search, status } = req.query;
-    let query = db.select().from(subscribers);
-    let allSubs = await query.orderBy(desc(subscribers.createdAt));
+    let allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
+    const hasPending = allSubs.some((s2) => s2.status === "PENDING_PROVISIONING" && !s2.assignedBoxId);
+    if (!hasPending) {
+      try {
+        for (const item of DEFAULT_PENDING_WORK_ORDERS) {
+          await db.execute(sql`
+            INSERT INTO subscribers (
+              account_number, customer_name, subscriber_type, service_plan, contact_number, address, status
+            )
+            VALUES (
+              ${item.accountNumber}, ${item.customerName}, ${item.subscriberType}, ${item.servicePlan}, ${item.contactNumber}, ${item.address}, 'PENDING_PROVISIONING'
+            )
+            ON CONFLICT (account_number) DO NOTHING;
+          `);
+        }
+        allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
+      } catch (seedErr) {
+        console.warn("Non-fatal: could not seed default pending work orders", seedErr);
+      }
+    }
     if (search && typeof search === "string") {
       const q = search.toLowerCase().trim();
       allSubs = allSubs.filter(
-        (s2) => s2.customerName.toLowerCase().includes(q) || s2.accountNumber.includes(q) || s2.servicePlan.toLowerCase().includes(q) || s2.subscriberType.toLowerCase().includes(q)
+        (s2) => s2.customerName.toLowerCase().includes(q) || s2.accountNumber.includes(q) || s2.servicePlan.toLowerCase().includes(q) || s2.subscriberType.toLowerCase().includes(q) || s2.address && s2.address.toLowerCase().includes(q)
       );
     }
     if (status && typeof status === "string") {
@@ -90890,7 +91065,9 @@ router7.get("/", requireAuth, async (req, res) => {
         servicePlan: s2.servicePlan,
         contactNumber: s2.contactNumber,
         address: s2.address,
-        status: s2.status
+        status: s2.status,
+        assignedBoxId: s2.assignedBoxId,
+        assignedPort: s2.assignedPort
       }))
     });
   } catch (error2) {

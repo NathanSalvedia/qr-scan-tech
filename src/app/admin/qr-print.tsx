@@ -161,14 +161,7 @@ export default function QRPrintScreen() {
             qrToken: b.qrToken || b.qr_token || `QRTECH-BOX-${b.code}`,
           }));
           setBoxes(mapped);
-
-          // By default, select boxes that need tags, or the first box if none
-          const needsTag = mapped.filter((b) => b.status === "NEEDS_TAG");
-          if (needsTag.length > 0) {
-            setSelectedBoxIds(needsTag.map((b) => b.id));
-          } else if (mapped.length > 0) {
-            setSelectedBoxIds([mapped[0].id]);
-          }
+          setSelectedBoxIds([]);
         } else {
           setBoxes([]);
         }
@@ -818,18 +811,17 @@ export default function QRPrintScreen() {
                     )}
                   </View>
                 ) : (
-                  <View className="bg-white rounded-3xl p-12 border border-slate-200/80 shadow-sm items-center justify-center">
+                  <View className="bg-white rounded-3xl p-16 border border-slate-200/80 shadow-sm items-center justify-center min-h-[580px]">
                     <MaterialCommunityIcons
-                      name="printer-alert"
+                      name="printer"
                       size={48}
                       color="#cbd5e1"
                     />
-                    <Text className="text-base font-poppins-bold text-[#0f172a] mt-3">
+                    <Text className="text-base font-poppins-bold text-[#0f172a] mt-3 text-center">
                       No Boxes Selected for Printing
                     </Text>
-                    <Text className="text-xs font-poppins text-[#64748b] mt-1 text-center max-w-sm">
-                      Check one or more distribution boxes on the left to
-                      generate your printable A4 bondpaper sheet.
+                    <Text className="text-xs font-poppins text-[#64748b] mt-1.5 text-center max-w-sm leading-relaxed">
+                      Check one or more distribution boxes on the left to generate your printable A4 bondpaper sheet.
                     </Text>
                   </View>
                 )}

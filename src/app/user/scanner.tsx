@@ -22,6 +22,11 @@ import { boxService, DistributionBox } from '@/services/boxes';
 import { logsService } from '@/services/logs';
 import { settingsService } from '@/services/settings';
 import { playScanConfirmationBeep } from '@/services/sound';
+import {
+  calculateDistanceInMeters,
+  evaluateProximity,
+  getCurrentLocationAsync,
+} from '@/utils/geo';
 
 const FOCUS_REQUIRED_MS = 850;
 const FOCUS_LOST_TIMEOUT_MS = 950;
@@ -151,13 +156,25 @@ export default function UserScannerScreen() {
     };
   }, []);
 
-  // Sync autoFlashlight preference & reset focus on screen focus
+  // Sync autoFlashlight preference, refresh box statuses, & reset focus on screen focus
   useFocusEffect(
     useCallback(() => {
       let isCurrent = true;
       setScanned(false);
       setIsProcessing(false);
       resetScannerFocus();
+
+      boxService
+        .getAll()
+        .then((res) => {
+          if (isCurrent && res.success && Array.isArray(res.boxes)) {
+            setBoxes(res.boxes);
+            settingsService.saveOfflineBoxes(res.boxes);
+          }
+        })
+        .catch(() => {
+          // Keep existing boxes on error
+        });
 
       settingsService.getScannerPreferences().then((prefs) => {
         if (isCurrent && prefs.autoFlashlight) {
@@ -392,7 +409,31 @@ export default function UserScannerScreen() {
     overrideStatus?: string,
     customAuditNotes?: string
   ) => {
+    let distanceMeters: number | null = null;
+    let locationVerified = true;
+    let proximityStatus = 'UNKNOWN';
+    let scanLat: number | null = null;
+    let scanLon: number | null = null;
+
     try {
+      // 1. Live GPS Proximity Guard: Acquire device coordinates
+      const deviceCoords = await getCurrentLocationAsync(3500);
+      if (deviceCoords) {
+        scanLat = deviceCoords.latitude;
+        scanLon = deviceCoords.longitude;
+
+        if (box.latitude && box.longitude) {
+          const bLat = Number(box.latitude);
+          const bLon = Number(box.longitude);
+          if (!Number.isNaN(bLat) && !Number.isNaN(bLon)) {
+            distanceMeters = calculateDistanceInMeters(bLat, bLon, scanLat, scanLon);
+            const evaluation = evaluateProximity(distanceMeters);
+            locationVerified = evaluation.isVerified;
+            proximityStatus = evaluation.status;
+          }
+        }
+      }
+
       const finalStatus = overrideStatus || box.status;
       await logsService.recordScan({
         boxId: box.id,
@@ -400,6 +441,10 @@ export default function UserScannerScreen() {
         scanType,
         padlockVerified: true,
         boxStatusAtScan: finalStatus,
+        scanLatitude: scanLat ?? undefined,
+        scanLongitude: scanLon ?? undefined,
+        distanceMeters,
+        locationVerified,
         auditNotes:
           customAuditNotes ||
           (scanType === 'TAG_AFFIXED'
@@ -416,7 +461,13 @@ export default function UserScannerScreen() {
       setIsProcessing(false);
       router.push({
         pathname: '/user/box-details',
-        params: { code: box.code, id: box.id },
+        params: {
+          code: box.code,
+          id: box.id,
+          distanceMeters: distanceMeters !== null ? String(distanceMeters) : undefined,
+          locationVerified: String(locationVerified),
+          proximityStatus,
+        },
       });
       setTimeout(() => {
         resetScannerFocus();
