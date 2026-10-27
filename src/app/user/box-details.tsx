@@ -932,9 +932,72 @@ export default function BoxDetailsScreen() {
   const portsOccupied =
     box.portsUsed ?? box.activePorts ?? (box.clients ? box.clients.length : 0);
 
+  const totalPortsCount = Math.max(1, Number(box.totalPorts) || 8);
+  const portColumns = 6;
+  const portRows = Array.from(
+    { length: Math.ceil(totalPortsCount / portColumns) },
+    (_, rowIdx) =>
+      Array.from({ length: portColumns }, (__, colIdx) => {
+        const portNum = rowIdx * portColumns + colIdx + 1;
+        return portNum <= totalPortsCount ? portNum : null;
+      })
+  );
+
   return (
-    <SafeAreaView edges={["top"]} className="flex-1 bg-[#f8fafc]">
+    <View className="flex-1 bg-[#f8fafc]">
       <StatusBar style="light" />
+
+      {/* Top Safe Area & Main Header Banner */}
+      <SafeAreaView edges={["top"]} className="bg-[#4d6029] shadow-md z-20">
+        <View className="bg-[#4d6029] px-4 py-3 flex-row items-center justify-between">
+          <View className="flex-row items-center flex-1 mr-2.5">
+            {/* Back Button */}
+            <TouchableOpacity
+              onPress={handleGoBack}
+              className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center mr-2.5 shrink-0 active:bg-white/30"
+              accessibilityLabel="Go back"
+            >
+              <Ionicons name="chevron-back" size={20} color="#ffffff" />
+            </TouchableOpacity>
+
+            {/* Box Brand Icon */}
+            <View className="w-9 h-9 rounded-2xl bg-white/20 items-center justify-center mr-2.5 border border-white/30 shrink-0">
+              <MaterialCommunityIcons
+                name="cube-outline"
+                size={20}
+                color="#ffffff"
+              />
+            </View>
+
+            {/* Box Header Info */}
+            <View className="flex-1">
+              <Text
+                className="text-[15px] font-poppins-bold text-white leading-tight"
+                numberOfLines={1}
+              >
+                {box.code}
+              </Text>
+              <Text
+                className="text-[11px] font-poppins text-white/80 mt-0.5"
+                numberOfLines={1}
+              >
+                {box.siteName}
+              </Text>
+            </View>
+          </View>
+
+          {/* Header Action Buttons */}
+          <TouchableOpacity
+            onPress={handleOpenAuditModal}
+            className="bg-white/25 border border-white/30 px-3 py-1.5 rounded-xl flex-row items-center shrink-0 active:bg-white/35"
+          >
+            <Ionicons name="shield-checkmark" size={14} color="#ffffff" />
+            <Text className="text-[11px] font-poppins-bold text-white ml-1.5">
+              Inspect
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       {/* Floating Toast Notification */}
       {toastMessage && (
@@ -961,62 +1024,10 @@ export default function BoxDetailsScreen() {
         </View>
       )}
 
-      {/* Main Top Header Banner */}
-      <View className="bg-[#4d6029] px-5 py-3.5 flex-row items-center justify-between shadow-md">
-        <View className="flex-row items-center flex-1 mr-2">
-          {/* Back Button */}
-          <TouchableOpacity
-            onPress={handleGoBack}
-            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center mr-3 active:bg-white/30"
-            accessibilityLabel="Go back"
-          >
-            <Ionicons name="chevron-back" size={20} color="#ffffff" />
-          </TouchableOpacity>
-
-          {/* Box Brand Icon */}
-          <View className="w-10 h-10 rounded-2xl bg-white/20 items-center justify-center mr-3 border border-white/30">
-            <MaterialCommunityIcons
-              name="cube-outline"
-              size={22}
-              color="#ffffff"
-            />
-          </View>
-
-          {/* Box Header Info */}
-          <View className="flex-1">
-            <Text
-              className="text-base font-poppins-bold text-white"
-              numberOfLines={1}
-            >
-              {box.code}
-            </Text>
-            <Text
-              className="text-[11px] font-poppins text-white/80"
-              numberOfLines={1}
-            >
-              {box.siteName}
-            </Text>
-          </View>
-        </View>
-
-        {/* Header Action Buttons */}
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            onPress={handleOpenAuditModal}
-            className="bg-white/25 border border-white/30 px-3 py-1.5 rounded-xl flex-row items-center active:bg-white/35"
-          >
-            <Ionicons name="shield-checkmark" size={14} color="#ffffff" />
-            <Text className="text-[11px] font-poppins-bold text-white ml-1.5">
-              Inspect
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Scrollable Page Body */}
       <ScrollView
-        className="flex-1 px-4 pt-4"
-        contentContainerStyle={{ paddingBottom: 50 }}
+        className="flex-1 px-3.5 pt-3.5"
+        contentContainerStyle={{ paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -1029,10 +1040,10 @@ export default function BoxDetailsScreen() {
         <View className="max-w-2xl w-full self-center">
           {/* GPS Proximity Guard: Location Mismatch Alert Banner */}
           {proximityInfo.status === "MISMATCH" && (
-            <View className="bg-rose-50 border-2 border-rose-300 rounded-3xl p-4 mb-4 shadow-sm">
+            <View className="bg-rose-50 border-2 border-rose-300 rounded-3xl p-4 mb-3.5 shadow-sm">
               <View className="flex-row items-center justify-between mb-1.5">
                 <View className="flex-row items-center flex-1 mr-2">
-                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5">
+                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5 shrink-0">
                     <Ionicons name="location-outline" size={18} color="#dc2626" />
                   </View>
                   <View className="flex-1">
@@ -1044,13 +1055,13 @@ export default function BoxDetailsScreen() {
                     </Text>
                   </View>
                 </View>
-                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg">
+                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg shrink-0">
                   <Text className="text-[9px] font-poppins-bold text-rose-800">
                     FLAGGED ({proximityInfo.formattedDistance})
                   </Text>
                 </View>
               </View>
-              <Text className="text-xs font-poppins text-rose-800 ml-10">
+              <Text className="text-xs font-poppins text-rose-800">
                 You scanned this box <Text className="font-poppins-bold">{proximityInfo.formattedDistance}</Text> away from its registered pole coordinates. This physical audit scan has been flagged in central security logs for review.
               </Text>
             </View>
@@ -1058,10 +1069,10 @@ export default function BoxDetailsScreen() {
 
           {/* GPS Proximity Guard: Verified On-Site Banner */}
           {proximityInfo.status === "ON_SITE" && (
-            <View className="bg-emerald-50 border border-emerald-200/90 rounded-2xl px-3.5 py-2.5 mb-4 flex-row items-center justify-between shadow-xs">
+            <View className="bg-emerald-50 border border-emerald-200/90 rounded-2xl px-3.5 py-2.5 mb-3.5 flex-row items-center justify-between shadow-xs">
               <View className="flex-row items-center flex-1 mr-2">
                 <Ionicons name="shield-checkmark" size={16} color="#059669" />
-                <View className="ml-2">
+                <View className="ml-2 flex-1">
                   <Text className="text-xs font-poppins-bold text-emerald-800">
                     Physical On-Site Verified
                   </Text>
@@ -1070,7 +1081,7 @@ export default function BoxDetailsScreen() {
                   </Text>
                 </View>
               </View>
-              <View className="bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-md">
+              <View className="bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0">
                 <Text className="text-[9px] font-poppins-bold text-emerald-700">
                   SECURE
                 </Text>
@@ -1080,10 +1091,10 @@ export default function BoxDetailsScreen() {
 
           {/* GPS Proximity Guard: Nearby Tolerance Banner */}
           {proximityInfo.status === "NEARBY" && (
-            <View className="bg-amber-50 border border-amber-200/90 rounded-2xl px-3.5 py-2.5 mb-4 flex-row items-center justify-between shadow-xs">
+            <View className="bg-amber-50 border border-amber-200/90 rounded-2xl px-3.5 py-2.5 mb-3.5 flex-row items-center justify-between shadow-xs">
               <View className="flex-row items-center flex-1 mr-2">
                 <Ionicons name="location" size={16} color="#d97706" />
-                <View className="ml-2">
+                <View className="ml-2 flex-1">
                   <Text className="text-xs font-poppins-bold text-amber-800">
                     Nearby Pole ({proximityInfo.formattedDistance})
                   </Text>
@@ -1092,7 +1103,7 @@ export default function BoxDetailsScreen() {
                   </Text>
                 </View>
               </View>
-              <View className="bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-md">
+              <View className="bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-md shrink-0">
                 <Text className="text-[9px] font-poppins-bold text-amber-700">
                   ACCEPTABLE
                 </Text>
@@ -1102,29 +1113,29 @@ export default function BoxDetailsScreen() {
 
           {/* Active Hardware Issue Alert Banner */}
           {box.status === "ISSUE" && (
-            <View className="bg-rose-50 border border-rose-200/90 rounded-3xl p-4 mb-4 shadow-xs">
+            <View className="bg-rose-50 border border-rose-200/90 rounded-3xl p-4 mb-3.5 shadow-xs">
               <View className="flex-row items-center justify-between mb-1.5">
                 <View className="flex-row items-center flex-1 mr-2">
-                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5">
+                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5 shrink-0">
                     <Ionicons name="warning" size={17} color="#dc2626" />
                   </View>
-                  <Text className="text-xs font-poppins-bold text-rose-900">
+                  <Text className="text-xs font-poppins-bold text-rose-900 flex-1">
                     Active Hardware Issue Reported
                   </Text>
                 </View>
-                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg">
+                <View className="bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-lg shrink-0">
                   <Text className="text-[9px] font-poppins-bold text-rose-800">
                     NEEDS REPAIR
                   </Text>
                 </View>
               </View>
-              <Text className="text-xs font-poppins text-rose-800 ml-10">
+              <Text className="text-xs font-poppins text-rose-800">
                 {box.latestIssue?.notes ||
                   box.notes ||
                   "Hardware problem or physical degradation reported. Inspection and repair required."}
               </Text>
               {box.latestIssue?.reportedBy && (
-                <Text className="text-[10px] font-poppins text-rose-500 ml-10 mt-1">
+                <Text className="text-[10px] font-poppins text-rose-500 mt-1">
                   Reported by {box.latestIssue.reportedBy} · {box.latestIssue.reportedAt}
                 </Text>
               )}
@@ -1132,11 +1143,15 @@ export default function BoxDetailsScreen() {
           )}
 
           {/* 1. Classification & Hierarchy Card */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
-            <View className="flex-row items-center justify-between mb-3">
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-4 mb-3.5 shadow-xs">
+            <View
+              className={`flex-row items-center justify-between ${
+                box.category === "SUB_BOX" && !!box.parentCode ? "mb-3" : ""
+              }`}
+            >
               <View className="flex-row items-center flex-1 mr-2">
                 <View
-                  className={`w-10 h-10 rounded-2xl items-center justify-center mr-3 ${
+                  className={`w-10 h-10 rounded-2xl items-center justify-center mr-2.5 shrink-0 ${
                     box.category === "MAIN_BOX"
                       ? "bg-[#4d6029]/10"
                       : "bg-amber-500/10"
@@ -1149,7 +1164,10 @@ export default function BoxDetailsScreen() {
                   />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                  <Text
+                    className="text-[13px] font-poppins-bold text-[#0f172a]"
+                    numberOfLines={1}
+                  >
                     {box.category === "MAIN_BOX"
                       ? "Main Distribution Box"
                       : "Sub-Distribution Box"}
@@ -1159,7 +1177,7 @@ export default function BoxDetailsScreen() {
 
               {/* Status Pill */}
               <View
-                className={`px-2.5 py-1 rounded-xl flex-row items-center border ${statusInfo.bg} ${statusInfo.border}`}
+                className={`px-2.5 py-1 rounded-xl flex-row items-center border shrink-0 ${statusInfo.bg} ${statusInfo.border}`}
               >
                 <View
                   className={`w-2 h-2 rounded-full mr-1.5 ${statusInfo.dot}`}
@@ -1185,7 +1203,7 @@ export default function BoxDetailsScreen() {
                     Parent Feeder Box:
                   </Text>
                 </View>
-                <View className="bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl">
+                <View className="bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl shrink-0">
                   <Text className="text-xs font-mono font-bold text-[#0f172a]">
                     {box.parentCode}
                   </Text>
@@ -1195,16 +1213,16 @@ export default function BoxDetailsScreen() {
           </View>
 
           {/* 2. Location & GIS Coordinates Card */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-4 mb-3.5 shadow-xs">
             <View className="flex-row items-start">
-              <View className="w-9 h-9 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-3 mt-0.5">
+              <View className="w-9 h-9 rounded-2xl bg-[#4d6029]/10 items-center justify-center mr-2.5 mt-0.5 shrink-0">
                 <Ionicons name="location" size={18} color="#4d6029" />
               </View>
               <View className="flex-1">
-                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                <Text className="text-[13px] font-poppins-bold text-[#0f172a]">
                   {box.siteName}
                 </Text>
-                <Text className="text-xs font-poppins text-[#64748b] mt-0.5">
+                <Text className="text-xs font-poppins text-[#64748b] mt-0.5 leading-relaxed">
                   {box.address}
                 </Text>
                 <Text className="text-[11px] font-poppins text-slate-500 mt-1">
@@ -1218,62 +1236,65 @@ export default function BoxDetailsScreen() {
                     {Number(box.longitude).toFixed(4)}
                   </Text>
                 </Text>
+              </View>
+            </View>
 
-                <View className="flex-row items-center mt-3 pt-2.5 border-t border-slate-100 justify-between">
-                  <View className="flex-row items-center">
-                    <Ionicons
-                      name={proximityInfo.isVerified ? "shield-checkmark" : "warning"}
-                      size={13}
-                      color={proximityInfo.isVerified ? "#059669" : "#dc2626"}
-                    />
-                    <Text className="text-[10px] font-poppins-semibold text-slate-500 ml-1.5">
-                      Proximity Guard:
-                    </Text>
-                  </View>
-                  <View
-                    className={`px-2 py-0.5 rounded-md border ${proximityInfo.badgeBg} ${proximityInfo.badgeBorder}`}
-                  >
-                    <Text
-                      className={`text-[10px] font-poppins-bold ${proximityInfo.badgeText}`}
-                    >
-                      {proximityInfo.badgeLabel}
-                    </Text>
-                  </View>
-                </View>
+            <View className="flex-row items-center justify-between flex-wrap gap-1.5 mt-3 pt-2.5 border-t border-slate-100">
+              <View className="flex-row items-center">
+                <Ionicons
+                  name={proximityInfo.isVerified ? "shield-checkmark" : "warning"}
+                  size={13}
+                  color={proximityInfo.isVerified ? "#059669" : "#dc2626"}
+                />
+                <Text className="text-[10px] font-poppins-semibold text-slate-500 ml-1.5">
+                  Proximity Guard:
+                </Text>
+              </View>
+              <View
+                className={`px-2 py-0.5 rounded-md border shrink-0 ${proximityInfo.badgeBg} ${proximityInfo.badgeBorder}`}
+              >
+                <Text
+                  className={`text-[10px] font-poppins-bold ${proximityInfo.badgeText}`}
+                >
+                  {proximityInfo.badgeLabel}
+                </Text>
               </View>
             </View>
           </View>
 
           {/* 3. Hardware Equipment Card */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
-            <View className="flex-row items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
-              <View className="flex-row items-center">
-                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-4 mb-3.5 shadow-xs">
+            <View className="flex-row items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5 shrink-0">
                   <MaterialCommunityIcons
                     name="tools"
                     size={16}
                     color="#4d6029"
                   />
                 </View>
-                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                <Text
+                  className="text-[13px] font-poppins-bold text-[#0f172a] flex-1"
+                  numberOfLines={1}
+                >
                   Hardware Equipment
                 </Text>
               </View>
-              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
+              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full shrink-0">
                 <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
                   {displayEquipment.length} Items Installed
                 </Text>
               </View>
             </View>
 
-            <View className="space-y-2">
+            <View className="gap-2">
               {displayEquipment.map((item) => (
                 <View
                   key={item.id}
-                  className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 flex-row items-center justify-between mb-2"
+                  className="bg-slate-50 p-3 rounded-2xl border border-slate-200/70 flex-row items-center justify-between"
                 >
                   <View className="flex-row items-center flex-1 mr-2">
-                    <View className="w-8 h-8 rounded-xl bg-[#4d6029] items-center justify-center mr-2.5">
+                    <View className="w-8 h-8 rounded-xl bg-[#4d6029] items-center justify-center mr-2.5 shrink-0">
                       <MaterialCommunityIcons
                         name={
                           (item.type || "").toLowerCase().includes("splitter")
@@ -1290,13 +1311,13 @@ export default function BoxDetailsScreen() {
                     </View>
                     <View className="flex-1">
                       <Text
-                        className="text-xs font-poppins-bold text-[#0f172a]"
-                        numberOfLines={1}
+                        className="text-xs font-poppins-bold text-[#0f172a] leading-snug"
+                        numberOfLines={2}
                       >
                         {item.name}
                       </Text>
                       <Text
-                        className="text-[10px] font-poppins text-[#64748b]"
+                        className="text-[10px] font-poppins text-[#64748b] mt-0.5"
                         numberOfLines={1}
                       >
                         {item.type} {item.serial ? `· SN: ${item.serial}` : ""}
@@ -1304,7 +1325,7 @@ export default function BoxDetailsScreen() {
                     </View>
                   </View>
 
-                  <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-lg flex-row items-center">
+                  <View className="bg-[#AEAC78]/25 border border-[#AEAC78]/80 px-2 py-0.5 rounded-lg flex-row items-center shrink-0">
                     <View className="w-1.5 h-1.5 rounded-full bg-[#AEAC78] mr-1" />
                     <Text className="text-[9px] font-poppins-bold text-[#2d3416]">
                       {item.status || "OPERATIONAL"}
@@ -1316,34 +1337,40 @@ export default function BoxDetailsScreen() {
           </View>
 
           {/* 4. Splitter Port Matrix (Interactive Technician Drop Cable Activation) */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-4 shadow-xs">
-            <View className="flex-row items-center justify-between mb-2">
-              <View className="flex-row items-center">
-                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-4 mb-3.5 shadow-xs">
+            <View className="flex-row items-center justify-between mb-2.5">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5 shrink-0">
                   <MaterialCommunityIcons
                     name="lan"
                     size={16}
                     color="#4d6029"
                   />
                 </View>
-                <View>
-                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                <View className="flex-1">
+                  <Text
+                    className="text-[13px] font-poppins-bold text-[#0f172a]"
+                    numberOfLines={1}
+                  >
                     Port Allocation
                   </Text>
-                  <Text className="text-[10px] font-poppins text-[#64748b]">
+                  <Text
+                    className="text-[10px] font-poppins text-[#64748b]"
+                    numberOfLines={1}
+                  >
                     Tap empty port to assign drop wire
                   </Text>
                 </View>
               </View>
-              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full">
-                <Text className="text-[11px] font-poppins-bold text-[#4d6029]">
+              <View className="bg-[#4d6029]/10 border border-[#4d6029]/20 px-2.5 py-0.5 rounded-full shrink-0">
+                <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
                   {portsOccupied} / {box.totalPorts} Assigned
                 </Text>
               </View>
             </View>
 
             {/* Interactive Port Legend */}
-            <View className="flex-row items-center flex-wrap gap-3 mb-3 px-1">
+            <View className="flex-row items-center flex-wrap gap-x-4 gap-y-1.5 mb-3 px-0.5">
               <View className="flex-row items-center">
                 <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-1.5" />
                 <Text className="text-[10px] font-poppins-medium text-[#475569]">
@@ -1358,88 +1385,110 @@ export default function BoxDetailsScreen() {
               </View>
             </View>
 
-            <View className="flex-row flex-wrap gap-2 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/80">
-              {Array.from({ length: box.totalPorts }).map((_, i) => {
-                const portNum = i + 1;
-                const clientOnPort = (box.clients || []).find(
-                  (c) =>
-                    c.portNumber === portNum ||
-                    c.port === `Port ${portNum}` ||
-                    c.port === `Port 0${portNum}` ||
-                    parseInt(String(c.port || "").replace(/\D/g, ""), 10) ===
-                      portNum
-                );
-                const hasExplicitClients =
-                  Array.isArray(box.clients) && box.clients.length > 0;
-                const isOccupied = hasExplicitClients
-                  ? Boolean(clientOnPort)
-                  : portNum <= portsOccupied;
-                const isSuspended = clientOnPort?.status === "DISCONNECTED";
-
-                return (
-                  <TouchableOpacity
-                    key={portNum}
-                    onPress={() =>
-                      handleTapPortTile(
-                        portNum,
-                        isOccupied
-                          ? clientOnPort || {
-                              port: `Port ${portNum}`,
-                              portNumber: portNum,
-                              accountNumber: `26080000${String(portNum).padStart(2, "0")}`,
-                              name: `Assigned Subscriber (P${portNum})`,
-                              clientType: "Residential",
-                              plan: "100 Mbps Fiber Plan",
-                              status: "CONNECTED",
-                            }
-                          : null
-                      )
+            <View className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 gap-2">
+              {portRows.map((rowPorts, rIdx) => (
+                <View key={`port-row-${rIdx}`} className="flex-row gap-2">
+                  {rowPorts.map((portNum, cIdx) => {
+                    if (portNum === null) {
+                      return (
+                        <View
+                          key={`empty-slot-${rIdx}-${cIdx}`}
+                          className="flex-1 h-12"
+                        />
+                      );
                     }
-                    activeOpacity={0.75}
-                    className={`w-11 h-12 rounded-2xl items-center justify-center border ${
-                      isOccupied
-                        ? isSuspended
-                          ? "bg-amber-600 border-amber-700 shadow-xs"
-                          : "bg-[#4d6029] border-[#3e4e20] shadow-xs"
-                        : "bg-white border-slate-200 shadow-xs"
-                    }`}
-                  >
-                    <Ionicons
-                      name={isOccupied ? "hardware-chip" : "add-circle-outline"}
-                      size={14}
-                      color={isOccupied ? "#ffffff" : "#64748b"}
-                    />
-                    <Text
-                      className={`text-[9px] font-poppins-bold mt-0.5 ${
-                        isOccupied ? "text-white" : "text-[#64748b]"
-                      }`}
-                    >
-                      P{portNum}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+
+                    const clientOnPort = (box.clients || []).find(
+                      (c) =>
+                        c.portNumber === portNum ||
+                        c.port === `Port ${portNum}` ||
+                        c.port === `Port 0${portNum}` ||
+                        parseInt(
+                          String(c.port || "").replace(/\D/g, ""),
+                          10
+                        ) === portNum
+                    );
+                    const hasExplicitClients =
+                      Array.isArray(box.clients) && box.clients.length > 0;
+                    const isOccupied = hasExplicitClients
+                      ? Boolean(clientOnPort)
+                      : portNum <= portsOccupied;
+                    const isSuspended =
+                      clientOnPort?.status === "DISCONNECTED";
+
+                    return (
+                      <TouchableOpacity
+                        key={portNum}
+                        onPress={() =>
+                          handleTapPortTile(
+                            portNum,
+                            isOccupied
+                              ? clientOnPort || {
+                                  port: `Port ${portNum}`,
+                                  portNumber: portNum,
+                                  accountNumber: `26080000${String(
+                                    portNum
+                                  ).padStart(2, "0")}`,
+                                  name: `Assigned Subscriber (P${portNum})`,
+                                  clientType: "Residential",
+                                  plan: "100 Mbps Fiber Plan",
+                                  status: "CONNECTED",
+                                }
+                              : null
+                          )
+                        }
+                        activeOpacity={0.75}
+                        className={`flex-1 h-12 rounded-2xl items-center justify-center border ${
+                          isOccupied
+                            ? isSuspended
+                              ? "bg-amber-600 border-amber-700 shadow-xs"
+                              : "bg-[#4d6029] border-[#3e4e20] shadow-xs"
+                            : "bg-white border-slate-200 shadow-xs"
+                        }`}
+                      >
+                        <Ionicons
+                          name={
+                            isOccupied ? "hardware-chip" : "add-circle-outline"
+                          }
+                          size={14}
+                          color={isOccupied ? "#ffffff" : "#64748b"}
+                        />
+                        <Text
+                          className={`text-[9px] font-poppins-bold mt-0.5 ${
+                            isOccupied ? "text-white" : "text-[#64748b]"
+                          }`}
+                        >
+                          P{portNum}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
           </View>
 
           {/* Connected Subscribers / Clients */}
-          <View className="bg-white border border-slate-200/90 rounded-3xl p-5 mb-5 shadow-xs">
+          <View className="bg-white border border-slate-200/90 rounded-3xl p-4 mb-5 shadow-xs">
             <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center">
-                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5 shrink-0">
                   <Ionicons name="people" size={16} color="#4d6029" />
                 </View>
-                <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                <Text
+                  className="text-[13px] font-poppins-bold text-[#0f172a] flex-1"
+                  numberOfLines={1}
+                >
                   Client Connected
                 </Text>
               </View>
-              <Text className="text-xs font-poppins text-[#64748b]">
+              <Text className="text-xs font-poppins text-[#64748b] shrink-0">
                 {box.clients?.length || 0} Registered
               </Text>
             </View>
 
             {!box.clients || box.clients.length === 0 ? (
-              <View className="bg-slate-50 p-6 rounded-2xl border border-slate-100 items-center justify-center">
+              <View className="bg-slate-50 p-5 rounded-2xl border border-slate-100 items-center justify-center">
                 <Ionicons name="people-outline" size={28} color="#94a3b8" />
                 <Text className="text-xs font-poppins-bold text-slate-700 mt-2">
                   No Active Subscribers
@@ -1462,11 +1511,11 @@ export default function BoxDetailsScreen() {
                       key={sub.id || idx}
                       onPress={() => handleTapPortTile(resolvedPortNum, sub)}
                       activeOpacity={0.8}
-                      className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
+                      className="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 flex-row items-center justify-between"
                     >
                       <View className="flex-row items-center flex-1 mr-2">
                         <View
-                          className={`w-8 h-8 rounded-xl items-center justify-center mr-3 ${
+                          className={`w-8 h-8 rounded-xl items-center justify-center mr-2.5 shrink-0 ${
                             isSubDisconnected ? "bg-amber-600" : "bg-[#4d6029]"
                           }`}
                         >
@@ -1520,7 +1569,7 @@ export default function BoxDetailsScreen() {
                       </View>
 
                       <View
-                        className={`px-2 py-0.5 rounded-lg flex-row items-center border ${
+                        className={`px-2 py-0.5 rounded-lg flex-row items-center border shrink-0 ${
                           isSubDisconnected
                             ? "bg-amber-50 border-amber-300"
                             : "bg-[#AEAC78]/25 border-[#AEAC78]/80"
@@ -2094,27 +2143,33 @@ export default function BoxDetailsScreen() {
           onRequestClose={() => setIsAssignPortModalOpen(false)}
         >
           <View className="flex-1 bg-black/75 items-center justify-center p-4">
-            <View className="bg-white rounded-3xl p-5 max-w-lg w-full max-h-[88%] shadow-2xl border border-slate-100">
+            <View className="bg-white rounded-3xl p-4 max-w-lg w-full max-h-[88%] shadow-2xl border border-slate-100">
               {/* Modal Header */}
               <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3">
                 <View className="flex-row items-center flex-1 mr-2">
-                  <View className="w-10 h-10 rounded-2xl bg-[#4d6029] items-center justify-center mr-3 shadow-xs">
+                  <View className="w-10 h-10 rounded-2xl bg-[#4d6029] items-center justify-center mr-2.5 shadow-xs shrink-0">
                     <Text className="text-xs font-poppins-bold text-white">
                       P{selectedPortNumber}
                     </Text>
                   </View>
                   <View className="flex-1">
-                    <Text className="text-base font-poppins-bold text-[#0f172a]">
+                    <Text
+                      className="text-[15px] font-poppins-bold text-[#0f172a]"
+                      numberOfLines={1}
+                    >
                       Assign Drop Wire · Port P{selectedPortNumber}
                     </Text>
-                    <Text className="text-[11px] font-poppins text-[#64748b]">
+                    <Text
+                      className="text-[11px] font-poppins text-[#64748b]"
+                      numberOfLines={2}
+                    >
                       Select pending installation work order or enter subscriber
                     </Text>
                   </View>
                 </View>
                 <TouchableOpacity
                   onPress={() => setIsAssignPortModalOpen(false)}
-                  className="p-1.5 rounded-full bg-slate-100 active:opacity-70"
+                  className="p-1.5 rounded-full bg-slate-100 shrink-0 active:opacity-70"
                 >
                   <Ionicons name="close" size={18} color="#475569" />
                 </TouchableOpacity>
@@ -2127,17 +2182,20 @@ export default function BoxDetailsScreen() {
                 {/* Step 1: Pending Installation Work Orders */}
                 <View className="mb-3.5">
                   <View className="flex-row items-center justify-between mb-1.5">
-                    <View className="flex-row items-center">
+                    <View className="flex-row items-center flex-1 mr-2">
                       <Ionicons
                         name="clipboard-outline"
                         size={14}
                         color="#4d6029"
                       />
-                      <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                      <Text
+                        className="text-xs font-poppins-bold text-[#0f172a] ml-1.5 flex-1"
+                        numberOfLines={1}
+                      >
                         Pending Installation Work Orders
                       </Text>
                     </View>
-                    <View className="bg-[#4d6029]/10 px-2 py-0.5 rounded-full">
+                    <View className="bg-[#4d6029]/10 px-2 py-0.5 rounded-full shrink-0">
                       <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
                         {pendingWorkOrders.length} Ready
                       </Text>
@@ -2283,12 +2341,15 @@ export default function BoxDetailsScreen() {
                 {/* Step 2: Subscriber & Drop Wire Details */}
                 <View className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                    <Text
+                      className="text-[11px] font-poppins-bold text-[#0f172a] flex-1 mr-2"
+                      numberOfLines={1}
+                    >
                       Subscriber Drop Cable Details
                     </Text>
                     <TouchableOpacity
                       onPress={handleGenerateAccountNumber}
-                      className="flex-row items-center bg-[#4d6029]/10 px-2 py-0.5 rounded-lg border border-[#4d6029]/25"
+                      className="flex-row items-center bg-[#4d6029]/10 px-2 py-0.5 rounded-lg border border-[#4d6029]/25 shrink-0"
                     >
                       <Ionicons
                         name="sparkles-outline"
@@ -2372,14 +2433,14 @@ export default function BoxDetailsScreen() {
                     <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
                       Subscribed Fiber Plan
                     </Text>
-                    <View className="flex-row flex-wrap gap-1.5">
+                    <View className="flex-row gap-1.5">
                       {FIBER_PLAN_OPTIONS.map((planOption) => {
                         const active = assignServicePlan === planOption;
                         return (
                           <TouchableOpacity
                             key={planOption}
                             onPress={() => setAssignServicePlan(planOption)}
-                            className={`px-2.5 py-1.5 rounded-xl border ${
+                            className={`flex-1 py-1.5 rounded-xl items-center justify-center border ${
                               active
                                 ? "bg-[#4d6029] border-[#3e4e20]"
                                 : "bg-white border-slate-200"
@@ -2389,6 +2450,7 @@ export default function BoxDetailsScreen() {
                               className={`text-[10px] font-poppins-bold ${
                                 active ? "text-white" : "text-[#475569]"
                               }`}
+                              numberOfLines={1}
                             >
                               {planOption.replace(" Fiber Plan", "")}
                             </Text>
@@ -2405,14 +2467,17 @@ export default function BoxDetailsScreen() {
                 <TouchableOpacity
                   onPress={handleConfirmAssignDropWire}
                   disabled={isSubmittingPortAction}
-                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
+                  className="flex-1 bg-[#4d6029] py-3 px-2 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
                 >
                   {isSubmittingPortAction ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
                     <>
                       <Ionicons name="flash" size={15} color="#ffffff" />
-                      <Text className="text-white text-xs font-poppins-bold ml-1.5">
+                      <Text
+                        className="text-white text-xs font-poppins-bold ml-1.5"
+                        numberOfLines={1}
+                      >
                         Assign Drop Wire & Activate P{selectedPortNumber}
                       </Text>
                     </>
@@ -2421,7 +2486,7 @@ export default function BoxDetailsScreen() {
                 <TouchableOpacity
                   onPress={() => setIsAssignPortModalOpen(false)}
                   disabled={isSubmittingPortAction}
-                  className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
+                  className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center shrink-0"
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">
                     Cancel
@@ -2451,9 +2516,9 @@ export default function BoxDetailsScreen() {
               <View className="bg-white rounded-3xl p-5 max-w-md w-full shadow-2xl border border-slate-100">
                 {/* Header */}
                 <View className="flex-row items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
-                  <View className="flex-row items-center">
+                  <View className="flex-row items-center flex-1 mr-2">
                     <View
-                      className={`w-10 h-10 rounded-2xl items-center justify-center mr-3 ${
+                      className={`w-10 h-10 rounded-2xl items-center justify-center mr-3 shrink-0 ${
                         selectedPortClient.status === "DISCONNECTED"
                           ? "bg-amber-600"
                           : "bg-[#4d6029]"
@@ -2463,11 +2528,17 @@ export default function BoxDetailsScreen() {
                         P{selectedPortNumber}
                       </Text>
                     </View>
-                    <View>
-                      <Text className="text-base font-poppins-bold text-[#0f172a]">
+                    <View className="flex-1">
+                      <Text
+                        className="text-base font-poppins-bold text-[#0f172a]"
+                        numberOfLines={1}
+                      >
                         Port P{selectedPortNumber} · Occupied
                       </Text>
-                      <Text className="text-[11px] font-poppins text-[#64748b]">
+                      <Text
+                        className="text-[11px] font-poppins text-[#64748b]"
+                        numberOfLines={1}
+                      >
                         {box.code} · Active Drop Cable Assignment
                       </Text>
                     </View>
@@ -2477,7 +2548,7 @@ export default function BoxDetailsScreen() {
                       setShowConfirmReleasePort(false);
                       setIsPortInspectorModalOpen(false);
                     }}
-                    className="p-1.5 rounded-full bg-slate-100 active:opacity-70"
+                    className="p-1.5 rounded-full bg-slate-100 shrink-0 active:opacity-70"
                   >
                     <Ionicons name="close" size={18} color="#475569" />
                   </TouchableOpacity>
@@ -2652,6 +2723,6 @@ export default function BoxDetailsScreen() {
             </View>
           </Modal>
         )}
-    </SafeAreaView>
+    </View>
   );
 }
