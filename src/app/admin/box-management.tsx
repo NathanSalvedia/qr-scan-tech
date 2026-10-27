@@ -320,17 +320,69 @@ export default function BoxManagementScreen() {
     useState(false);
   const [directorySearchQuery, setDirectorySearchQuery] = useState("");
 
+  const extractPortNumber = (portVal: string | number): number => {
+    if (typeof portVal === "number") return portVal;
+    return parseInt(String(portVal).replace(/\D/g, ""), 10) || 0;
+  };
+
+  const formatPortLabel = (portNum: number): string =>
+    `Port ${portNum < 10 ? "0" + portNum : portNum}`;
+
   const getAvailablePorts = (box: DistributionBox | null) => {
     if (!box) return [];
-    const occupied = new Set(box.clients.map((c) => c.port));
+    const occupiedNums = new Set(
+      box.clients.map((c) => extractPortNumber(c.port)).filter((n) => n > 0),
+    );
     const available: string[] = [];
     for (let i = 1; i <= box.totalPorts; i++) {
-      const portLabel = `Port ${i < 10 ? "0" + i : i}`;
-      if (!occupied.has(portLabel)) {
-        available.push(portLabel);
+      if (!occupiedNums.has(i)) {
+        available.push(formatPortLabel(i));
       }
     }
     return available;
+  };
+
+  const getExistingSubscriberConnection = (accountNumber: string) => {
+    const clean = String(accountNumber || "")
+      .replace(/\D/g, "")
+      .trim();
+    if (!clean) return null;
+
+    for (const b of boxes) {
+      const found = b.clients.find(
+        (c) =>
+          String(c.accountNumber).replace(/\D/g, "") === clean ||
+          String(c.accountNumber).trim().toUpperCase() ===
+            String(accountNumber).trim().toUpperCase(),
+      );
+      if (found) {
+        return {
+          boxCode: b.code,
+          port: formatPortLabel(extractPortNumber(found.port)),
+          clientName: found.name,
+        };
+      }
+    }
+
+    const dirMatch = liveDirectory.find(
+      (s: any) =>
+        (String(s.accountNumber).replace(/\D/g, "") === clean ||
+          s.accountNumber === accountNumber) &&
+        s.status === "ACTIVE" &&
+        (s.assignedPort || s.assignedBoxId),
+    );
+    if (dirMatch) {
+      const matchedBox = boxes.find((b) => b.id === dirMatch.assignedBoxId);
+      return {
+        boxCode: matchedBox?.code || "Assigned Box",
+        port: dirMatch.assignedPort
+          ? formatPortLabel(extractPortNumber(dirMatch.assignedPort))
+          : "Assigned Port",
+        clientName: dirMatch.customerName || dirMatch.name,
+      };
+    }
+
+    return null;
   };
 
   const handleAccountChange = async (acc: string) => {
@@ -415,6 +467,10 @@ export default function BoxManagementScreen() {
     const acc =
       String(sub.accountNumber).replace(/\D/g, "").slice(0, 10) ||
       sub.accountNumber;
+    const existingConn = getExistingSubscriberConnection(acc);
+    if (existingConn || sub.status === "ACTIVE") {
+      return;
+    }
     setNewClientAccount(acc);
     setNewClientName(sub.customerName || sub.name);
     setMatchedSubscriber(sub);
@@ -493,6 +549,32 @@ export default function BoxManagementScreen() {
 
   const handleSaveNewClient = () => {
     if (!selectedBoxForDetails) return;
+    const targetPortNum = extractPortNumber(newClientPort);
+    if (!targetPortNum) {
+      if (Platform.OS === "web") {
+        window.alert("Please select an available optical port.");
+      } else {
+        Alert.alert(
+          "Validation Error",
+          "Please select an available optical port.",
+        );
+      }
+      return;
+    }
+
+    const alreadyOnTargetPort = selectedBoxForDetails.clients.find(
+      (c) => extractPortNumber(c.port) === targetPortNum,
+    );
+    if (alreadyOnTargetPort) {
+      const msg = `${formatPortLabel(targetPortNum)} is already occupied by ${alreadyOnTargetPort.name}. Please select an available port.`;
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Port Occupied", msg);
+      }
+      return;
+    }
+
     if (!newClientName.trim()) {
       if (Platform.OS === "web") {
         window.alert("Please enter a customer or business name.");
@@ -512,6 +594,18 @@ export default function BoxManagementScreen() {
           "Validation Error",
           "Please enter a subscriber account number.",
         );
+      }
+      return;
+    }
+
+    const existingSubscriberConn =
+      getExistingSubscriberConnection(newClientAccount);
+    if (existingSubscriberConn) {
+      const msg = `Account ${newClientAccount.trim()} (${existingSubscriberConn.clientName}) is already connected on ${existingSubscriberConn.boxCode} · ${existingSubscriberConn.port}.`;
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Duplicate Subscriber Assignment", msg);
       }
       return;
     }
@@ -548,21 +642,21 @@ export default function BoxManagementScreen() {
       return;
     }
 
+    const normalizedPortLabel = formatPortLabel(targetPortNum);
+    const cleanAccount = newClientAccount.trim().toUpperCase();
+    const cleanName = newClientName.trim();
+
     const newClient: ClientConnection = {
-      port: newClientPort,
-      accountNumber: newClientAccount.trim().toUpperCase(),
-      name: newClientName.trim(),
+      port: normalizedPortLabel,
+      accountNumber: cleanAccount,
+      name: cleanName,
       clientType: newClientType,
       plan: effectivePlan,
       status: "CONNECTED",
     };
 
     const updatedClients = [...selectedBoxForDetails.clients, newClient].sort(
-      (a, b) => {
-        const numA = parseInt(a.port.replace(/\D/g, ""), 10) || 0;
-        const numB = parseInt(b.port.replace(/\D/g, ""), 10) || 0;
-        return numA - numB;
-      },
+      (a, b) => extractPortNumber(a.port) - extractPortNumber(b.port),
     );
 
     const updatedActivePorts = updatedClients.filter(
@@ -579,6 +673,19 @@ export default function BoxManagementScreen() {
     setBoxes((prev) =>
       prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
     );
+    setLiveDirectory((prev) =>
+      prev.map((s) =>
+        String(s.accountNumber).replace(/\D/g, "") ===
+          cleanAccount.replace(/\D/g, "") || s.accountNumber === cleanAccount
+          ? {
+              ...s,
+              status: "ACTIVE",
+              assignedBoxId: selectedBoxForDetails.id,
+              assignedPort: normalizedPortLabel,
+            }
+          : s,
+      ),
+    );
     setIsAddClientModalOpen(false);
     setNewClientAccount("");
     setNewClientName("");
@@ -590,9 +697,9 @@ export default function BoxManagementScreen() {
     // Persist to backend
     boxService
       .assignClient(selectedBoxForDetails.id, {
-        port: newClientPort,
-        accountNumber: newClientAccount.trim().toUpperCase(),
-        name: newClientName.trim(),
+        port: normalizedPortLabel,
+        accountNumber: cleanAccount,
+        name: cleanName,
         clientType: newClientType,
         plan: effectivePlan,
       })
@@ -615,8 +722,9 @@ export default function BoxManagementScreen() {
 
   const handleToggleClientStatus = (port: string) => {
     if (!selectedBoxForDetails) return;
+    const targetNum = extractPortNumber(port);
     const updatedClients = selectedBoxForDetails.clients.map((c) => {
-      if (c.port === port) {
+      if (extractPortNumber(c.port) === targetNum) {
         return {
           ...c,
           status: (c.status === "CONNECTED" ? "DISCONNECTED" : "CONNECTED") as
@@ -650,8 +758,12 @@ export default function BoxManagementScreen() {
 
   const handleRemoveClient = (port: string) => {
     if (!selectedBoxForDetails) return;
+    const targetNum = extractPortNumber(port);
+    const removedClient = selectedBoxForDetails.clients.find(
+      (c) => extractPortNumber(c.port) === targetNum,
+    );
     const updatedClients = selectedBoxForDetails.clients.filter(
-      (c) => c.port !== port,
+      (c) => extractPortNumber(c.port) !== targetNum,
     );
     const updatedActivePorts = updatedClients.filter(
       (c) => c.status === "CONNECTED",
@@ -667,6 +779,25 @@ export default function BoxManagementScreen() {
     setBoxes((prev) =>
       prev.map((b) => (b.id === updatedBox.id ? updatedBox : b)),
     );
+    if (removedClient?.accountNumber) {
+      const removedAccClean = String(removedClient.accountNumber).replace(
+        /\D/g,
+        "",
+      );
+      setLiveDirectory((prev) =>
+        prev.map((s) =>
+          String(s.accountNumber).replace(/\D/g, "") === removedAccClean ||
+          s.accountNumber === removedClient.accountNumber
+            ? {
+                ...s,
+                status: "PENDING_PROVISIONING",
+                assignedBoxId: undefined,
+                assignedPort: undefined,
+              }
+            : s,
+        ),
+      );
+    }
 
     // Persist to backend
     boxService
@@ -870,6 +1001,76 @@ export default function BoxManagementScreen() {
     setIsRegisterModalOpen(true);
   };
 
+  const isOpticalEquipmentItem = (eqName: string) => {
+    const catalogItem = STANDARD_HARDWARE_CATALOG.find(
+      (c) => c.name === eqName,
+    );
+    if (catalogItem?.category === "Optical Equipment") return true;
+    return /optical|fiber|splitter/i.test(eqName);
+  };
+
+  const hasOpticalEquipmentSelected = newSelectedEquipment.some(
+    isOpticalEquipmentItem,
+  );
+
+  const getDynamicPortOptions = (
+    category: "MAIN_BOX" | "SUB_BOX",
+    selectedEquipment: string[],
+  ): { value: string; label: string }[] => {
+    const isFbt = selectedEquipment.includes("FBT Optical Splitter");
+    const isPlc = selectedEquipment.includes("PLC Optical Splitter");
+
+    if (isFbt && !isPlc) {
+      const ports =
+        category === "SUB_BOX" ? ["2", "4", "8"] : ["2", "4", "8", "16"];
+      return ports.map((p) => ({
+        value: p,
+        label: `${p} Ports (1:${p} FBT Split)`,
+      }));
+    }
+
+    if (isPlc && !isFbt) {
+      const ports =
+        category === "SUB_BOX"
+          ? ["8", "16", "24", "32"]
+          : ["8", "16", "24", "32", "48", "64"];
+      return ports.map((p) => ({
+        value: p,
+        label: `${p} Ports (1:${p} PLC Split)`,
+      }));
+    }
+
+    const ports =
+      category === "SUB_BOX"
+        ? ["8", "16", "24"]
+        : ["8", "16", "24", "32", "48"];
+    return ports.map((p) => ({
+      value: p,
+      label: `${p} Ports`,
+    }));
+  };
+
+  const syncPortSelectionWithEquipment = (
+    updatedEquipment: string[],
+    category: "MAIN_BOX" | "SUB_BOX" = newCategory,
+  ) => {
+    const stillHasOptical = updatedEquipment.some(isOpticalEquipmentItem);
+    if (!stillHasOptical) {
+      setNewPorts("");
+      setIsPortsDropdownOpen(false);
+      return;
+    }
+    if (newPorts) {
+      const validValues = getDynamicPortOptions(
+        category,
+        updatedEquipment,
+      ).map((opt) => opt.value);
+      if (!validValues.includes(newPorts)) {
+        setNewPorts("");
+      }
+    }
+  };
+
   const handleCategoryChange = (cat: "MAIN_BOX" | "SUB_BOX") => {
     setNewCategory(cat);
     setNewCode(getNextBoxCode(cat, boxes));
@@ -878,28 +1079,28 @@ export default function BoxManagementScreen() {
   };
 
   const handleToggleEquipment = (eqName: string) => {
-    if (newSelectedEquipment.includes(eqName)) {
-      setNewSelectedEquipment(
-        newSelectedEquipment.filter((item) => item !== eqName),
-      );
-    } else {
-      setNewSelectedEquipment([...newSelectedEquipment, eqName]);
-    }
+    const updated = newSelectedEquipment.includes(eqName)
+      ? newSelectedEquipment.filter((item) => item !== eqName)
+      : [...newSelectedEquipment, eqName];
+    setNewSelectedEquipment(updated);
+    syncPortSelectionWithEquipment(updated);
   };
 
   const handleAddCustomEquipment = () => {
     const trimmed = customEquipmentInput.trim();
     if (!trimmed) return;
     if (!newSelectedEquipment.includes(trimmed)) {
-      setNewSelectedEquipment([...newSelectedEquipment, trimmed]);
+      const updated = [...newSelectedEquipment, trimmed];
+      setNewSelectedEquipment(updated);
+      syncPortSelectionWithEquipment(updated);
     }
     setCustomEquipmentInput("");
   };
 
   const handleRemoveEquipment = (eqName: string) => {
-    setNewSelectedEquipment(
-      newSelectedEquipment.filter((item) => item !== eqName),
-    );
+    const updated = newSelectedEquipment.filter((item) => item !== eqName);
+    setNewSelectedEquipment(updated);
+    syncPortSelectionWithEquipment(updated);
   };
 
   const isWeb = Platform.OS === "web";
@@ -977,6 +1178,17 @@ export default function BoxManagementScreen() {
           "Required Fields",
           "Please fill in Box Code, Site Name, and Physical Address.",
         );
+      }
+      return;
+    }
+
+    if (!hasOpticalEquipmentSelected) {
+      const msg =
+        "Please select optical fiber hardware under Hardware Equipment to configure Total Optical / Terminal Ports.";
+      if (isWeb) {
+        window.alert(msg);
+      } else {
+        Alert.alert("Optical Hardware Required", msg);
       }
       return;
     }
@@ -2924,124 +3136,6 @@ export default function BoxManagementScreen() {
                   </View>
                 </View>
 
-                {/* Port Capacity Dropdown */}
-                <View
-                  className="mt-3"
-                  style={{
-                    zIndex: isPortsDropdownOpen ? 80 : 2,
-                  }}
-                >
-                  <Text className="text-xs font-poppins-semibold text-[#475569] mb-1.5">
-                    Total Optical / Terminal Ports:
-                  </Text>
-
-                  <View className="relative" style={{ zIndex: 80 }}>
-                    {/* Dropdown Toggle Trigger Button */}
-                    <TouchableOpacity
-                      onPress={() => {
-                        setIsPortsDropdownOpen(!isPortsDropdownOpen);
-                        if (!isPortsDropdownOpen) setIsEquipmentDropdownOpen(false);
-                      }}
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
-                      activeOpacity={0.8}
-                    >
-                      <View className="flex-row items-center flex-1 mr-2">
-                        <MaterialCommunityIcons
-                          name="server-network"
-                          size={16}
-                          color="#4d6029"
-                        />
-                        <Text
-                          className={`text-xs ml-2 ${
-                            newPorts
-                              ? "font-poppins-semibold text-[#0f172a]"
-                              : "font-poppins-medium text-[#0f172a]"
-                          }`}
-                        >
-                          {newPorts
-                            ? `${newPorts} Ports`
-                            : "+ Add or Select Port"}
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name={isPortsDropdownOpen ? "chevron-up" : "chevron-down"}
-                        size={16}
-                        color="#64748b"
-                      />
-                    </TouchableOpacity>
-
-                    {/* Floating Absolute Overlay Dropdown Options Panel */}
-                    {isPortsDropdownOpen && (
-                      <View
-                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xl"
-                        style={{
-                          position: "absolute",
-                          top: "100%",
-                          left: 0,
-                          right: 0,
-                          marginTop: 6,
-                          zIndex: 9999,
-                          elevation: 40,
-                          shadowColor: "#0f172a",
-                          shadowOffset: { width: 0, height: 8 },
-                          shadowOpacity: 0.22,
-                          shadowRadius: 16,
-                        }}
-                      >
-                      {(newCategory === "SUB_BOX"
-                        ? ["8", "16", "24"]
-                        : ["8", "16", "24", "32", "48"]
-                      ).map((port, idx, arr) => {
-                        const isSelected = newPorts === port;
-                        return (
-                          <TouchableOpacity
-                            key={port}
-                            onPress={() => {
-                              setNewPorts(port);
-                              setIsPortsDropdownOpen(false);
-                            }}
-                            className={`flex-row items-center justify-between px-3.5 py-2.5 ${
-                              idx < arr.length - 1
-                                ? "border-b border-slate-100"
-                                : ""
-                            } bg-white hover:bg-slate-50`}
-                            activeOpacity={0.7}
-                          >
-                            <View className="flex-row items-center flex-1 mr-2">
-                              {/* Left Checkbox */}
-                              <View
-                                className={`w-4 h-4 rounded border mr-2.5 items-center justify-center ${
-                                  isSelected
-                                    ? "bg-[#4d6029] border-[#4d6029]"
-                                    : "border-slate-300 bg-white"
-                                }`}
-                              >
-                                {isSelected && (
-                                  <Ionicons
-                                    name="checkmark"
-                                    size={11}
-                                    color="#ffffff"
-                                  />
-                                )}
-                              </View>
-                              <Text
-                                className={`text-xs ${
-                                  isSelected
-                                    ? "font-poppins-bold text-[#0f172a]"
-                                    : "font-poppins-medium text-[#1e293b]"
-                                }`}
-                              >
-                                {port} Ports
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-                  </View>
-                </View>
-
                 {/* Hardware Equipment Multi-Select Dropdown Section */}
                 <View className="mt-3">
                   <View className="flex-row items-center justify-between mb-1.5">
@@ -3293,6 +3387,131 @@ export default function BoxManagementScreen() {
                     </View>
                   </View>
                 </View>
+
+                {/* Port Capacity Dropdown (Appears when Optical Equipment is selected) */}
+                {hasOpticalEquipmentSelected && (
+                  <View
+                    className="mt-3"
+                    style={{
+                      zIndex: isPortsDropdownOpen ? 80 : 2,
+                    }}
+                  >
+                    <View className="flex-row items-center justify-between mb-1.5">
+                      <Text className="text-xs font-poppins-semibold text-[#475569]">
+                        Total Optical / Terminal Ports:
+                      </Text>
+                      <View className="bg-[#4d6029]/10 border border-[#4d6029]/30 px-2 py-0.5 rounded-md">
+                        <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                          {newSelectedEquipment.includes("FBT Optical Splitter") &&
+                          !newSelectedEquipment.includes("PLC Optical Splitter")
+                            ? "FBT Optical Splitter"
+                            : newSelectedEquipment.includes("PLC Optical Splitter") &&
+                                !newSelectedEquipment.includes("FBT Optical Splitter")
+                              ? "PLC Optical Splitter"
+                              : "Optical Fiber Active"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className="relative" style={{ zIndex: 80 }}>
+                      {/* Dropdown Toggle Trigger Button */}
+                      <TouchableOpacity
+                        onPress={() => {
+                          setIsPortsDropdownOpen(!isPortsDropdownOpen);
+                          if (!isPortsDropdownOpen)
+                            setIsEquipmentDropdownOpen(false);
+                        }}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex-row items-center justify-between"
+                        activeOpacity={0.8}
+                      >
+                        <View className="flex-row items-center flex-1 mr-2">
+                          <MaterialCommunityIcons
+                            name="server-network"
+                            size={16}
+                            color="#4d6029"
+                          />
+                          <Text
+                            className={`text-xs ml-2 ${
+                              newPorts
+                                ? "font-poppins-semibold text-[#0f172a]"
+                                : "font-poppins-medium text-[#0f172a]"
+                            }`}
+                          >
+                            {newPorts
+                              ? getDynamicPortOptions(
+                                  newCategory,
+                                  newSelectedEquipment,
+                                ).find((opt) => opt.value === newPorts)?.label ||
+                                `${newPorts} Ports`
+                              : "+ Add or Select Port"}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={
+                            isPortsDropdownOpen ? "chevron-up" : "chevron-down"
+                          }
+                          size={16}
+                          color="#64748b"
+                        />
+                      </TouchableOpacity>
+
+                      {/* Dropdown Options Panel */}
+                      {isPortsDropdownOpen && (
+                        <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-md">
+                          {getDynamicPortOptions(
+                            newCategory,
+                            newSelectedEquipment,
+                          ).map((opt, idx, arr) => {
+                            const isSelected = newPorts === opt.value;
+                            return (
+                              <TouchableOpacity
+                                key={opt.value}
+                                onPress={() => {
+                                  setNewPorts(opt.value);
+                                  setIsPortsDropdownOpen(false);
+                                }}
+                                className={`flex-row items-center justify-between px-3.5 py-2.5 ${
+                                  idx < arr.length - 1
+                                    ? "border-b border-slate-100"
+                                    : ""
+                                } bg-white hover:bg-slate-50`}
+                                activeOpacity={0.7}
+                              >
+                                <View className="flex-row items-center flex-1 mr-2">
+                                  {/* Left Checkbox */}
+                                  <View
+                                    className={`w-4 h-4 rounded border mr-2.5 items-center justify-center ${
+                                      isSelected
+                                        ? "bg-[#4d6029] border-[#4d6029]"
+                                        : "border-slate-300 bg-white"
+                                    }`}
+                                  >
+                                    {isSelected && (
+                                      <Ionicons
+                                        name="checkmark"
+                                        size={11}
+                                        color="#ffffff"
+                                      />
+                                    )}
+                                  </View>
+                                  <Text
+                                    className={`text-xs ${
+                                      isSelected
+                                        ? "font-poppins-bold text-[#0f172a]"
+                                        : "font-poppins-medium text-[#1e293b]"
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
               </ScrollView>
 
               {/* Form Action Buttons */}
@@ -3515,9 +3734,17 @@ export default function BoxManagementScreen() {
                   className="mb-3.5 relative"
                   style={{ zIndex: isClientPortDropdownOpen ? 100 : 40 }}
                 >
-                  <Text className="text-xs font-poppins-bold text-[#0f172a] mb-1.5">
-                    Assign Optical Port *
-                  </Text>
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                      Assign Optical Port *
+                    </Text>
+                    <Text className="text-[10px] font-poppins-semibold text-[#64748b]">
+                      {selectedBoxForDetails.totalPorts -
+                        getAvailablePorts(selectedBoxForDetails).length}{" "}
+                      Occupied ·{" "}
+                      {getAvailablePorts(selectedBoxForDetails).length} Free
+                    </Text>
+                  </View>
                   <TouchableOpacity
                     onPress={() => {
                       setIsClientPortDropdownOpen(!isClientPortDropdownOpen);
@@ -3537,6 +3764,13 @@ export default function BoxManagementScreen() {
                       <Text className="text-xs font-poppins-bold text-[#0f172a] ml-2">
                         {newClientPort || "Select an available port..."}
                       </Text>
+                      {newClientPort && (
+                        <View className="ml-2 bg-[#4d6029]/10 border border-[#4d6029]/30 px-2 py-0.5 rounded-md">
+                          <Text className="text-[9px] font-poppins-bold text-[#4d6029]">
+                            Available
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     <Ionicons
                       name={
@@ -3547,7 +3781,7 @@ export default function BoxManagementScreen() {
                     />
                   </TouchableOpacity>
 
-                  {/* Floating Available Port Grid Selector */}
+                  {/* Visual Optical Port Allocation Grid Selector */}
                   {isClientPortDropdownOpen && (
                     <View
                       style={{
@@ -3558,47 +3792,113 @@ export default function BoxManagementScreen() {
                         marginTop: 6,
                         zIndex: 100,
                       }}
-                      className="p-3 bg-white rounded-2xl border border-slate-200"
+                      className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xl"
                     >
-                      <View className="flex-row items-center justify-between mb-2">
-                        <Text className="text-[11px] font-poppins-semibold text-[#64748b]">
-                          Select an available port (
-                          {getAvailablePorts(selectedBoxForDetails).length}{" "}
-                          free):
+                      <View className="flex-row items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+                        <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
+                          Optical Port Allocation (1–
+                          {selectedBoxForDetails.totalPorts})
                         </Text>
+                        <View className="flex-row items-center gap-3">
+                          <View className="flex-row items-center">
+                            <View className="w-2.5 h-2.5 rounded-sm bg-white border border-slate-300 mr-1" />
+                            <Text className="text-[10px] font-poppins text-[#64748b]">
+                              Available
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center">
+                            <View className="w-2.5 h-2.5 rounded-sm bg-slate-200 border border-slate-300 mr-1" />
+                            <Text className="text-[10px] font-poppins text-[#64748b]">
+                              Occupied (Locked)
+                            </Text>
+                          </View>
+                        </View>
                       </View>
                       <ScrollView
-                        className="max-h-44"
+                        className="max-h-52"
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={true}
                       >
-                        <View className="flex-row flex-wrap gap-1.5 pb-1">
-                          {getAvailablePorts(selectedBoxForDetails).map(
-                            (port) => (
-                              <TouchableOpacity
-                                key={port}
-                                onPress={() => {
-                                  setNewClientPort(port);
-                                  setIsClientPortDropdownOpen(false);
-                                }}
-                                className={`px-3 py-1.5 rounded-xl border ${
-                                  newClientPort === port
-                                    ? "bg-[#4d6029] border-[#4d6029]"
-                                    : "bg-white border-slate-200"
-                                }`}
-                              >
-                                <Text
-                                  className={`text-xs font-poppins-semibold ${
-                                    newClientPort === port
-                                      ? "text-white"
-                                      : "text-[#0f172a]"
+                        <View className="flex-row flex-wrap -mx-1 pb-1">
+                          {Array.from(
+                            { length: selectedBoxForDetails.totalPorts },
+                            (_, idx) => idx + 1,
+                          ).map((portNum) => {
+                            const portLabel = formatPortLabel(portNum);
+                            const occupant =
+                              selectedBoxForDetails.clients.find(
+                                (c) => extractPortNumber(c.port) === portNum,
+                              ) || null;
+                            const isOccupied = Boolean(occupant);
+                            const isSelected =
+                              !isOccupied &&
+                              extractPortNumber(newClientPort) === portNum;
+
+                            return (
+                              <View key={portLabel} className="w-1/3 px-1 mb-2">
+                                <TouchableOpacity
+                                  disabled={isOccupied}
+                                  onPress={() => {
+                                    setNewClientPort(portLabel);
+                                    setIsClientPortDropdownOpen(false);
+                                  }}
+                                  activeOpacity={0.75}
+                                  className={`p-2 rounded-xl border ${
+                                    isOccupied
+                                      ? "bg-slate-100 border-slate-200 opacity-70"
+                                      : isSelected
+                                        ? "bg-[#4d6029] border-[#4d6029]"
+                                        : "bg-white border-slate-200"
                                   }`}
                                 >
-                                  {port}
-                                </Text>
-                              </TouchableOpacity>
-                            ),
-                          )}
+                                  <View className="flex-row items-center justify-between">
+                                    <Text
+                                      className={`text-xs font-poppins-bold ${
+                                        isOccupied
+                                          ? "text-slate-500"
+                                          : isSelected
+                                            ? "text-white"
+                                            : "text-[#0f172a]"
+                                      }`}
+                                    >
+                                      {portLabel}
+                                    </Text>
+                                    <Ionicons
+                                      name={
+                                        isOccupied
+                                          ? "lock-closed"
+                                          : isSelected
+                                            ? "checkmark-circle"
+                                            : "ellipse-outline"
+                                      }
+                                      size={12}
+                                      color={
+                                        isOccupied
+                                          ? "#94a3b8"
+                                          : isSelected
+                                            ? "#ffffff"
+                                            : "#cbd5e1"
+                                      }
+                                    />
+                                  </View>
+                                  <Text
+                                    className={`text-[9px] font-poppins mt-0.5 ${
+                                      isOccupied
+                                        ? "text-slate-500"
+                                        : isSelected
+                                          ? "text-white/90"
+                                          : "text-emerald-700"
+                                    }`}
+                                    numberOfLines={1}
+                                  >
+                                    {isOccupied
+                                      ? occupant?.name || "Occupied"
+                                      : "Available"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            );
+                          })}
                         </View>
                       </ScrollView>
                     </View>
@@ -3653,25 +3953,49 @@ export default function BoxManagementScreen() {
                       maxLength={10}
                       className="flex-1 ml-2 text-xs font-mono font-poppins-semibold text-[#0f172a] py-2"
                     />
-                    {matchedSubscriber ? (
-                      <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2 py-0.5 rounded flex-row items-center">
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={12}
-                          color="#4d6029"
-                        />
-                        <Text className="text-[10px] font-poppins-bold text-[#78350f] ml-1">
-                          Matched
-                        </Text>
-                      </View>
-                    ) : newClientAccount.length === 10 ? (
-                      <View className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex-row items-center">
-                        <Ionicons name="flash" size={11} color="#059669" />
-                        <Text className="text-[10px] font-poppins-semibold text-emerald-700 ml-1">
-                          New 10-Digit
-                        </Text>
-                      </View>
-                    ) : null}
+                    {(() => {
+                      const existingConn =
+                        getExistingSubscriberConnection(newClientAccount);
+                      if (existingConn) {
+                        return (
+                          <View className="bg-rose-50 border border-rose-200 px-2 py-0.5 rounded flex-row items-center">
+                            <Ionicons
+                              name="lock-closed"
+                              size={11}
+                              color="#e11d48"
+                            />
+                            <Text className="text-[10px] font-poppins-bold text-rose-700 ml-1">
+                              {existingConn.port} ({existingConn.boxCode})
+                            </Text>
+                          </View>
+                        );
+                      }
+                      if (matchedSubscriber) {
+                        return (
+                          <View className="bg-[#FCF0DA] border border-[#edd5a6] px-2 py-0.5 rounded flex-row items-center">
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={12}
+                              color="#4d6029"
+                            />
+                            <Text className="text-[10px] font-poppins-bold text-[#78350f] ml-1">
+                              Matched
+                            </Text>
+                          </View>
+                        );
+                      }
+                      if (newClientAccount.length === 10) {
+                        return (
+                          <View className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex-row items-center">
+                            <Ionicons name="flash" size={11} color="#059669" />
+                            <Text className="text-[10px] font-poppins-semibold text-emerald-700 ml-1">
+                              New 10-Digit
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
                   </View>
 
                   {/* Floating Expandable Directory Browser */}
@@ -3685,7 +4009,7 @@ export default function BoxManagementScreen() {
                         marginTop: 6,
                         zIndex: 100,
                       }}
-                      className="p-3 bg-white rounded-2xl border border-slate-200 max-h-56"
+                      className="p-3 bg-white rounded-2xl border border-slate-200 max-h-60 shadow-xl"
                     >
                       {liveDirectory.length === 0 ? (
                         <View className="py-5 items-center justify-center">
@@ -3706,10 +4030,18 @@ export default function BoxManagementScreen() {
                           <View className="flex-row items-center justify-between mb-2">
                             <Text className="text-[11px] font-poppins-bold text-[#0f172a]">
                               Central Subscribers Directory (
-                              {liveDirectory.length} records)
+                              {
+                                liveDirectory.filter(
+                                  (s: any) =>
+                                    !getExistingSubscriberConnection(
+                                      s.accountNumber,
+                                    ) && s.status !== "ACTIVE",
+                                ).length
+                              }{" "}
+                              pending)
                             </Text>
                             <Text className="text-[10px] font-poppins text-[#64748b]">
-                              Tap to auto-fill
+                              Tap pending subscriber to auto-fill
                             </Text>
                           </View>
 
@@ -3771,34 +4103,72 @@ export default function BoxManagementScreen() {
                                   sCat.includes(q)
                                 );
                               })
+                              .slice()
+                              .sort((a: any, b: any) => {
+                                const aConnected =
+                                  Boolean(
+                                    getExistingSubscriberConnection(
+                                      a.accountNumber,
+                                    ),
+                                  ) || a.status === "ACTIVE";
+                                const bConnected =
+                                  Boolean(
+                                    getExistingSubscriberConnection(
+                                      b.accountNumber,
+                                    ),
+                                  ) || b.status === "ACTIVE";
+                                if (aConnected === bConnected) return 0;
+                                return aConnected ? 1 : -1;
+                              })
                               .map((sub: any) => {
+                                const existingConn =
+                                  getExistingSubscriberConnection(
+                                    sub.accountNumber,
+                                  );
+                                const isAlreadyConnected =
+                                  Boolean(existingConn) ||
+                                  sub.status === "ACTIVE";
                                 const isCurrentlySelected =
-                                  newClientAccount === sub.accountNumber ||
-                                  newClientAccount ===
-                                    String(sub.accountNumber).replace(
-                                      /\D/g,
-                                      "",
-                                    );
+                                  !isAlreadyConnected &&
+                                  (newClientAccount === sub.accountNumber ||
+                                    newClientAccount ===
+                                      String(sub.accountNumber).replace(
+                                        /\D/g,
+                                        "",
+                                      ));
                                 return (
                                   <TouchableOpacity
                                     key={sub.accountNumber}
+                                    disabled={isAlreadyConnected}
                                     onPress={() =>
                                       handleSelectFromDirectory(sub)
                                     }
                                     className={`p-2 rounded-xl border flex-row items-center justify-between mb-1 ${
-                                      isCurrentlySelected
-                                        ? "bg-[#FCF0DA] border-[#edd5a6]"
-                                        : "bg-white border-slate-200/80"
+                                      isAlreadyConnected
+                                        ? "bg-slate-50 border-slate-200/70 opacity-60"
+                                        : isCurrentlySelected
+                                          ? "bg-[#FCF0DA] border-[#edd5a6]"
+                                          : "bg-white border-slate-200/80"
                                     }`}
                                     activeOpacity={0.7}
                                   >
                                     <View className="flex-1 mr-2">
                                       <View className="flex-row items-center">
-                                        <Text className="text-xs font-mono font-poppins-bold text-[#4d6029] mr-2">
+                                        <Text
+                                          className={`text-xs font-mono font-poppins-bold mr-2 ${
+                                            isAlreadyConnected
+                                              ? "text-slate-400"
+                                              : "text-[#4d6029]"
+                                          }`}
+                                        >
                                           {sub.accountNumber}
                                         </Text>
                                         <Text
-                                          className="text-xs font-poppins-bold text-[#0f172a] flex-1"
+                                          className={`text-xs font-poppins-bold flex-1 ${
+                                            isAlreadyConnected
+                                              ? "text-slate-500"
+                                              : "text-[#0f172a]"
+                                          }`}
                                           numberOfLines={1}
                                         >
                                           {sub.customerName || sub.name}
@@ -3812,13 +4182,26 @@ export default function BoxManagementScreen() {
                                         {sub.servicePlan || sub.plan}
                                       </Text>
                                     </View>
-                                    <View className="bg-slate-100 px-2 py-0.5 rounded">
-                                      <Text className="text-[9px] font-poppins-semibold text-[#475569]">
-                                        {sub.status === "ACTIVE"
-                                          ? "Active"
-                                          : "Pending"}
-                                      </Text>
-                                    </View>
+                                    {isAlreadyConnected ? (
+                                      <View className="bg-slate-200/80 px-2 py-0.5 rounded flex-row items-center">
+                                        <Ionicons
+                                          name="lock-closed"
+                                          size={9}
+                                          color="#64748b"
+                                        />
+                                        <Text className="text-[9px] font-poppins-semibold text-[#475569] ml-1">
+                                          {existingConn?.port ||
+                                            sub.assignedPort ||
+                                            "Assigned"}
+                                        </Text>
+                                      </View>
+                                    ) : (
+                                      <View className="bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                        <Text className="text-[9px] font-poppins-semibold text-amber-800">
+                                          Pending
+                                        </Text>
+                                      </View>
+                                    )}
                                   </TouchableOpacity>
                                 );
                               })}

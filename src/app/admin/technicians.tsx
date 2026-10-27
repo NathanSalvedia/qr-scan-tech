@@ -39,31 +39,34 @@ export default function TechniciansScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadTechnicians() {
+    async function loadTechnicians(isBackgroundPoll = false) {
       try {
         const res = await technicianService.getAll();
         if (!isMounted) return;
 
         if (res.success && res.technicians) {
           setTechnicians(res.technicians);
-        } else {
+          setError(null);
+        } else if (!isBackgroundPoll) {
           setError(res.message || "Failed to load technicians");
         }
       } catch (err: any) {
         if (!isMounted) return;
-        setError(err.message || "Failed to connect to technician service");
+        if (!isBackgroundPoll) {
+          setError(err.message || "Failed to connect to technician service");
+        }
       } finally {
-        if (isMounted) {
+        if (isMounted && !isBackgroundPoll) {
           setLoading(false);
         }
       }
     }
 
-    loadTechnicians();
+    loadTechnicians(false);
 
     // Auto-refresh every 8 seconds to reflect live technician telemetry
     const interval = setInterval(() => {
-      loadTechnicians();
+      loadTechnicians(true);
     }, 8000);
 
     return () => {

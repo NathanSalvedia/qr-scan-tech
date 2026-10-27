@@ -68,29 +68,41 @@ function formatScanTime(date: Date): string {
 // =========================================================================
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // 1. Fetch only users who are NOT admin (role = 'user')
-    const rawTechnicians = await db
-      .select({
-        id: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        phoneNumber: users.phoneNumber,
-        role: users.role,
-        isActive: users.isActive,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(ne(users.role, 'admin'))
-      .orderBy(users.createdAt);
+    const fetchTechnicianData = async () => {
+      const rawTechs = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          phoneNumber: users.phoneNumber,
+          role: users.role,
+          isActive: users.isActive,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(ne(users.role, 'admin'))
+        .orderBy(users.createdAt);
 
-    // 2. Fetch all scan audit logs & boxes to build dynamic activity
-    const allAudits = await db
-      .select()
-      .from(scanAuditLogs)
-      .orderBy(desc(scanAuditLogs.createdAt));
+      const audits = await db
+        .select()
+        .from(scanAuditLogs)
+        .orderBy(desc(scanAuditLogs.createdAt));
 
-    const allBoxes = await db.select().from(distributionBoxes);
+      const boxes = await db.select().from(distributionBoxes);
+      return { rawTechs, audits, boxes };
+    };
+
+    let queryResult;
+    try {
+      queryResult = await fetchTechnicianData();
+    } catch (firstErr) {
+      // Retry once if serverless PostgreSQL recycled an idle connection socket
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      queryResult = await fetchTechnicianData();
+    }
+
+    const { rawTechs: rawTechnicians, audits: allAudits, boxes: allBoxes } = queryResult;
     const boxMap = new Map(allBoxes.map((b) => [b.id, b]));
 
     const now = new Date();

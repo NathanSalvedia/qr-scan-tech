@@ -98,13 +98,6 @@ const FALLBACK_PENDING_WORK_ORDERS: SubscriberRecord[] = [
   },
 ];
 
-const FIBER_PLAN_OPTIONS = [
-  "50 Mbps Fiber Plan",
-  "100 Mbps Fiber Plan",
-  "200 Mbps Fiber Plan",
-  "300 Mbps Fiber Plan",
-];
-
 export interface HardwareEquipmentItem {
   id: string;
   name: string;
@@ -323,6 +316,14 @@ export default function BoxDetailsScreen() {
 
   const handleSelectWorkOrder = (order: SubscriberRecord) => {
     const cleanAcc = String(order.accountNumber).trim();
+    if (selectedWorkOrderAcc === cleanAcc) {
+      setSelectedWorkOrderAcc(null);
+      setAssignAccountNumber("");
+      setAssignSubscriberName("");
+      setAssignSubscriberType("Residential");
+      setAssignServicePlan("100 Mbps Fiber Plan");
+      return;
+    }
     setSelectedWorkOrderAcc(cleanAcc);
     setAssignAccountNumber(cleanAcc);
     setAssignSubscriberName(order.customerName || order.name || "");
@@ -330,21 +331,9 @@ export default function BoxDetailsScreen() {
     setAssignSubscriberType(
       rawType.includes("COMMERCIAL") ? "Commercial" : "Residential"
     );
-    setAssignServicePlan(
-      order.servicePlan || order.plan || "100 Mbps Fiber Plan"
-    );
-  };
-
-  const handleGenerateAccountNumber = async () => {
-    try {
-      const res = await subscriberService.getNextAccountNumber();
-      if (res.success && res.accountNumber) {
-        setAssignAccountNumber(res.accountNumber);
-        setSelectedWorkOrderAcc(null);
-      }
-    } catch {
-      // Fallback handled in service
-    }
+    const selectedPlan =
+      order.servicePlan || order.plan || "100 Mbps Fiber Plan";
+    setAssignServicePlan(selectedPlan);
   };
 
   const handleConfirmAssignDropWire = async () => {
@@ -352,12 +341,11 @@ export default function BoxDetailsScreen() {
     const cleanName = assignSubscriberName.trim();
     const cleanAcc = assignAccountNumber.trim();
 
-    if (!cleanName) {
-      showToast("Please select a pending work order or enter subscriber name.", "error");
-      return;
-    }
-    if (!cleanAcc) {
-      showToast("Please enter or generate a subscriber account number.", "error");
+    if (!selectedWorkOrderAcc || !cleanName || !cleanAcc) {
+      showToast(
+        "Please select a pending installation work order from the list.",
+        "error"
+      );
       return;
     }
 
@@ -1370,17 +1358,17 @@ export default function BoxDetailsScreen() {
             </View>
 
             {/* Interactive Port Legend */}
-            <View className="flex-row items-center flex-wrap gap-x-4 gap-y-1.5 mb-3 px-0.5">
+            <View className="flex-row items-center justify-between mb-3 px-0.5">
               <View className="flex-row items-center">
-                <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-1.5" />
+                <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-1.5 shrink-0" />
                 <Text className="text-[10px] font-poppins-medium text-[#475569]">
-                  Occupied (Tap to Inspect)
+                  Occupied
                 </Text>
               </View>
               <View className="flex-row items-center">
-                <View className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 mr-1.5" />
+                <View className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 mr-1.5 shrink-0" />
                 <Text className="text-[10px] font-poppins-medium text-[#475569]">
-                  Available (Tap to Assign)
+                  Available
                 </Text>
               </View>
             </View>
@@ -2163,7 +2151,8 @@ export default function BoxDetailsScreen() {
                       className="text-[11px] font-poppins text-[#64748b]"
                       numberOfLines={2}
                     >
-                      Select pending installation work order or enter subscriber
+                      Select a pending installation work order to bind to Port P
+                      {selectedPortNumber}
                     </Text>
                   </View>
                 </View>
@@ -2232,7 +2221,7 @@ export default function BoxDetailsScreen() {
                       </Text>
                     </View>
                   ) : (
-                    <View className="max-h-44 bg-slate-50/70 rounded-2xl border border-slate-200/80 p-2">
+                    <View className="max-h-48 bg-slate-50/70 rounded-2xl border border-slate-200/80 p-2">
                       <ScrollView
                         nestedScrollEnabled
                         showsVerticalScrollIndicator={true}
@@ -2338,127 +2327,103 @@ export default function BoxDetailsScreen() {
                   )}
                 </View>
 
-                {/* Step 2: Subscriber & Drop Wire Details */}
-                <View className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
-                  <View className="flex-row items-center justify-between">
+                {/* Step 2: Read-Only Selected Work Order Verification Card */}
+                <View className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-3.5">
+                  <View className="flex-row items-center justify-between mb-2.5">
                     <Text
                       className="text-[11px] font-poppins-bold text-[#0f172a] flex-1 mr-2"
                       numberOfLines={1}
                     >
-                      Subscriber Drop Cable Details
+                      Subscriber Details
                     </Text>
-                    <TouchableOpacity
-                      onPress={handleGenerateAccountNumber}
-                      className="flex-row items-center bg-[#4d6029]/10 px-2 py-0.5 rounded-lg border border-[#4d6029]/25 shrink-0"
-                    >
+                    <View className="flex-row items-center bg-slate-200/70 px-2 py-0.5 rounded-md shrink-0">
                       <Ionicons
-                        name="sparkles-outline"
-                        size={11}
-                        color="#4d6029"
+                        name="lock-closed-outline"
+                        size={10}
+                        color="#475569"
                       />
-                      <Text className="text-[9px] font-poppins-bold text-[#4d6029] ml-1">
-                        Generate Acc #
+                      <Text className="text-[9px] font-poppins-bold text-[#475569] ml-1">
+                        Read-Only
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Account Number */}
-                  <View>
-                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
-                      Account / Work Order Number
-                    </Text>
-                    <TextInput
-                      placeholder="10-digit account number (e.g. 2608001018)"
-                      placeholderTextColor="#94a3b8"
-                      value={assignAccountNumber}
-                      onChangeText={(val) => {
-                        setAssignAccountNumber(
-                          val.replace(/\D/g, "").slice(0, 10)
-                        );
-                        setSelectedWorkOrderAcc(null);
-                      }}
-                      keyboardType="numeric"
-                      maxLength={10}
-                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
-                    />
-                  </View>
-
-                  {/* Subscriber Name */}
-                  <View className="mt-2">
-                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
-                      Subscriber / Business Name
-                    </Text>
-                    <TextInput
-                      placeholder="Full customer or business name"
-                      placeholderTextColor="#94a3b8"
-                      value={assignSubscriberName}
-                      onChangeText={setAssignSubscriberName}
-                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-poppins-medium text-[#0f172a]"
-                    />
-                  </View>
-
-                  {/* Subscriber Type */}
-                  <View className="mt-2">
-                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
-                      Subscriber Classification
-                    </Text>
-                    <View className="flex-row gap-2">
-                      {(["Residential", "Commercial"] as const).map((type) => {
-                        const active = assignSubscriberType === type;
-                        return (
-                          <TouchableOpacity
-                            key={type}
-                            onPress={() => setAssignSubscriberType(type)}
-                            className={`flex-1 py-2 rounded-xl items-center border ${
-                              active
-                                ? "bg-[#4d6029] border-[#3e4e20]"
-                                : "bg-white border-slate-200"
-                            }`}
-                          >
-                            <Text
-                              className={`text-[11px] font-poppins-bold ${
-                                active ? "text-white" : "text-[#475569]"
-                              }`}
-                            >
-                              {type}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
                     </View>
                   </View>
 
-                  {/* Service Plan Chips */}
-                  <View className="mt-2">
-                    <Text className="text-[10px] font-poppins-semibold text-[#475569] mb-1">
-                      Subscribed Fiber Plan
-                    </Text>
-                    <View className="flex-row gap-1.5">
-                      {FIBER_PLAN_OPTIONS.map((planOption) => {
-                        const active = assignServicePlan === planOption;
-                        return (
-                          <TouchableOpacity
-                            key={planOption}
-                            onPress={() => setAssignServicePlan(planOption)}
-                            className={`flex-1 py-1.5 rounded-xl items-center justify-center border ${
-                              active
-                                ? "bg-[#4d6029] border-[#3e4e20]"
-                                : "bg-white border-slate-200"
+                  {!selectedWorkOrderAcc ? (
+                    <View className="bg-white border border-dashed border-slate-300 rounded-xl p-4 items-center justify-center">
+                      <Ionicons
+                        name="document-text-outline"
+                        size={22}
+                        color="#94a3b8"
+                      />
+                      <Text className="text-xs font-poppins-bold text-slate-700 mt-1.5">
+                        No Work Order Selected
+                      </Text>
+                      <Text className="text-[10px] font-poppins text-slate-500 text-center mt-0.5 leading-relaxed">
+                        Tap a pending work order above to load its verified
+                        account number, subscriber name, classification, and
+                        fiber plan.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="bg-white border border-slate-200/90 rounded-xl p-3 space-y-2">
+                      {/* Account / Work Order Number */}
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-[10px] font-poppins text-[#64748b]">
+                          Account / Work Order #
+                        </Text>
+                        <Text className="text-xs font-mono font-bold text-[#0f172a]">
+                          {assignAccountNumber}
+                        </Text>
+                      </View>
+
+                      {/* Subscriber Name */}
+                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
+                        <Text className="text-[10px] font-poppins text-[#64748b]">
+                          Subscriber / Business
+                        </Text>
+                        <Text
+                          className="text-xs font-poppins-bold text-[#0f172a] max-w-[60%] text-right"
+                          numberOfLines={1}
+                        >
+                          {assignSubscriberName}
+                        </Text>
+                      </View>
+
+                      {/* Classification */}
+                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
+                        <Text className="text-[10px] font-poppins text-[#64748b]">
+                          Classification
+                        </Text>
+                        <View
+                          className={`px-2 py-0.5 rounded-md border ${
+                            assignSubscriberType === "Commercial"
+                              ? "bg-blue-50 border-blue-200"
+                              : "bg-emerald-50 border-emerald-200"
+                          }`}
+                        >
+                          <Text
+                            className={`text-[10px] font-poppins-bold ${
+                              assignSubscriberType === "Commercial"
+                                ? "text-blue-700"
+                                : "text-emerald-700"
                             }`}
                           >
-                            <Text
-                              className={`text-[10px] font-poppins-bold ${
-                                active ? "text-white" : "text-[#475569]"
-                              }`}
-                              numberOfLines={1}
-                            >
-                              {planOption.replace(" Fiber Plan", "")}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
+                            {assignSubscriberType}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Subscribed Fiber Plan */}
+                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
+                        <Text className="text-[10px] font-poppins text-[#64748b]">
+                          Subscribed Fiber Plan
+                        </Text>
+                        <Text className="text-xs font-poppins-bold text-[#4d6029]">
+                          {assignServicePlan}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
+                  )}
                 </View>
               </ScrollView>
 
@@ -2466,8 +2431,12 @@ export default function BoxDetailsScreen() {
               <View className="flex-row pt-3.5 mt-3 border-t border-slate-100 gap-2">
                 <TouchableOpacity
                   onPress={handleConfirmAssignDropWire}
-                  disabled={isSubmittingPortAction}
-                  className="flex-1 bg-[#4d6029] py-3 px-2 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
+                  disabled={isSubmittingPortAction || !selectedWorkOrderAcc}
+                  className={`flex-1 py-3 px-2 rounded-xl items-center justify-center flex-row shadow-xs ${
+                    selectedWorkOrderAcc
+                      ? "bg-[#4d6029] active:opacity-85"
+                      : "bg-slate-300"
+                  }`}
                 >
                   {isSubmittingPortAction ? (
                     <ActivityIndicator size="small" color="#ffffff" />

@@ -52,7 +52,8 @@ export interface TechniciansApiResponse {
 export const technicianService = {
   getAll: async (): Promise<TechniciansApiResponse> => {
     try {
-      const token = await authState.getToken();
+      await authState.ensureHydrated();
+      const token = authState.getToken();
       const response = await apiFetch(`${API_URL}/technicians`, {
         method: 'GET',
         headers: {
@@ -63,12 +64,15 @@ export const technicianService = {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch technicians');
+        return {
+          success: false,
+          message: data.message || 'Failed to fetch technicians',
+        };
       }
 
       return data;
     } catch (error: any) {
-      console.error('technicianService.getAll error:', error);
+      console.warn('technicianService.getAll warning:', error?.message || error);
       return {
         success: false,
         message: error.message || 'Network error fetching technicians',
@@ -78,7 +82,8 @@ export const technicianService = {
 
   getById: async (id: string): Promise<{ success: boolean; technician?: Technician; message?: string }> => {
     try {
-      const token = await authState.getToken();
+      await authState.ensureHydrated();
+      const token = authState.getToken();
       const response = await apiFetch(`${API_URL}/technicians/${id}`, {
         method: 'GET',
         headers: {
@@ -89,12 +94,15 @@ export const technicianService = {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch technician');
+        return {
+          success: false,
+          message: data.message || 'Failed to fetch technician',
+        };
       }
 
       return data;
     } catch (error: any) {
-      console.error('technicianService.getById error:', error);
+      console.warn('technicianService.getById warning:', error?.message || error);
       return {
         success: false,
         message: error.message || 'Network error fetching technician',
