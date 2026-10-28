@@ -255,6 +255,7 @@ export default function BoxManagementScreen() {
   const [selectedBoxForQR, setSelectedBoxForQR] =
     useState<DistributionBox | null>(null);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [editingBox, setEditingBox] = useState<DistributionBox | null>(null);
   const [activeDetailsTab, setActiveDetailsTab] = useState<
     "CLIENTS" | "EQUIPMENT" | "LOCATION" | "SCAN_LOGS"
   >("CLIENTS");
@@ -497,7 +498,7 @@ export default function BoxManagementScreen() {
     setIsSubscriberDirectoryOpen(false);
   };
 
-  const handleOpenAddClientModal = async () => {
+  const handleOpenAddClientModal = async (presetPort?: string) => {
     if (!selectedBoxForDetails) return;
     const available = getAvailablePorts(selectedBoxForDetails);
     if (available.length === 0) {
@@ -513,17 +514,14 @@ export default function BoxManagementScreen() {
       }
       return;
     }
-    const defaultPort = available[0];
+    const defaultPort =
+      presetPort && available.includes(presetPort) ? presetPort : available[0];
     setNewClientPort(defaultPort);
 
     // Fetch live subscribers directory from backend in background for live matching & browsing
     try {
       const dirRes = await subscriberService.getAllSubscribers();
-      if (
-        dirRes.success &&
-        dirRes.subscribers &&
-        dirRes.subscribers.length > 0
-      ) {
+      if (dirRes.success && Array.isArray(dirRes.subscribers)) {
         setLiveDirectory(dirRes.subscribers);
       }
     } catch (e) {
@@ -545,6 +543,105 @@ export default function BoxManagementScreen() {
     setIsSubscriberDirectoryOpen(false);
     setDirectorySearchQuery("");
     setIsAddClientModalOpen(true);
+  };
+
+  const handleQueueForFieldTech = () => {
+    if (!newClientAccount.trim()) {
+      const msg = "Please enter a 10-digit subscriber account number.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Validation Error", msg);
+      }
+      return;
+    }
+    if (!newClientName.trim()) {
+      const msg = "Please enter a customer or business name.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Validation Error", msg);
+      }
+      return;
+    }
+
+    const existingSubscriberConn =
+      getExistingSubscriberConnection(newClientAccount);
+    if (existingSubscriberConn) {
+      const msg = `Account ${newClientAccount.trim()} (${existingSubscriberConn.clientName}) is already connected on ${existingSubscriberConn.boxCode} · ${existingSubscriberConn.port}.`;
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Duplicate Subscriber Assignment", msg);
+      }
+      return;
+    }
+
+    if (!newClientType) {
+      const msg = "Please select a Subscriber Type (Residential or Commercial).";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Validation Error", msg);
+      }
+      return;
+    }
+
+    const effectivePlan = customPlanSpeed.trim()
+      ? `${customPlanSpeed.trim()} Mbps Fiber Plan`
+      : newClientPlan;
+
+    if (!effectivePlan) {
+      const msg = "Please select a Subscriber Plan or enter a Custom Speed (Mbps).";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Validation Error", msg);
+      }
+      return;
+    }
+
+    const cleanAccount = newClientAccount.trim().toUpperCase();
+    const cleanName = newClientName.trim();
+
+    const queuedRecord = {
+      accountNumber: cleanAccount,
+      customerName: cleanName,
+      name: cleanName,
+      subscriberType: newClientType,
+      category: newClientType,
+      servicePlan: effectivePlan,
+      plan: effectivePlan,
+      status: "PENDING_PROVISIONING",
+    };
+
+    setLiveDirectory((prev) => {
+      const filtered = prev.filter(
+        (s) =>
+          String(s.accountNumber).replace(/\D/g, "") !==
+          cleanAccount.replace(/\D/g, ""),
+      );
+      return [queuedRecord, ...filtered];
+    });
+
+    handleCloseAddClientModal();
+
+    subscriberService
+      .createSubscriber({
+        accountNumber: cleanAccount,
+        customerName: cleanName,
+        subscriberType: newClientType,
+        servicePlan: effectivePlan,
+        address: selectedBoxForDetails?.address,
+      })
+      .catch((err) => console.warn("Error queueing subscriber work order:", err));
+
+    const confirmMsg = `${cleanName} (${cleanAccount}) has been queued in the Central Directory as a Pending Installation Work Order. Field Technicians can now assign their physical drop-wire port on-site.`;
+    if (Platform.OS === "web") {
+      window.alert(confirmMsg);
+    } else {
+      Alert.alert("Work Order Queued", confirmMsg);
+    }
   };
 
   const handleSaveNewClient = () => {
@@ -976,6 +1073,7 @@ export default function BoxManagementScreen() {
   };
 
   const handleOpenRegisterModal = () => {
+    setEditingBox(null);
     const defaultCat: "MAIN_BOX" | "SUB_BOX" = "SUB_BOX";
     setNewCategory(defaultCat);
     setNewCode(getNextBoxCode(defaultCat, boxes));
@@ -995,6 +1093,64 @@ export default function BoxManagementScreen() {
     setNewPorts("");
     setIsPortsDropdownOpen(false);
     setNewSelectedEquipment([]);
+    setIsEquipmentDropdownOpen(false);
+    setCustomEquipmentInput("");
+    setEquipmentCatalogFilter("ALL");
+    setIsRegisterModalOpen(true);
+  };
+
+  const handleOpenEditBoxModal = (box: DistributionBox) => {
+    setEditingBox(box);
+    setNewCategory(box.category);
+    setNewCode(box.code);
+    const mainBoxes = boxes.filter((b) => b.category === "MAIN_BOX");
+    setNewParentCode(
+      box.parentCode || (mainBoxes.length > 0 ? mainBoxes[0].code : "DB-MN-01"),
+    );
+    setIsParentDropdownOpen(false);
+
+    setNewSiteName(box.siteName || "");
+    setNewAddress(box.address || "");
+    setNewLatitude(
+      box.latitude !== undefined && box.latitude !== null
+        ? String(box.latitude)
+        : "",
+    );
+    setNewLongitude(
+      box.longitude !== undefined && box.longitude !== null
+        ? String(box.longitude)
+        : "",
+    );
+    setGeocodingStatus(null);
+    setIsGeocoding(false);
+    setNewMountingType(
+      (box.mountingType as "Utility Pole" | "Wall Mount" | "Cabinet") ||
+        "Utility Pole",
+    );
+
+    const existingEqNames =
+      Array.isArray(box.equipment) && box.equipment.length > 0
+        ? box.equipment.map((e) => e.name)
+        : [];
+    const hasOpticalInExisting = existingEqNames.some((eqName) => {
+      const catalogItem = STANDARD_HARDWARE_CATALOG.find(
+        (c) => c.name === eqName,
+      );
+      if (catalogItem?.category === "Optical Equipment") return true;
+      return /optical|fiber|splitter/i.test(eqName);
+    });
+    const hydratedEq = hasOpticalInExisting
+      ? existingEqNames
+      : [
+          box.totalPorts <= 8
+            ? "FBT Optical Splitter"
+            : "PLC Optical Splitter",
+          ...existingEqNames,
+        ];
+
+    setNewSelectedEquipment(hydratedEq);
+    setNewPorts(String(box.totalPorts || 8));
+    setIsPortsDropdownOpen(false);
     setIsEquipmentDropdownOpen(false);
     setCustomEquipmentInput("");
     setEquipmentCatalogFilter("ALL");
@@ -1073,9 +1229,13 @@ export default function BoxManagementScreen() {
 
   const handleCategoryChange = (cat: "MAIN_BOX" | "SUB_BOX") => {
     setNewCategory(cat);
-    setNewCode(getNextBoxCode(cat, boxes));
+    if (editingBox && editingBox.category === cat) {
+      setNewCode(editingBox.code);
+    } else {
+      setNewCode(getNextBoxCode(cat, boxes));
+    }
     setIsPortsDropdownOpen(false);
-    setNewPorts("");
+    syncPortSelectionWithEquipment(newSelectedEquipment, cat);
   };
 
   const handleToggleEquipment = (eqName: string) => {
@@ -1243,6 +1403,24 @@ export default function BoxManagementScreen() {
       return;
     }
 
+    const targetTotalPorts = parseInt(newPorts, 10) || 24;
+
+    if (editingBox && editingBox.clients.length > 0) {
+      const highestOccupiedPort = Math.max(
+        0,
+        ...editingBox.clients.map((c) => extractPortNumber(c.port)),
+      );
+      if (targetTotalPorts < highestOccupiedPort) {
+        const msg = `Cannot reduce capacity to ${targetTotalPorts} ports because Port ${highestOccupiedPort} is currently occupied by a connected subscriber.`;
+        if (isWeb) {
+          window.alert(msg);
+        } else {
+          Alert.alert("Port Capacity Conflict", msg);
+        }
+        return;
+      }
+    }
+
     const payload = {
       code: newCode.trim().toUpperCase(),
       category: newCategory,
@@ -1253,15 +1431,64 @@ export default function BoxManagementScreen() {
       poleNumber: null,
       latitude: parsedLat,
       longitude: parsedLng,
-      status: "NEEDS_TAG",
-      totalPorts: parseInt(newPorts, 10) || 24,
+      status: editingBox ? editingBox.status : "NEEDS_TAG",
+      totalPorts: targetTotalPorts,
       notes:
         newSelectedEquipment.length > 0
           ? `Installed Hardware: ${newSelectedEquipment.join(", ")}`
           : "Standard distribution enclosure. QR tag pending physical dispatch.",
       equipment: constructedEquipment,
-      clients: [],
+      clients: editingBox ? editingBox.clients : [],
     };
+
+    if (editingBox) {
+      try {
+        const res = await boxService.update(editingBox.id, payload);
+        if (res.success) {
+          const updatedBox: DistributionBox = {
+            ...editingBox,
+            code: payload.code,
+            category: payload.category,
+            parentCode:
+              payload.category === "SUB_BOX"
+                ? payload.parentCode || undefined
+                : undefined,
+            siteName: payload.siteName,
+            address: payload.address,
+            mountingType: payload.mountingType,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            totalPorts: payload.totalPorts,
+            equipment: constructedEquipment,
+            notes: payload.notes,
+          };
+
+          setBoxes((prev) =>
+            prev.map((b) => (b.id === editingBox.id ? updatedBox : b)),
+          );
+          if (selectedBoxForDetails?.id === editingBox.id) {
+            setSelectedBoxForDetails(updatedBox);
+          }
+          setIsRegisterModalOpen(false);
+          setEditingBox(null);
+        } else {
+          const msg = res.message || "Failed to update distribution box.";
+          if (isWeb) {
+            window.alert(msg);
+          } else {
+            Alert.alert("Error", msg);
+          }
+        }
+      } catch (err: any) {
+        const msg = err.message || "Failed to update distribution box.";
+        if (isWeb) {
+          window.alert(msg);
+        } else {
+          Alert.alert("Error", msg);
+        }
+      }
+      return;
+    }
 
     try {
       const res = await boxService.create(payload);
@@ -1684,7 +1911,7 @@ export default function BoxManagementScreen() {
                         Latitude & Longitude
                       </Text>
                     </View>
-                    <View className="w-[110px] min-w-[110px] text-right">
+                    <View className="w-[145px] min-w-[145px] text-right">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider text-right">
                         Actions
                       </Text>
@@ -1892,16 +2119,28 @@ export default function BoxManagementScreen() {
                           </View>
 
                           {/* 7. Actions */}
-                          <View className="w-[110px] min-w-[110px] flex-row items-center justify-end space-x-1.5">
+                          <View className="w-[145px] min-w-[145px] flex-row items-center justify-end gap-1.5">
                             <TouchableOpacity
                               onPress={() => setSelectedBoxForQR(box)}
-                              className="w-7 h-7 rounded-lg bg-[#4d6029]/10 hover:bg-[#4d6029]/20 border border-[#4d6029]/30 items-center justify-center mr-1"
+                              className="w-7 h-7 rounded-lg bg-[#4d6029]/10 hover:bg-[#4d6029]/20 border border-[#4d6029]/30 items-center justify-center"
                               accessibilityLabel="Print QR"
                             >
                               <MaterialCommunityIcons
                                 name="qrcode-scan"
                                 size={13}
                                 color="#4d6029"
+                              />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => handleOpenEditBoxModal(box)}
+                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 items-center justify-center"
+                              accessibilityLabel={`Edit ${box.code}`}
+                            >
+                              <Ionicons
+                                name="create-outline"
+                                size={14}
+                                color="#334155"
                               />
                             </TouchableOpacity>
 
@@ -2271,7 +2510,7 @@ export default function BoxManagementScreen() {
                           </Text>
                         </View>
                         <TouchableOpacity
-                          onPress={handleOpenAddClientModal}
+                          onPress={() => handleOpenAddClientModal()}
                           className="bg-[#4d6029] px-3.5 py-2 rounded-xl flex-row items-center shadow-xs"
                           activeOpacity={0.8}
                         >
@@ -2297,6 +2536,104 @@ export default function BoxManagementScreen() {
                             )}%`,
                           }}
                         />
+                      </View>
+
+                      {/* Interactive Port Allocation Matrix (P1..PN) */}
+                      <View className="mb-3">
+                        <View className="flex-row items-center justify-between mb-2 px-0.5">
+                          <View className="flex-row items-center">
+                            <View className="w-2.5 h-2.5 rounded-full bg-[#4d6029] mr-1.5" />
+                            <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                              Occupied
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center">
+                            <View className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 mr-1.5" />
+                            <Text className="text-[10px] font-poppins-medium text-[#475569]">
+                              Available
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View className="flex-row flex-wrap -mx-1">
+                          {Array.from(
+                            { length: selectedBoxForDetails.totalPorts },
+                            (_, idx) => idx + 1,
+                          ).map((portNum) => {
+                            const portLabel = formatPortLabel(portNum);
+                            const clientOnPort =
+                              selectedBoxForDetails.clients.find(
+                                (c) => extractPortNumber(c.port) === portNum,
+                              );
+                            const isOccupied = Boolean(clientOnPort);
+                            const isSuspended =
+                              clientOnPort?.status === "DISCONNECTED";
+                            const isFilteredToThisPort =
+                              modalClientSearch.toLowerCase().trim() !== "" &&
+                              modalClientSearch
+                                .toLowerCase()
+                                .trim()
+                                .startsWith("port") &&
+                              extractPortNumber(modalClientSearch) === portNum;
+                            const widthClass =
+                              selectedBoxForDetails.totalPorts <= 8
+                                ? "w-1/4"
+                                : "w-1/4 sm:w-1/8";
+
+                            return (
+                              <View
+                                key={portNum}
+                                className={`${widthClass} px-1 mb-2`}
+                              >
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    if (isOccupied) {
+                                      setModalClientSearch(
+                                        isFilteredToThisPort ? "" : portLabel,
+                                      );
+                                    } else {
+                                      handleOpenAddClientModal(portLabel);
+                                    }
+                                  }}
+                                  activeOpacity={0.75}
+                                  className={`h-11 rounded-xl items-center justify-center border ${
+                                    isOccupied
+                                      ? isSuspended
+                                        ? "bg-amber-600 border-amber-700"
+                                        : isFilteredToThisPort
+                                          ? "bg-[#2d3818] border-[#1e2610]"
+                                          : "bg-[#4d6029] border-[#3e4e20]"
+                                      : "bg-white border-slate-200 hover:border-[#4d6029]"
+                                  }`}
+                                >
+                                  <Text
+                                    className={`text-xs font-poppins-bold ${
+                                      isOccupied
+                                        ? "text-white"
+                                        : "text-[#0f172a]"
+                                    }`}
+                                  >
+                                    P{portNum}
+                                  </Text>
+                                  <Text
+                                    className={`text-[8px] font-poppins ${
+                                      isOccupied
+                                        ? "text-white/85"
+                                        : "text-emerald-700"
+                                    }`}
+                                    numberOfLines={1}
+                                  >
+                                    {isOccupied
+                                      ? isFilteredToThisPort
+                                        ? "Filtered"
+                                        : "Occupied"
+                                      : "+ Assign"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            );
+                          })}
+                        </View>
                       </View>
 
                       {/* In-Modal Search Input */}
@@ -2326,14 +2663,24 @@ export default function BoxManagementScreen() {
                     {/* Filtered Clients List */}
                     {(() => {
                       const query = modalClientSearch.toLowerCase().trim();
+                      const queryPortNum = query.startsWith("port")
+                        ? extractPortNumber(query)
+                        : 0;
                       const filteredClients =
-                        selectedBoxForDetails.clients.filter(
-                          (c) =>
-                            query === "" ||
+                        selectedBoxForDetails.clients.filter((c) => {
+                          if (query === "") return true;
+                          if (
+                            queryPortNum > 0 &&
+                            extractPortNumber(c.port) === queryPortNum
+                          ) {
+                            return true;
+                          }
+                          return (
                             c.name.toLowerCase().includes(query) ||
                             c.accountNumber.toLowerCase().includes(query) ||
-                            c.port.toLowerCase().includes(query),
-                        );
+                            c.port.toLowerCase().includes(query)
+                          );
+                        });
 
                       if (selectedBoxForDetails.clients.length === 0) {
                         return (
@@ -2347,7 +2694,7 @@ export default function BoxManagementScreen() {
                               No subscribers connected to this box yet.
                             </Text>
                             <TouchableOpacity
-                              onPress={handleOpenAddClientModal}
+                              onPress={() => handleOpenAddClientModal()}
                               className="mt-3 bg-[#4d6029] px-4 py-2 rounded-xl flex-row items-center"
                               activeOpacity={0.8}
                             >
@@ -2720,28 +3067,40 @@ export default function BoxManagementScreen() {
         </Modal>
       )}
 
-      {/* MODAL 2: REGISTER NEW DISTRIBUTION BOX */}
+      {/* MODAL 2: REGISTER / EDIT DISTRIBUTION BOX */}
       {isRegisterModalOpen && (
         <Modal
           visible={isRegisterModalOpen}
           transparent
           animationType="fade"
           statusBarTranslucent={true}
-          onRequestClose={() => setIsRegisterModalOpen(false)}
+          onRequestClose={() => {
+            setIsRegisterModalOpen(false);
+            setEditingBox(null);
+          }}
         >
           <View className="flex-1 bg-black/60 items-center justify-center p-4">
             <View className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 p-6">
               <View className="flex-row items-center justify-between pb-4 border-b border-slate-100 mb-4">
                 <View className="flex-row items-center">
                   <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
-                    <Ionicons name="add-circle" size={18} color="#4d6029" />
+                    <Ionicons
+                      name={editingBox ? "create-outline" : "add-circle"}
+                      size={18}
+                      color="#4d6029"
+                    />
                   </View>
                   <Text className="text-base font-poppins-bold text-[#0f172a]">
-                    Register New Distribution Box
+                    {editingBox
+                      ? `Edit Distribution Box (${editingBox.code})`
+                      : "Register New Distribution Box"}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => setIsRegisterModalOpen(false)}
+                  onPress={() => {
+                    setIsRegisterModalOpen(false);
+                    setEditingBox(null);
+                  }}
                   className="p-1 rounded-full bg-slate-100"
                 >
                   <Ionicons name="close" size={18} color="#475569" />
@@ -3457,7 +3816,7 @@ export default function BoxManagementScreen() {
 
                       {/* Dropdown Options Panel */}
                       {isPortsDropdownOpen && (
-                        <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-md">
+                        <View className="mt-1.5 bg-white border border-slate-200 rounded-2xl overflow-hidden">
                           {getDynamicPortOptions(
                             newCategory,
                             newSelectedEquipment,
@@ -3523,12 +3882,15 @@ export default function BoxManagementScreen() {
                 >
                   <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
                   <Text className="text-white text-xs font-poppins-bold ml-1.5">
-                    Save Box & Generate QR
+                    {editingBox ? "Save Changes" : "Save Box & Generate QR"}
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => setIsRegisterModalOpen(false)}
+                  onPress={() => {
+                    setIsRegisterModalOpen(false);
+                    setEditingBox(null);
+                  }}
                   className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">
@@ -4547,21 +4909,36 @@ export default function BoxManagementScreen() {
               </ScrollView>
 
               {/* Action Buttons */}
-              <View className="flex-row space-x-2 pt-4 border-t border-slate-100">
+              <View className="flex-row items-center gap-2 pt-4 border-t border-slate-100">
                 <TouchableOpacity
                   onPress={handleSaveNewClient}
-                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-sm mr-2"
+                  className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-sm"
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                  <Ionicons name="checkmark-circle" size={15} color="#ffffff" />
                   <Text className="text-white text-xs font-poppins-bold ml-1.5">
                     Connect & Activate
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={handleQueueForFieldTech}
+                  className="bg-[#FCF0DA] border border-[#edd5a6] px-3.5 py-3 rounded-xl items-center justify-center flex-row"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="construct-outline"
+                    size={14}
+                    color="#78350f"
+                  />
+                  <Text className="text-[#78350f] text-xs font-poppins-bold ml-1.5">
+                    Queue for Field Tech
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={handleCloseAddClientModal}
-                  className="px-4 py-3 bg-slate-100 rounded-xl items-center justify-center"
+                  className="px-3.5 py-3 bg-slate-100 rounded-xl items-center justify-center"
                 >
                   <Text className="text-[#475569] text-xs font-poppins-bold">
                     Cancel

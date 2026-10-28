@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
-import { db } from '../db/index.js';
+import { db, withDbRetry } from '../db/index.js';
 import { users, distributionBoxes, scanAuditLogs } from '../db/schema.js';
 import { eq, ne, desc, and } from 'drizzle-orm';
 
@@ -93,14 +93,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       return { rawTechs, audits, boxes };
     };
 
-    let queryResult;
-    try {
-      queryResult = await fetchTechnicianData();
-    } catch (firstErr) {
-      // Retry once if serverless PostgreSQL recycled an idle connection socket
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      queryResult = await fetchTechnicianData();
-    }
+    const queryResult = await withDbRetry(fetchTechnicianData);
 
     const { rawTechs: rawTechnicians, audits: allAudits, boxes: allBoxes } = queryResult;
     const boxMap = new Map(allBoxes.map((b) => [b.id, b]));

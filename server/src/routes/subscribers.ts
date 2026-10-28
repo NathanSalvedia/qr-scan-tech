@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { db } from '../db/index.js';
+import { db, withDbRetry } from '../db/index.js';
 import { subscribers, clientConnections } from '../db/schema.js';
 import { eq, or, ilike, sql, desc } from 'drizzle-orm';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
@@ -105,11 +105,13 @@ router.get('/lookup/:accountNumber', requireAuth, async (req: AuthenticatedReque
     }
 
     // 1. Search in Central Subscribers Table
-    const [sub] = await db
-      .select()
-      .from(subscribers)
-      .where(eq(subscribers.accountNumber, rawAccount))
-      .limit(1);
+    const [sub] = await withDbRetry(() =>
+      db
+        .select()
+        .from(subscribers)
+        .where(eq(subscribers.accountNumber, rawAccount))
+        .limit(1)
+    );
 
     if (sub) {
       return res.json({
@@ -134,11 +136,13 @@ router.get('/lookup/:accountNumber', requireAuth, async (req: AuthenticatedReque
     }
 
     // 2. Search in existing Client Connections (already connected clients)
-    const [clientConn] = await db
-      .select()
-      .from(clientConnections)
-      .where(eq(clientConnections.accountNumber, rawAccount))
-      .limit(1);
+    const [clientConn] = await withDbRetry(() =>
+      db
+        .select()
+        .from(clientConnections)
+        .where(eq(clientConnections.accountNumber, rawAccount))
+        .limit(1)
+    );
 
     if (clientConn) {
       return res.json({
@@ -170,57 +174,6 @@ router.get('/lookup/:accountNumber', requireAuth, async (req: AuthenticatedReque
   }
 });
 
-// Default pending installation work orders seeded if no pending orders exist yet
-const DEFAULT_PENDING_WORK_ORDERS = [
-  {
-    accountNumber: '2608001018',
-    customerName: 'Marco Polo Villanueva',
-    subscriberType: 'Residential',
-    servicePlan: '200 Mbps Fiber Plan',
-    contactNumber: '0917-552-8410',
-    address: 'Purok 4, Tibanga, Iligan City',
-  },
-  {
-    accountNumber: '2608001026',
-    customerName: 'Kape Iligan Roastery & Co.',
-    subscriberType: 'Commercial',
-    servicePlan: '300 Mbps Fiber Plan',
-    contactNumber: '0918-334-9102',
-    address: 'Quezon Ave, Poblacion, Iligan City',
-  },
-  {
-    accountNumber: '2608001034',
-    customerName: 'Elena Grace Macapagal',
-    subscriberType: 'Residential',
-    servicePlan: '100 Mbps Fiber Plan',
-    contactNumber: '0998-741-2095',
-    address: 'Zamora St, San Miguel, Iligan City',
-  },
-  {
-    accountNumber: '2608001042',
-    customerName: 'Mindanao Tech Hub Solutions',
-    subscriberType: 'Commercial',
-    servicePlan: '300 Mbps Fiber Plan',
-    contactNumber: '0917-890-4412',
-    address: 'Andres Bonifacio Ave, Saray, Iligan City',
-  },
-  {
-    accountNumber: '2608001059',
-    customerName: 'Dr. Rafael Mendoza Clinic',
-    subscriberType: 'Commercial',
-    servicePlan: '200 Mbps Fiber Plan',
-    contactNumber: '0920-614-3381',
-    address: 'Roxas Ave, Mahayahay, Iligan City',
-  },
-  {
-    accountNumber: '2608001067',
-    customerName: 'Hannah Mae Alcantara',
-    subscriberType: 'Residential',
-    servicePlan: '100 Mbps Fiber Plan',
-    contactNumber: '0915-409-7731',
-    address: 'Bro. Jeffrey Rd, Pala-o, Iligan City',
-  },
-];
 
 // =========================================================================
 // 3. LIST / SEARCH CENTRAL SUBSCRIBERS DIRECTORY
@@ -229,28 +182,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { search, status } = req.query;
 
-    let allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
-
-    // Ensure default pending installation work orders exist for field technician drop wire assignment
-    const hasPending = allSubs.some((s) => s.status === 'PENDING_PROVISIONING' && !s.assignedBoxId);
-    if (!hasPending) {
-      try {
-        for (const item of DEFAULT_PENDING_WORK_ORDERS) {
-          await db.execute(sql`
-            INSERT INTO subscribers (
-              account_number, customer_name, subscriber_type, service_plan, contact_number, address, status
-            )
-            VALUES (
-              ${item.accountNumber}, ${item.customerName}, ${item.subscriberType}, ${item.servicePlan}, ${item.contactNumber}, ${item.address}, 'PENDING_PROVISIONING'
-            )
-            ON CONFLICT (account_number) DO NOTHING;
-          `);
-        }
-        allSubs = await db.select().from(subscribers).orderBy(desc(subscribers.createdAt));
-      } catch (seedErr) {
-        console.warn('Non-fatal: could not seed default pending work orders', seedErr);
-      }
-    }
+    let allSubs = await withDbRetry(() =>
+      db.select().from(subscribers).orderBy(desc(subscribers.createdAt))
+    );
 
     if (search && typeof search === 'string') {
       const q = search.toLowerCase().trim();
@@ -303,23 +237,41 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ success: false, message: 'Account number and customer name are required.' });
     }
 
-    const [newSub] = await db
-      .insert(subscribers)
-      .values({
-        accountNumber: String(accountNumber).trim(),
-        customerName: String(customerName).trim(),
-        subscriberType: subscriberType || 'Residential',
-        servicePlan: servicePlan || '200 Mbps Fiber Pro',
-        contactNumber,
-        email,
-        address,
-        status: 'PENDING_PROVISIONING',
-      })
-      .returning();
+    const cleanAcc = String(accountNumber).trim();
+    const cleanName = String(customerName).trim();
+    const cleanType = subscriberType || 'Residential';
+    const cleanPlan = servicePlan || '200 Mbps Fiber Pro';
+
+    const [newSub] = await withDbRetry(async () => {
+      await db.execute(sql`
+        INSERT INTO subscribers (
+          account_number, customer_name, subscriber_type, service_plan, contact_number, email, address, status, assigned_box_id, assigned_port
+        )
+        VALUES (
+          ${cleanAcc}, ${cleanName}, ${cleanType}, ${cleanPlan}, ${contactNumber || null}, ${email || null}, ${address || null}, 'PENDING_PROVISIONING', NULL, NULL
+        )
+        ON CONFLICT (account_number) DO UPDATE
+        SET
+          customer_name = EXCLUDED.customer_name,
+          subscriber_type = EXCLUDED.subscriber_type,
+          service_plan = EXCLUDED.service_plan,
+          contact_number = COALESCE(EXCLUDED.contact_number, subscribers.contact_number),
+          address = COALESCE(EXCLUDED.address, subscribers.address),
+          status = 'PENDING_PROVISIONING',
+          assigned_box_id = NULL,
+          assigned_port = NULL,
+          updated_at = NOW();
+      `);
+      return db
+        .select()
+        .from(subscribers)
+        .where(eq(subscribers.accountNumber, cleanAcc))
+        .limit(1);
+    });
 
     return res.json({
       success: true,
-      message: 'Subscriber created successfully.',
+      message: 'Subscriber queued as Pending Work Order successfully.',
       subscriber: newSub,
     });
   } catch (error: any) {

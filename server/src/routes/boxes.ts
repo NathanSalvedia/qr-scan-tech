@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { requireAuth, requireRole, AuthenticatedRequest } from '../middleware/auth.js';
-import { db } from '../db/index.js';
+import { db, withDbRetry } from '../db/index.js';
 import {
   distributionBoxes,
   clientConnections,
@@ -21,13 +21,20 @@ const router = Router();
 // =========================================================================
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const rawBoxes = await db.select().from(distributionBoxes);
-    const rawClients = await db.select().from(clientConnections);
-    const rawEquipment = await db.select().from(boxEquipment);
-    const catalogRows = await db.select().from(equipmentCatalog);
-    const zoneRows = await db.select().from(zones);
-    const scanRows = await db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt));
-    const userRows = await db.select().from(users);
+    const { rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows } =
+      await withDbRetry(async () => {
+        const [rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows] =
+          await Promise.all([
+            db.select().from(distributionBoxes),
+            db.select().from(clientConnections),
+            db.select().from(boxEquipment),
+            db.select().from(equipmentCatalog),
+            db.select().from(zones),
+            db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
+            db.select().from(users),
+          ]);
+        return { rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows };
+      });
 
     const boxCodeMap = new Map(rawBoxes.map((b) => [b.id, b.code]));
     const zoneMap = new Map(zoneRows.map((z) => [z.id, z.name]));
@@ -455,6 +462,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const {
       code,
       category,
+      parentCode,
       parentBoxId,
       siteName,
       address,
@@ -464,6 +472,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       totalPorts,
       status,
       notes,
+      equipment,
     } = req.body;
 
     const updatePayload: Record<string, any> = {
@@ -471,7 +480,21 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     };
     if (code) updatePayload.code = code.trim().toUpperCase();
     if (category) updatePayload.category = category;
-    if (parentBoxId !== undefined) updatePayload.parentBoxId = parentBoxId;
+    if (parentBoxId !== undefined) {
+      updatePayload.parentBoxId = parentBoxId;
+    } else if (parentCode !== undefined) {
+      if (!parentCode || category === 'MAIN_BOX') {
+        updatePayload.parentBoxId = null;
+      } else {
+        const [parentBox] = await db
+          .select({ id: distributionBoxes.id })
+          .from(distributionBoxes)
+          .where(eq(distributionBoxes.code, String(parentCode).trim().toUpperCase()));
+        if (parentBox) {
+          updatePayload.parentBoxId = parentBox.id;
+        }
+      }
+    }
     if (siteName) updatePayload.siteName = siteName.trim();
     if (address) updatePayload.address = address.trim();
     if (mountingType) updatePayload.mountingType = mountingType;
@@ -494,6 +517,29 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     if (!updatedBox) {
       return res.status(404).json({ success: false, message: 'Box not found' });
+    }
+
+    if (Array.isArray(equipment)) {
+      try {
+        await db.delete(boxEquipment).where(eq(boxEquipment.boxId, targetBoxId));
+        const catalogRows = await db.select().from(equipmentCatalog);
+        for (const item of equipment) {
+          const itemName = typeof item === 'object' && item !== null ? item.name : String(item);
+          const catId = typeof item === 'object' && item !== null ? item.catalogId : null;
+          const catalogMatch = catalogRows.find(
+            (c) =>
+              (catId && c.id === catId) ||
+              (itemName && c.name.toLowerCase() === itemName.toLowerCase())
+          );
+          await db.insert(boxEquipment).values({
+            boxId: targetBoxId,
+            catalogId: catalogMatch ? catalogMatch.id : itemName,
+            status: 'OPERATIONAL',
+          });
+        }
+      } catch (equipErr) {
+        console.warn('Warning: Non-critical failure updating box_equipment:', equipErr);
+      }
     }
 
     return res.json({

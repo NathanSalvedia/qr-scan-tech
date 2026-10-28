@@ -267,16 +267,14 @@ export default function BoxDetailsScreen() {
           currentClients.map((c) => String(c.accountNumber).trim())
         );
 
-        if (res.success && Array.isArray(res.subscribers) && res.subscribers.length > 0) {
+        if (res.success && Array.isArray(res.subscribers)) {
           const pendingOnly = res.subscribers.filter(
             (s) =>
               !connectedAccounts.has(String(s.accountNumber).trim()) &&
               (s.status === "PENDING_PROVISIONING" || !s.assignedBoxId)
           );
-          if (pendingOnly.length > 0) {
-            setPendingWorkOrders(pendingOnly);
-            return;
-          }
+          setPendingWorkOrders(pendingOnly);
+          return;
         }
         // Fallback to local pending work orders not already on this box
         setPendingWorkOrders(
@@ -1055,27 +1053,6 @@ export default function BoxDetailsScreen() {
             </View>
           )}
 
-          {/* GPS Proximity Guard: Verified On-Site Banner */}
-          {proximityInfo.status === "ON_SITE" && (
-            <View className="bg-emerald-50 border border-emerald-200/90 rounded-2xl px-3.5 py-2.5 mb-3.5 flex-row items-center justify-between shadow-xs">
-              <View className="flex-row items-center flex-1 mr-2">
-                <Ionicons name="shield-checkmark" size={16} color="#059669" />
-                <View className="ml-2 flex-1">
-                  <Text className="text-xs font-poppins-bold text-emerald-800">
-                    Physical On-Site Verified
-                  </Text>
-                  <Text className="text-[10px] font-poppins text-emerald-600">
-                    Scanned {proximityInfo.formattedDistance} from registered pole coordinates
-                  </Text>
-                </View>
-              </View>
-              <View className="bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0">
-                <Text className="text-[9px] font-poppins-bold text-emerald-700">
-                  SECURE
-                </Text>
-              </View>
-            </View>
-          )}
 
           {/* GPS Proximity Guard: Nearby Tolerance Banner */}
           {proximityInfo.status === "NEARBY" && (
@@ -2221,7 +2198,7 @@ export default function BoxDetailsScreen() {
                       </Text>
                     </View>
                   ) : (
-                    <View className="max-h-48 bg-slate-50/70 rounded-2xl border border-slate-200/80 p-2">
+                    <View className="max-h-64 bg-slate-50/70 rounded-2xl border border-slate-200/80 p-2">
                       <ScrollView
                         nestedScrollEnabled
                         showsVerticalScrollIndicator={true}
@@ -2323,105 +2300,6 @@ export default function BoxDetailsScreen() {
                             );
                           })}
                       </ScrollView>
-                    </View>
-                  )}
-                </View>
-
-                {/* Step 2: Read-Only Selected Work Order Verification Card */}
-                <View className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-3.5">
-                  <View className="flex-row items-center justify-between mb-2.5">
-                    <Text
-                      className="text-[11px] font-poppins-bold text-[#0f172a] flex-1 mr-2"
-                      numberOfLines={1}
-                    >
-                      Subscriber Details
-                    </Text>
-                    <View className="flex-row items-center bg-slate-200/70 px-2 py-0.5 rounded-md shrink-0">
-                      <Ionicons
-                        name="lock-closed-outline"
-                        size={10}
-                        color="#475569"
-                      />
-                      <Text className="text-[9px] font-poppins-bold text-[#475569] ml-1">
-                        Read-Only
-                      </Text>
-                    </View>
-                  </View>
-
-                  {!selectedWorkOrderAcc ? (
-                    <View className="bg-white border border-dashed border-slate-300 rounded-xl p-4 items-center justify-center">
-                      <Ionicons
-                        name="document-text-outline"
-                        size={22}
-                        color="#94a3b8"
-                      />
-                      <Text className="text-xs font-poppins-bold text-slate-700 mt-1.5">
-                        No Work Order Selected
-                      </Text>
-                      <Text className="text-[10px] font-poppins text-slate-500 text-center mt-0.5 leading-relaxed">
-                        Tap a pending work order above to load its verified
-                        account number, subscriber name, classification, and
-                        fiber plan.
-                      </Text>
-                    </View>
-                  ) : (
-                    <View className="bg-white border border-slate-200/90 rounded-xl p-3 space-y-2">
-                      {/* Account / Work Order Number */}
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-[10px] font-poppins text-[#64748b]">
-                          Account / Work Order #
-                        </Text>
-                        <Text className="text-xs font-mono font-bold text-[#0f172a]">
-                          {assignAccountNumber}
-                        </Text>
-                      </View>
-
-                      {/* Subscriber Name */}
-                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
-                        <Text className="text-[10px] font-poppins text-[#64748b]">
-                          Subscriber / Business
-                        </Text>
-                        <Text
-                          className="text-xs font-poppins-bold text-[#0f172a] max-w-[60%] text-right"
-                          numberOfLines={1}
-                        >
-                          {assignSubscriberName}
-                        </Text>
-                      </View>
-
-                      {/* Classification */}
-                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
-                        <Text className="text-[10px] font-poppins text-[#64748b]">
-                          Classification
-                        </Text>
-                        <View
-                          className={`px-2 py-0.5 rounded-md border ${
-                            assignSubscriberType === "Commercial"
-                              ? "bg-blue-50 border-blue-200"
-                              : "bg-emerald-50 border-emerald-200"
-                          }`}
-                        >
-                          <Text
-                            className={`text-[10px] font-poppins-bold ${
-                              assignSubscriberType === "Commercial"
-                                ? "text-blue-700"
-                                : "text-emerald-700"
-                            }`}
-                          >
-                            {assignSubscriberType}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Subscribed Fiber Plan */}
-                      <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
-                        <Text className="text-[10px] font-poppins text-[#64748b]">
-                          Subscribed Fiber Plan
-                        </Text>
-                        <Text className="text-xs font-poppins-bold text-[#4d6029]">
-                          {assignServicePlan}
-                        </Text>
-                      </View>
                     </View>
                   )}
                 </View>

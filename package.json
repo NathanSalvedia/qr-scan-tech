@@ -78,6 +78,7 @@
     "db:push": "drizzle-kit push --config=server/drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config=server/drizzle.config.ts",
     "db:seed": "tsx server/src/db/seed-admin.ts",
+    "db:sync": "tsx server/src/db/sync-local.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

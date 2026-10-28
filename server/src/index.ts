@@ -16,9 +16,28 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+import { sql } from 'drizzle-orm';
+import { db, syncNeonToLocal } from './db/index.js';
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Automatically mirror Neon -> Local PostgreSQL after any write operation (POST / PUT / PATCH / DELETE)
+if (!process.env.VERCEL) {
+  app.use((req, res, next) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          setTimeout(() => {
+            syncNeonToLocal(false).catch(() => {});
+          }, 200);
+        }
+      });
+    }
+    next();
+  });
+}
 
 // API Routes
 app.use('/api/auth', authRouter);
@@ -28,9 +47,6 @@ app.use('/api/technicians', techniciansRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/subscribers', subscribersRouter);
-
-import { sql } from 'drizzle-orm';
-import { db } from './db/index.js';
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -91,6 +107,14 @@ if (!process.env.VERCEL) {
     console.log(`📦 Boxes API: http://localhost:${PORT}/api/boxes`);
     console.log(`👷 Technicians API: http://localhost:${PORT}/api/technicians`);
     console.log(`📋 Activity Logs API: http://localhost:${PORT}/api/logs`);
+
+    // Initial sync from Neon Cloud -> Local PostgreSQL 18 on startup
+    syncNeonToLocal(true).catch(() => {});
+
+    // Keep Local PostgreSQL 18 in sync with Neon Cloud every 15 seconds
+    setInterval(() => {
+      syncNeonToLocal(false).catch(() => {});
+    }, 15000);
   });
 }
 

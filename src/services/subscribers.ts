@@ -109,4 +109,29 @@ export const subscriberService = {
       return { success: false, subscribers: [], message: err.message || 'Failed to fetch directory' };
     }
   },
+
+  // 4. Create / Queue a Pending Subscriber Work Order for Field Technicians
+  createSubscriber: async (payload: {
+    accountNumber: string;
+    customerName: string;
+    subscriberType: string;
+    servicePlan: string;
+    contactNumber?: string;
+    address?: string;
+  }): Promise<{ success: boolean; subscriber?: SubscriberRecord; message?: string }> => {
+    try {
+      const token = authState.getToken();
+      const res = await apiFetch(`${API_URL}/subscribers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to queue subscriber work order' };
+    }
+  },
 };
