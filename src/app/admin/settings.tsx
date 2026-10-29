@@ -636,7 +636,7 @@ export default function SettingsScreen() {
                           <TextInput
                             value={tokenPrefix}
                             onChangeText={setTokenPrefix}
-                            placeholder="QRTECH-BOX-"
+                            placeholder="ScanOps-Box-"
                             placeholderTextColor="#94a3b8"
                             className="flex-1 ml-2.5 text-xs font-mono font-bold text-[#4d6029]"
                           />

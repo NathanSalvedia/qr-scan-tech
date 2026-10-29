@@ -38,6 +38,7 @@ export interface AuditLogItem {
   locationVerified?: boolean;
   scanLatitude?: string | null;
   scanLongitude?: string | null;
+  evidencePhoto?: string | null;
   metadata?: Record<string, string>;
   rawDate: number;
 }
@@ -210,6 +211,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         locationVerified: scan.locationVerified !== null ? Boolean(scan.locationVerified) : true,
         scanLatitude: scan.scanLatitude ? String(scan.scanLatitude) : null,
         scanLongitude: scan.scanLongitude ? String(scan.scanLongitude) : null,
+        evidencePhoto: scan.evidencePhoto || null,
         metadata,
         rawDate: scanDate.getTime(),
       });
@@ -618,6 +620,7 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
       scanType = 'CAMERA_QR',
       padlockVerified = true,
       auditNotes,
+      evidencePhoto = null,
       boxStatusAtScan = 'ACTIVE',
       scanLatitude,
       scanLongitude,
@@ -708,6 +711,7 @@ router.post('/scan', requireAuth, async (req: AuthenticatedRequest, res: Respons
         scanType: safeScanType,
         padlockVerified: Boolean(padlockVerified),
         auditNotes: finalNotes,
+        evidencePhoto: evidencePhoto ? String(evidencePhoto) : null,
         boxStatusAtScan: effectiveStatusAtScan,
         scanLatitude: finalScanLat,
         scanLongitude: finalScanLon,

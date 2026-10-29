@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -133,8 +134,8 @@ export default function ActivityLogsScreen() {
     switch (cat) {
       case "SCAN":
         return {
-          bg: "bg-emerald-50 border border-emerald-200",
-          text: "text-emerald-700",
+          bg: "bg-[#4d6029]/10 border border-[#4d6029]/20",
+          text: "text-[#4d6029]",
           icon: "qrcode-scan",
           label: "QR Field Scan",
         };
@@ -147,23 +148,26 @@ export default function ActivityLogsScreen() {
         };
       case "BOX_UPDATE":
         return {
-          bg: "bg-indigo-50 border border-indigo-200",
-          text: "text-indigo-700",
+          bg: "bg-[#4d6029]/10 border border-[#4d6029]/20",
+          text: "text-[#4d6029]",
           icon: "server-network",
+          iconColor: "#4d6029",
           label: "Box Registered",
         };
       case "PRINT":
         return {
-          bg: "bg-amber-50 border border-amber-200",
-          text: "text-amber-800",
+          bg: "bg-[#4d6029]/10 border border-[#4d6029]/20",
+          text: "text-[#4d6029]",
           icon: "printer",
+          iconColor: "#4d6029",
           label: "A4 Print Batch",
         };
       case "PORT_CHANGE":
         return {
-          bg: "bg-sky-50 border border-sky-200",
-          text: "text-sky-700",
+          bg: "bg-[#4d6029]/10 border border-[#4d6029]/20",
+          text: "text-[#4d6029]",
           icon: "lan-connect",
+          iconColor: "#4d6029",
           label: "Port Provisioned",
         };
       case "USER_REGISTER":
@@ -377,11 +381,11 @@ export default function ActivityLogsScreen() {
                     <Text className="text-xs font-poppins-medium text-[#64748b]">
                       Verified QR Scans
                     </Text>
-                    <View className="w-8 h-8 rounded-xl bg-emerald-50 items-center justify-center border border-emerald-200">
+                    <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center border border-[#4d6029]/20">
                       <MaterialCommunityIcons
                         name="qrcode-scan"
                         size={16}
-                        color="#059669"
+                        color="#4d6029"
                       />
                     </View>
                   </View>
@@ -389,8 +393,8 @@ export default function ActivityLogsScreen() {
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
                       {scanCount}
                     </Text>
-                    <View className="bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      <Text className="text-[10px] font-poppins-bold text-emerald-700">
+                    <View className="bg-[#4d6029]/10 px-2.5 py-0.5 rounded-full border border-[#4d6029]/20">
+                      <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
                         GPS Verified
                       </Text>
                     </View>
@@ -457,11 +461,11 @@ export default function ActivityLogsScreen() {
                     <Text className="text-xs font-poppins-medium text-[#64748b]">
                       Registrations & Prints
                     </Text>
-                    <View className="w-8 h-8 rounded-xl bg-amber-50 items-center justify-center border border-amber-200">
+                    <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center border border-[#4d6029]/20">
                       <MaterialCommunityIcons
                         name="account-plus-outline"
                         size={16}
-                        color="#d97706"
+                        color="#4d6029"
                       />
                     </View>
                   </View>
@@ -469,8 +473,8 @@ export default function ActivityLogsScreen() {
                     <Text className="text-3xl font-poppins-bold text-[#0f172a] mr-2">
                       {userRegCount + printCount + updateCount}
                     </Text>
-                    <View className="bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                      <Text className="text-[10px] font-poppins-bold text-amber-800">
+                    <View className="bg-[#4d6029]/10 px-2.5 py-0.5 rounded-full border border-[#4d6029]/20">
+                      <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
                         {userRegCount} Registered
                       </Text>
                     </View>
@@ -572,15 +576,15 @@ export default function ActivityLogsScreen() {
                 className="w-full"
                 contentContainerStyle={{ minWidth: "100%", flexGrow: 1 }}
               >
-                <View className="w-full flex-1 min-w-[1050px]">
+                <View className="w-full flex-1 min-w-[1120px]">
                   {/* Table Column Header */}
                   <View className="flex-row bg-[#f8fafc] border-b border-slate-200/80 px-6 py-3.5 items-center w-full">
-                    <View className="flex-[1.5] min-w-[150px] pr-2">
+                    <View className="flex-[1.4] min-w-[140px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Timestamp
                       </Text>
                     </View>
-                    <View className="flex-[1.5] min-w-[150px] pr-2">
+                    <View className="flex-[2.4] min-w-[250px] pr-2">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Event Category
                       </Text>
@@ -595,7 +599,7 @@ export default function ActivityLogsScreen() {
                         Target Box
                       </Text>
                     </View>
-                    <View className="flex-[3] min-w-[300px] pr-3">
+                    <View className="flex-[3] min-w-[280px] pr-3">
                       <Text className="text-[11px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
                         Activity Summary & Notes
                       </Text>
@@ -659,7 +663,7 @@ export default function ActivityLogsScreen() {
                           }`}
                         >
                           {/* 1. Timestamp */}
-                          <View className="flex-[1.5] min-w-[150px] pr-2">
+                          <View className="flex-[1.4] min-w-[140px] pr-2">
                             <Text className="text-xs font-poppins-bold text-[#0f172a]">
                               {item.timestamp.split("·")[1]?.trim() ||
                                 item.timestamp}
@@ -672,60 +676,63 @@ export default function ActivityLogsScreen() {
                             </View>
                           </View>
 
-                          {/* 2. Event Category Badge */}
-                          <View className="flex-[1.5] min-w-[150px] pr-2">
-                            <View
-                              className={`inline-flex self-start px-2.5 py-1 rounded-lg flex-row items-center ${catMeta.bg}`}
-                            >
-                              <MaterialCommunityIcons
-                                name={catMeta.icon as any}
-                                size={12}
-                                color={
-                                  item.category === "ALARM"
-                                    ? "#dc2626"
-                                    : item.category === "USER_REGISTER"
-                                    ? "#4d6029"
-                                    : "#059669"
-                                }
-                              />
-                              <Text
-                                className={`text-[10px] font-poppins-bold ml-1.5 ${catMeta.text}`}
-                              >
-                                {catMeta.label}
-                              </Text>
-                            </View>
-
-                            {/* GPS Proximity Guard Badge */}
-                            {item.distanceMeters !== undefined && item.distanceMeters !== null && (
+                          {/* 2. Event Category (2-Column Grid Layout) */}
+                          <View className="flex-[2.4] min-w-[250px] pr-2 flex-row items-center">
+                            {/* Column A: Category Badge */}
+                            <View className="flex-1 mr-2 items-start justify-center">
                               <View
-                                className={`inline-flex self-start px-2 py-0.5 rounded-md flex-row items-center mt-1 border ${
-                                  item.locationVerified === false
-                                    ? "bg-rose-50 border-rose-300"
-                                    : item.distanceMeters <= 50
-                                    ? "bg-emerald-50 border-emerald-200"
-                                    : "bg-amber-50 border-amber-200"
-                                }`}
+                                className={`inline-flex self-start px-2.5 py-1 rounded-full flex-row items-center border ${catMeta.bg}`}
                               >
-                                <Ionicons
-                                  name={item.locationVerified === false ? "warning" : "shield-checkmark"}
-                                  size={10}
-                                  color={item.locationVerified === false ? "#dc2626" : "#059669"}
+                                <MaterialCommunityIcons
+                                  name={catMeta.icon as any}
+                                  size={12}
+                                  color={
+                                    item.category === "ALARM"
+                                      ? "#dc2626"
+                                      : "#4d6029"
+                                  }
                                 />
                                 <Text
-                                  className={`text-[9px] font-poppins-bold ml-1 ${
-                                    item.locationVerified === false
-                                      ? "text-rose-700"
-                                      : item.distanceMeters <= 50
-                                      ? "text-emerald-700"
-                                      : "text-amber-800"
-                                  }`}
+                                  className={`text-[10px] font-poppins-bold ml-1.5 ${catMeta.text}`}
                                 >
-                                  {item.locationVerified === false
-                                    ? `Mismatch (${formatDistance(item.distanceMeters)})`
-                                    : `On-Site (${formatDistance(item.distanceMeters)})`}
+                                  {catMeta.label}
                                 </Text>
                               </View>
-                            )}
+                            </View>
+
+                            {/* Column B: Proximity Guard Badge */}
+                            <View className="flex-1 items-start justify-center">
+                              {item.distanceMeters !== undefined && item.distanceMeters !== null && (
+                                <View
+                                  className={`inline-flex self-start px-2.5 py-0.5 rounded-full flex-row items-center border ${
+                                    item.locationVerified === false
+                                      ? "bg-rose-50 border-rose-300"
+                                      : item.distanceMeters <= 50
+                                      ? "bg-[#4d6029]/10 border-[#4d6029]/20"
+                                      : "bg-amber-50 border-amber-200"
+                                  }`}
+                                >
+                                  <Ionicons
+                                    name={item.locationVerified === false ? "warning" : "shield-checkmark"}
+                                    size={10}
+                                    color={item.locationVerified === false ? "#dc2626" : "#4d6029"}
+                                  />
+                                  <Text
+                                    className={`text-[9px] font-poppins-bold ml-1 ${
+                                      item.locationVerified === false
+                                        ? "text-rose-700"
+                                        : item.distanceMeters <= 50
+                                        ? "text-[#4d6029]"
+                                        : "text-amber-800"
+                                    }`}
+                                  >
+                                    {item.locationVerified === false
+                                      ? `Mismatch (${formatDistance(item.distanceMeters)})`
+                                      : `On-Site (${formatDistance(item.distanceMeters)})`}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
 
                           {/* 3. Actor / User */}
@@ -758,6 +765,14 @@ export default function ActivityLogsScreen() {
                                   {item.targetBoxCode}
                                 </Text>
                               </View>
+                              {item.evidencePhoto && (
+                                <View className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 flex-row items-center">
+                                  <Ionicons name="camera" size={10} color="#d97706" />
+                                  <Text className="text-[9px] font-poppins-bold text-amber-800 ml-1">
+                                    Photo
+                                  </Text>
+                                </View>
+                              )}
                             </View>
                             <Text
                               className="text-[10px] font-poppins text-[#64748b] mt-0.5"
@@ -945,7 +960,7 @@ export default function ActivityLogsScreen() {
                 <View className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70 mb-3">
                   <View className="flex-row items-center justify-between mb-1.5">
                     <View
-                      className={`inline-flex self-start px-2.5 py-0.5 rounded-md ${
+                      className={`inline-flex self-start px-2.5 py-0.5 rounded-full border ${
                         getCategoryBadge(selectedLogForDetails.category).bg
                       }`}
                     >
@@ -1014,7 +1029,7 @@ export default function ActivityLogsScreen() {
                     <View
                       className={`mb-3.5 p-3.5 rounded-2xl border ${
                         selectedLogForDetails.locationVerified
-                          ? "bg-emerald-50/70 border-emerald-200"
+                          ? "bg-[#4d6029]/10 border-[#4d6029]/20"
                           : "bg-rose-50 border-rose-300"
                       }`}
                     >
@@ -1029,7 +1044,7 @@ export default function ActivityLogsScreen() {
                             size={16}
                             color={
                               selectedLogForDetails.locationVerified
-                                ? "#059669"
+                                ? "#4d6029"
                                 : "#dc2626"
                             }
                           />
@@ -1038,16 +1053,16 @@ export default function ActivityLogsScreen() {
                           </Text>
                         </View>
                         <View
-                          className={`px-2 py-0.5 rounded-full ${
+                          className={`px-2.5 py-0.5 rounded-full border ${
                             selectedLogForDetails.locationVerified
-                              ? "bg-emerald-100"
-                              : "bg-rose-100"
+                              ? "bg-[#4d6029]/15 border-[#4d6029]/30"
+                              : "bg-rose-100 border-rose-300"
                           }`}
                         >
                           <Text
                             className={`text-[10px] font-poppins-bold ${
                               selectedLogForDetails.locationVerified
-                                ? "text-emerald-800"
+                                ? "text-[#4d6029]"
                                 : "text-rose-800"
                             }`}
                           >
@@ -1074,7 +1089,7 @@ export default function ActivityLogsScreen() {
                           <Text
                             className={`text-xs font-poppins-bold ${
                               selectedLogForDetails.locationVerified
-                                ? "text-emerald-700"
+                                ? "text-[#4d6029]"
                                 : "text-rose-600"
                             }`}
                           >
@@ -1102,6 +1117,32 @@ export default function ActivityLogsScreen() {
                       </View>
                     </View>
                   )}
+
+                {/* Attached Photo Evidence */}
+                {selectedLogForDetails.evidencePhoto && (
+                  <View className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
+                    <View className="flex-row items-center justify-between mb-2.5">
+                      <View className="flex-row items-center">
+                        <Ionicons name="camera" size={16} color="#4d6029" />
+                        <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                          Attached Field Photo Evidence:
+                        </Text>
+                      </View>
+                      <View className="px-2 py-0.5 rounded-full bg-[#4d6029]/10 border border-[#4d6029]/20">
+                        <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                          Field Proof
+                        </Text>
+                      </View>
+                    </View>
+                    <View className="rounded-xl overflow-hidden bg-slate-900 border border-slate-200">
+                      <Image
+                        source={{ uri: selectedLogForDetails.evidencePhoto }}
+                        style={{ width: "100%", height: 220 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  </View>
+                )}
 
                 {/* Telemetry & Device Metadata */}
                 <View className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70">

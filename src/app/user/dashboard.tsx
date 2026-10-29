@@ -1,9 +1,16 @@
 import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { useAuth } from "@/services/auth-state";
-import { boxService } from "@/services/boxes";
+import { boxService, type DistributionBox } from "@/services/boxes";
 import { logsService, type RecentScanItem } from "@/services/logs";
+import { settingsService, type OutboxItem } from "@/services/settings";
+import {
+  calculateDistanceInMeters,
+  formatDistance,
+  getCurrentLocationAsync,
+  openGoogleMapsNavigation,
+} from "@/utils/geo";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -11,6 +18,7 @@ import {
   Alert,
   AppState,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -93,6 +101,17 @@ export default function UserDashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Field Navigation & Nearest Distribution Node
+  const [nearestBox, setNearestBox] = useState<
+    (DistributionBox & { distanceMeters: number; distanceText: string }) | null
+  >(null);
+
+  // Outbox & Offline Sync state
+  const [outboxCount, setOutboxCount] = useState(0);
+  const [outboxItems, setOutboxItems] = useState<OutboxItem[]>([]);
+  const [outboxModalOpen, setOutboxModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Dynamically update greeting every 30 seconds and whenever app returns to active
   useEffect(() => {
     const updateGreeting = () => {
@@ -113,18 +132,77 @@ export default function UserDashboardScreen() {
     };
   }, []);
 
+  const locateNearestBox = useCallback(async (boxesList: DistributionBox[]) => {
+    if (!boxesList || boxesList.length === 0) return;
+    try {
+      const loc = await getCurrentLocationAsync(5000);
+      if (loc) {
+        let min = Infinity;
+        let closest: (DistributionBox & {
+          distanceMeters: number;
+          distanceText: string;
+        }) | null = null;
+
+        for (const b of boxesList) {
+          if (b.latitude && b.longitude) {
+            const d = calculateDistanceInMeters(
+              loc.latitude,
+              loc.longitude,
+              Number(b.latitude),
+              Number(b.longitude)
+            );
+            if (d < min) {
+              min = d;
+              closest = {
+                ...b,
+                distanceMeters: d,
+                distanceText: formatDistance(d),
+              };
+            }
+          }
+        }
+        if (closest) {
+          setNearestBox(closest);
+          return;
+        }
+      }
+
+      // Fallback: If device GPS takes longer than timeout or is disabled on the emulator,
+      // preserve previous or show the primary active box with coordinates ready
+      setNearestBox((prev) => {
+        if (prev) return prev;
+        const defaultBox =
+          boxesList.find(
+            (b) => b.status === "ACTIVE" && b.latitude && b.longitude
+          ) || boxesList.find((b) => b.latitude && b.longitude);
+        if (defaultBox) {
+          return {
+            ...defaultBox,
+            distanceMeters: 0,
+            distanceText: "Coordinates Ready",
+          };
+        }
+        return null;
+      });
+    } catch (err) {
+      console.warn("Could not determine nearest box:", err);
+    }
+  }, []);
+
   const fetchDashboard = useCallback(async () => {
-    const [boxesRes, scansRes] = await Promise.all([
+    const [boxesRes, scansRes, outboxItemsList] = await Promise.all([
       boxService.getAll(),
       logsService.getMyRecentScans(5),
+      settingsService.getOutboxItems(),
     ]);
 
-    const boxes =
-      boxesRes.success && boxesRes.boxes
-        ? (boxesRes.boxes as { status: string }[])
+    const boxes: DistributionBox[] | null =
+      boxesRes.success && Array.isArray(boxesRes.boxes)
+        ? (boxesRes.boxes as DistributionBox[])
         : null;
 
     return {
+      boxes,
       stats: boxes
         ? {
             total: boxes.length,
@@ -134,6 +212,7 @@ export default function UserDashboardScreen() {
           }
         : null,
       scans: scansRes.success && scansRes.scans ? scansRes.scans : null,
+      outbox: outboxItemsList || [],
     };
   }, []);
 
@@ -144,8 +223,15 @@ export default function UserDashboardScreen() {
       try {
         const data = await fetchDashboard();
         if (!isMounted) return;
+        if (data.boxes) {
+          locateNearestBox(data.boxes);
+        }
         if (data.stats) setStats(data.stats);
         if (data.scans) setRecentScans(data.scans);
+        if (data.outbox) {
+          setOutboxItems(data.outbox);
+          setOutboxCount(data.outbox.length);
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -156,19 +242,103 @@ export default function UserDashboardScreen() {
     return () => {
       isMounted = false;
     };
-  }, [fetchDashboard]);
+  }, [fetchDashboard, locateNearestBox]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      (async () => {
+        try {
+          const data = await fetchDashboard();
+          if (!isMounted) return;
+          if (data.boxes) {
+            locateNearestBox(data.boxes);
+          }
+          if (data.stats) setStats(data.stats);
+          if (data.scans) setRecentScans(data.scans);
+          if (data.outbox) {
+            setOutboxItems(data.outbox);
+            setOutboxCount(data.outbox.length);
+          }
+        } catch (e) {
+          console.warn("Dashboard focus refresh error:", e);
+        }
+      })();
+      return () => {
+        isMounted = false;
+      };
+    }, [fetchDashboard, locateNearestBox])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     setGreeting(getGreeting());
     try {
       const data = await fetchDashboard();
+      if (data.boxes) {
+        locateNearestBox(data.boxes);
+      }
       if (data.stats) setStats(data.stats);
       if (data.scans) setRecentScans(data.scans);
+      if (data.outbox) {
+        setOutboxItems(data.outbox);
+        setOutboxCount(data.outbox.length);
+
+        // Auto-drain outbox if online
+        if (data.outbox.length > 0) {
+          settingsService
+            .syncOutboxQueue()
+            .then(async (syncRes) => {
+              if (syncRes.syncedCount > 0) {
+                const count = await settingsService.getOutboxCount();
+                const items = await settingsService.getOutboxItems();
+                setOutboxCount(count);
+                setOutboxItems(items);
+              }
+            })
+            .catch(() => {});
+        }
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [fetchDashboard]);
+  }, [fetchDashboard, locateNearestBox]);
+
+  const handleSyncNow = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      const result = await settingsService.syncOutboxQueue();
+      const updatedCount = await settingsService.getOutboxCount();
+      const updatedItems = await settingsService.getOutboxItems();
+      setOutboxCount(updatedCount);
+      setOutboxItems(updatedItems);
+      await handleRefresh();
+
+      if (result.syncedCount > 0) {
+        Alert.alert(
+          "Sync Complete",
+          `🎉 Successfully synchronized ${result.syncedCount} offline ${
+            result.syncedCount === 1 ? "record" : "records"
+          } to central NOC!`
+        );
+      } else if (result.failedCount > 0) {
+        Alert.alert(
+          "Sync Incomplete",
+          "Could not reach server. Please check your cellular data or WiFi connection."
+        );
+      } else {
+        Alert.alert("All Synced", "No pending offline items to sync.");
+      }
+    } catch {
+      Alert.alert(
+        "Sync Failed",
+        "Could not complete sync. Please verify cellular or WiFi connection."
+      );
+    } finally {
+      setIsSyncing(false);
+      setOutboxModalOpen(false);
+    }
+  }, [handleRefresh]);
 
   const totalBoxes = stats.total;
   const taggedBoxes = stats.tagged;
@@ -229,10 +399,47 @@ export default function UserDashboardScreen() {
               {greeting}, {displayName}!
             </Text>
           </View>
+
+          {/* Outbox & Offline Sync Indicator */}
+          <TouchableOpacity
+            onPress={() => {
+              if (outboxCount > 0) {
+                setOutboxModalOpen(true);
+              } else {
+                handleRefresh();
+              }
+            }}
+            className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+              outboxCount > 0
+                ? "bg-amber-50 border-amber-200"
+                : "bg-[#4d6029]/10 border-[#4d6029]/20"
+            }`}
+            activeOpacity={0.75}
+          >
+            {outboxCount > 0 ? (
+              <>
+                <MaterialCommunityIcons
+                  name="cloud-sync-outline"
+                  size={14}
+                  color="#d97706"
+                />
+                <Text className="text-[11px] font-poppins-bold text-amber-800 ml-1.5">
+                  Outbox ({outboxCount})
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="cloud-done-outline" size={14} color="#4d6029" />
+                <Text className="text-[10px] font-poppins-bold text-[#4d6029] ml-1.5">
+                  {refreshing ? "Syncing..." : "Synced"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Hero Quick Scan Card */}
-        <View className="bg-[#4d6029] rounded-2xl p-5 mb-6 shadow-md shadow-[#4d6029]/20 relative overflow-hidden">
+        <View className="bg-[#4d6029] rounded-2xl p-5 mb-5 shadow-md shadow-[#4d6029]/20 relative overflow-hidden">
           {/* Background Decorative Watermark */}
           <View className="absolute -right-6 -bottom-6 opacity-10 pointer-events-none">
             <Image
@@ -276,6 +483,84 @@ export default function UserDashboardScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Nearest Distribution Node Quick-Launch Card */}
+        {nearestBox && (
+          <View className="bg-white rounded-2xl p-4 mb-5 border border-[#4d6029]/25 shadow-sm shadow-[#4d6029]/10">
+            <View className="flex-row items-center justify-between mb-2">
+              <View className="flex-row items-center flex-1 pr-2">
+                <View className="w-8 h-8 rounded-xl bg-[#4d6029]/10 items-center justify-center mr-2.5">
+                  <Ionicons name="location" size={17} color="#4d6029" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-[10px] font-poppins-bold text-[#4d6029] uppercase tracking-wider">
+                    Nearest Distribution Node
+                  </Text>
+                  <Text
+                    className="text-sm font-poppins-bold text-[#0f172a]"
+                    numberOfLines={1}
+                  >
+                    {nearestBox.code} · {nearestBox.siteName}
+                  </Text>
+                </View>
+              </View>
+              <View className="px-2.5 py-1 rounded-full bg-[#4d6029]/10 border border-[#4d6029]/20 shrink-0">
+                <Text className="text-[10px] font-poppins-bold text-[#4d6029]">
+                  {nearestBox.distanceText} away
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              className="text-[11px] font-poppins text-slate-500 mb-3"
+              numberOfLines={1}
+            >
+              {nearestBox.address || "Field installation location"}
+            </Text>
+
+            {/* Dual Actions: Google Maps Navigation + Open Box Details */}
+            <View className="flex-row gap-2">
+              <TouchableOpacity
+                onPress={() =>
+                  openGoogleMapsNavigation(
+                    nearestBox.latitude,
+                    nearestBox.longitude,
+                    nearestBox.siteName
+                  )
+                }
+                className="flex-1 bg-[#4d6029]/10 border border-[#4d6029]/25 py-2.5 rounded-xl flex-row items-center justify-center active:bg-[#4d6029]/20"
+                activeOpacity={0.8}
+              >
+                <Ionicons name="navigate" size={14} color="#4d6029" />
+                <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1.5">
+                  Navigate to Box
+                </Text>
+                <Ionicons
+                  name="open-outline"
+                  size={12}
+                  color="#4d6029"
+                  style={{ marginLeft: 4, opacity: 0.7 }}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() =>
+                  router.push({
+                    pathname: "/user/box-details",
+                    params: { code: nearestBox.code, id: nearestBox.id },
+                  })
+                }
+                className="flex-1 bg-[#4d6029] py-2.5 rounded-xl flex-row items-center justify-center active:opacity-90 shadow-xs"
+                activeOpacity={0.88}
+              >
+                <Ionicons name="cube-outline" size={14} color="#ffffff" />
+                <Text className="text-xs font-poppins-bold text-white ml-1.5">
+                  Open Details
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Today's Summary Section Header */}
         <View className="flex-row items-center justify-between mb-3.5">
@@ -504,6 +789,120 @@ export default function UserDashboardScreen() {
 
       {/* Steady Bottom Navigation Bar */}
       <UserBottomNavigation activeRoute="/user/dashboard" />
+
+      {/* Outbox Offline Sync Modal */}
+      <Modal
+        visible={outboxModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOutboxModalOpen(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-5 max-w-lg w-full self-center">
+            <View className="flex-row items-center justify-between mb-3 pb-3 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <View className="w-8 h-8 rounded-xl bg-amber-50 items-center justify-center mr-2.5">
+                  <MaterialCommunityIcons
+                    name="cloud-sync-outline"
+                    size={18}
+                    color="#d97706"
+                  />
+                </View>
+                <View>
+                  <Text className="text-sm font-poppins-bold text-[#0f172a]">
+                    Field Outbox Queue
+                  </Text>
+                  <Text className="text-[11px] font-poppins text-slate-500">
+                    {outboxCount} {outboxCount === 1 ? "record" : "records"} awaiting sync
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setOutboxModalOpen(false)}
+                className="p-1.5 rounded-full bg-slate-100"
+              >
+                <Ionicons name="close" size={18} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView className="max-h-60 mb-4">
+              {outboxItems.length === 0 ? (
+                <View className="py-6 items-center">
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={32}
+                    color="#4d6029"
+                  />
+                  <Text className="text-xs font-poppins-bold text-[#0f172a] mt-2">
+                    All Field Records Synced
+                  </Text>
+                  <Text className="text-[11px] font-poppins text-slate-500 mt-0.5">
+                    No offline items pending upload.
+                  </Text>
+                </View>
+              ) : (
+                outboxItems.map((item) => (
+                  <View
+                    key={item.id}
+                    className="p-3 mb-2 rounded-xl bg-slate-50 border border-slate-200/70 flex-row items-center justify-between"
+                  >
+                    <View className="flex-1 mr-2">
+                      <Text className="text-xs font-poppins-bold text-[#0f172a]">
+                        {item.title || item.type}
+                      </Text>
+                      <Text className="text-[10px] font-poppins text-slate-500 mt-0.5">
+                        Queued:{" "}
+                        {new Date(item.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </Text>
+                    </View>
+                    <View className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200">
+                      <Text className="text-[9px] font-poppins-bold text-amber-800">
+                        PENDING
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <View className="flex-row gap-2 pt-2 border-t border-slate-100">
+              <TouchableOpacity
+                onPress={() => setOutboxModalOpen(false)}
+                className="flex-1 py-3 bg-slate-100 rounded-xl items-center justify-center"
+              >
+                <Text className="text-xs font-poppins-semibold text-slate-700">
+                  Close
+                </Text>
+              </TouchableOpacity>
+              {outboxCount > 0 && (
+                <TouchableOpacity
+                  onPress={handleSyncNow}
+                  disabled={isSyncing}
+                  className="flex-1 py-3 bg-[#4d6029] rounded-xl flex-row items-center justify-center active:opacity-90"
+                >
+                  {isSyncing ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons
+                        name="cloud-upload"
+                        size={16}
+                        color="#ffffff"
+                      />
+                      <Text className="text-xs font-poppins-bold text-white ml-1.5">
+                        Sync All Now
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

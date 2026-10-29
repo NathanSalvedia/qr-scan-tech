@@ -14,6 +14,7 @@ export interface ClientConnection {
   name: string;
   clientType?: 'Commercial' | 'Residential' | string;
   plan?: string;
+  signalDbm?: string | null;
   status: 'CONNECTED' | 'DISCONNECTED';
 }
 
@@ -140,6 +141,7 @@ export const boxService = {
       name: string;
       plan?: string;
       clientType?: string;
+      signalDbm?: string;
       preventOverwrite?: boolean;
     }
   ): Promise<BoxesApiResponse> => {
@@ -156,6 +158,28 @@ export const boxService = {
       return await res.json();
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to assign client.' };
+    }
+  },
+
+  // 5b. Update Optical Signal (dBm) Level
+  updateClientSignal: async (
+    boxId: string,
+    port: string,
+    signalDbm: string
+  ): Promise<BoxesApiResponse> => {
+    try {
+      const token = authState.getToken();
+      const res = await apiFetch(`${API_URL}/boxes/${boxId}/clients/${port}/signal`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ signalDbm }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to update optical signal level.' };
     }
   },
 

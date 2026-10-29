@@ -2,7 +2,7 @@ import { UserBottomNavigation } from "@/components/user-bottom-navigation";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +17,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { boxService } from "@/services/boxes";
+import {
+  calculateDistanceInMeters,
+  evaluateProximity,
+  getCurrentLocationAsync,
+  openGoogleMapsNavigation,
+} from "@/utils/geo";
 
 export interface UserMapPin {
   id: string;
@@ -62,6 +68,42 @@ export default function UserMapScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPin, setSelectedPin] = useState<UserMapPin | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [userCoords, setUserCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
+  // Fetch technician location for distance calculation
+  useEffect(() => {
+    let isMounted = true;
+    getCurrentLocationAsync(4000).then((coords) => {
+      if (isMounted && coords) {
+        setUserCoords(coords);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Compute live proximity to selected box
+  const selectedPinProximity = useMemo(() => {
+    if (
+      !selectedPin ||
+      !userCoords ||
+      selectedPin.latitude === undefined ||
+      selectedPin.longitude === undefined
+    ) {
+      return null;
+    }
+    const dist = calculateDistanceInMeters(
+      userCoords.latitude,
+      userCoords.longitude,
+      Number(selectedPin.latitude),
+      Number(selectedPin.longitude)
+    );
+    return evaluateProximity(dist);
+  }, [selectedPin, userCoords]);
 
   // Fullscreen map state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -823,12 +865,12 @@ export default function UserMapScreen() {
               className="absolute left-3 right-3 bg-white rounded-3xl p-4 shadow-2xl border border-slate-200 z-30"
             >
               <View className="flex-row items-center justify-between pb-2 border-b border-slate-100 mb-2.5">
-                <View className="flex-row items-center">
+                <View className="flex-row items-center flex-wrap gap-1.5 flex-1 pr-2">
                   <Text className="text-base font-mono font-bold text-[#0f172a]">
                     {selectedPin.code}
                   </Text>
                   <View
-                    className={`px-2 py-0.5 rounded-md ml-2.5 ${
+                    className={`px-2 py-0.5 rounded-md ${
                       getStatusColor(selectedPin.status).lightBg
                     } border ${getStatusColor(selectedPin.status).border}`}
                   >
@@ -840,6 +882,17 @@ export default function UserMapScreen() {
                       {getStatusColor(selectedPin.status).label}
                     </Text>
                   </View>
+                  {selectedPinProximity && (
+                    <View
+                      className={`px-2 py-0.5 rounded-full border ${selectedPinProximity.badgeBg} ${selectedPinProximity.badgeBorder}`}
+                    >
+                      <Text
+                        className={`text-[10px] font-poppins-bold ${selectedPinProximity.badgeText}`}
+                      >
+                        📍 {selectedPinProximity.badgeLabel}
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 <TouchableOpacity
@@ -871,6 +924,25 @@ export default function UserMapScreen() {
                   />
                   <Text className="text-xs font-poppins-bold text-white ml-1.5">
                     Scan Box QR
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    if (selectedPin) {
+                      openGoogleMapsNavigation(
+                        selectedPin.latitude,
+                        selectedPin.longitude,
+                        selectedPin.siteName
+                      );
+                    }
+                  }}
+                  className="bg-[#4d6029]/10 border border-[#4d6029]/25 py-2.5 px-3 rounded-xl flex-row items-center justify-center active:bg-[#4d6029]/20"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="navigate" size={15} color="#4d6029" />
+                  <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1">
+                    Navigate
                   </Text>
                 </TouchableOpacity>
 
@@ -954,9 +1026,22 @@ export default function UserMapScreen() {
 
                   {/* Location & Parent */}
                   <View className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 mb-3">
-                    <Text className="text-[10px] font-poppins-bold text-[#64748b] uppercase tracking-wider mb-1">
-                      Installation Site
-                    </Text>
+                    <View className="flex-row items-center justify-between mb-1">
+                      <Text className="text-[10px] font-poppins-bold text-[#64748b] uppercase tracking-wider">
+                        Installation Site
+                      </Text>
+                      {selectedPinProximity && (
+                        <View
+                          className={`px-2 py-0.5 rounded-full border ${selectedPinProximity.badgeBg} ${selectedPinProximity.badgeBorder}`}
+                        >
+                          <Text
+                            className={`text-[9px] font-poppins-bold ${selectedPinProximity.badgeText}`}
+                          >
+                            📍 {selectedPinProximity.badgeLabel}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                     <Text className="text-xs font-poppins-bold text-[#0f172a] mb-0.5">
                       {selectedPin.siteName}
                     </Text>
@@ -1047,18 +1132,42 @@ export default function UserMapScreen() {
               <View className="pt-3 border-t border-slate-100 flex-row gap-2">
                 <TouchableOpacity
                   onPress={() => {
+                    if (selectedPin) {
+                      openGoogleMapsNavigation(
+                        selectedPin.latitude,
+                        selectedPin.longitude,
+                        selectedPin.siteName
+                      );
+                    }
+                  }}
+                  className="flex-1 bg-[#4d6029]/10 border border-[#4d6029]/25 py-3 rounded-xl flex-row items-center justify-center active:bg-[#4d6029]/20"
+                >
+                  <Ionicons name="navigate" size={16} color="#4d6029" />
+                  <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1.5">
+                    Navigate to Box
+                  </Text>
+                  <Ionicons
+                    name="open-outline"
+                    size={12}
+                    color="#4d6029"
+                    style={{ marginLeft: 3, opacity: 0.7 }}
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
                     setShowDetailModal(false);
                     router.push("/user/scanner");
                   }}
-                  className="w-full bg-[#4d6029] py-3 rounded-xl flex-row items-center justify-center shadow-xs active:opacity-90"
+                  className="flex-1 bg-[#4d6029] py-3 rounded-xl flex-row items-center justify-center shadow-xs active:opacity-90"
                 >
                   <Image
                     source={require("@/assets/images/app-logo-white.png")}
                     style={{ width: 17, height: 17 }}
                     resizeMode="contain"
                   />
-                  <Text className="text-sm font-poppins-bold text-white ml-2">
-                    Launch QR Scanner
+                  <Text className="text-xs font-poppins-bold text-white ml-2">
+                    Scan QR
                   </Text>
                 </TouchableOpacity>
               </View>

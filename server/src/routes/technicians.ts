@@ -63,6 +63,67 @@ function formatScanTime(date: Date): string {
   }) + ` · ${timeStr}`;
 }
 
+function formatMaintenanceDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function extractMaintenanceActionTitle(
+  notes: string | null | undefined,
+  boxStatusAtScan: string
+): string {
+  if (!notes) {
+    return boxStatusAtScan === 'ISSUE'
+      ? 'Hardware Fault Reported'
+      : 'Hardware Maintenance & Inspection';
+  }
+
+  const bracketMatch = notes.match(/^\[(.*?)\]/);
+  if (bracketMatch && bracketMatch[1]) {
+    const category = bracketMatch[1].trim();
+    if (category === 'Defective Port / Splitter') {
+      return 'Defective Splitter / Port Servicing';
+    }
+    if (category === 'Cable Damage / Cut') {
+      return 'Fiber Drop Cable Repair';
+    }
+    if (category === 'Broken Lock / Door') {
+      return 'Cabinet Lock & Door Repair';
+    }
+    if (category === 'Water / Weather Damage') {
+      return 'Weatherproofing & Seal Remediation';
+    }
+    if (category === 'Hardware Maintenance Resolved') {
+      return 'Hardware Maintenance Resolved';
+    }
+    if (category.startsWith('Other:')) {
+      return category.replace(/^Other:\s*/i, '').trim() || 'Custom Hardware Fault';
+    }
+    return category;
+  }
+
+  const lower = notes.toLowerCase();
+  if (lower.includes('splitter') || lower.includes('port')) {
+    return 'Optical Port / Splitter Servicing';
+  }
+  if (lower.includes('cable') || lower.includes('drop') || lower.includes('fiber')) {
+    return 'Fiber Drop Cable Maintenance';
+  }
+  if (lower.includes('lock') || lower.includes('padlock') || lower.includes('door')) {
+    return 'Cabinet Enclosure & Lock Servicing';
+  }
+  if (lower.includes('water') || lower.includes('weather') || lower.includes('rain')) {
+    return 'Weatherproofing & Moisture Remediation';
+  }
+
+  return boxStatusAtScan === 'ISSUE'
+    ? 'Hardware Fault Reported'
+    : 'Hardware Maintenance & Servicing';
+}
+
 // =========================================================================
 // GET ALL TECHNICIANS (Excludes Admins)
 // =========================================================================
@@ -161,6 +222,36 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         };
       });
 
+      // Extract hardware maintenance actions
+      const maintenanceActions = techAudits
+        .filter((audit) => {
+          const notes = audit.auditNotes || '';
+          return (
+            audit.boxStatusAtScan === 'ISSUE' ||
+            audit.boxStatusAtScan === 'MAINTENANCE' ||
+            audit.scanType === 'MAINTENANCE' ||
+            notes.includes('[') ||
+            notes.toLowerCase().includes('maintenance') ||
+            notes.toLowerCase().includes('repair') ||
+            notes.toLowerCase().includes('replaced') ||
+            notes.toLowerCase().includes('servicing')
+          );
+        })
+        .map((audit) => {
+          const box = boxMap.get(audit.boxId);
+          const isPending =
+            (box?.status === 'ISSUE' || box?.status === 'MAINTENANCE') &&
+            audit.boxStatusAtScan === 'ISSUE';
+
+          return {
+            id: audit.id,
+            boxCode: box?.code || 'BOX',
+            action: extractMaintenanceActionTitle(audit.auditNotes, audit.boxStatusAtScan),
+            date: formatMaintenanceDate(new Date(audit.createdAt)),
+            status: isPending ? ('PENDING' as const) : ('RESOLVED' as const),
+          };
+        });
+
       return {
         id: user.id,
         employeeId: `TECH-ILG-${(index + 1).toString().padStart(2, '0')}`,
@@ -180,7 +271,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         deviceModel: 'Mobile Scanner',
         lastBatteryLevel: user.isActive ? '88%' : '—',
         scanHistory,
-        maintenanceActions: [],
+        maintenanceActions,
       };
     });
 
@@ -249,6 +340,35 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       };
     });
 
+    const maintenanceActions = techAudits
+      .filter((audit) => {
+        const notes = audit.auditNotes || '';
+        return (
+          audit.boxStatusAtScan === 'ISSUE' ||
+          audit.boxStatusAtScan === 'MAINTENANCE' ||
+          audit.scanType === 'MAINTENANCE' ||
+          notes.includes('[') ||
+          notes.toLowerCase().includes('maintenance') ||
+          notes.toLowerCase().includes('repair') ||
+          notes.toLowerCase().includes('replaced') ||
+          notes.toLowerCase().includes('servicing')
+        );
+      })
+      .map((audit) => {
+        const box = boxMap.get(audit.boxId);
+        const isPending =
+          (box?.status === 'ISSUE' || box?.status === 'MAINTENANCE') &&
+          audit.boxStatusAtScan === 'ISSUE';
+
+        return {
+          id: audit.id,
+          boxCode: box?.code || 'BOX',
+          action: extractMaintenanceActionTitle(audit.auditNotes, audit.boxStatusAtScan),
+          date: formatMaintenanceDate(new Date(audit.createdAt)),
+          status: isPending ? ('PENDING' as const) : ('RESOLVED' as const),
+        };
+      });
+
     return res.json({
       success: true,
       technician: {
@@ -258,6 +378,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
         phone: user.phoneNumber || '+63 917 000 0000',
         isActive: user.isActive,
         scanHistory,
+        maintenanceActions,
       },
     });
   } catch (error: any) {

@@ -27,6 +27,7 @@ export interface AuditLogItem {
   locationVerified?: boolean;
   scanLatitude?: number | string;
   scanLongitude?: number | string;
+  evidencePhoto?: string | null;
   metadata?: Record<string, string>;
 }
 
@@ -43,6 +44,7 @@ export interface RecordScanPayload {
   scanType?: string;
   padlockVerified?: boolean;
   auditNotes?: string;
+  evidencePhoto?: string | null;
   boxStatusAtScan?: string;
   scanLatitude?: number | string;
   scanLongitude?: number | string;

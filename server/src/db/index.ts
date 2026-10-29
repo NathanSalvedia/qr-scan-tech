@@ -182,6 +182,7 @@ export async function syncNeonToLocal(verbose = false): Promise<boolean> {
         scan_type VARCHAR(50) NOT NULL DEFAULT 'CAMERA_QR',
         padlock_verified BOOLEAN NOT NULL DEFAULT true,
         audit_notes TEXT,
+        evidence_photo TEXT,
         box_status_at_scan VARCHAR(50) NOT NULL,
         scan_latitude NUMERIC,
         scan_longitude NUMERIC,
@@ -200,7 +201,7 @@ export async function syncNeonToLocal(verbose = false): Promise<boolean> {
         placard_header VARCHAR(150) NOT NULL DEFAULT 'MULTIFACTORS · ILIGAN',
         paper_format VARCHAR(100) NOT NULL DEFAULT 'A4 Bondpaper (2 Placards / Sheet)',
         auto_fill_duplicate BOOLEAN NOT NULL DEFAULT true,
-        token_prefix VARCHAR(50) NOT NULL DEFAULT 'QRTECH-BOX-',
+        token_prefix VARCHAR(50) NOT NULL DEFAULT 'ScanOps-Box-',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -219,6 +220,8 @@ export async function syncNeonToLocal(verbose = false): Promise<boolean> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE scan_audit_logs ADD COLUMN IF NOT EXISTS evidence_photo TEXT;
     `);
 
     // 2. Fetch current live data from Neon Cloud DB

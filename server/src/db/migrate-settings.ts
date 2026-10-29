@@ -15,7 +15,7 @@ async function migrate() {
       placard_header VARCHAR(150) NOT NULL DEFAULT 'MULTIFACTORS · ILIGAN',
       paper_format VARCHAR(100) NOT NULL DEFAULT 'A4 Bondpaper (2 Placards / Sheet)',
       auto_fill_duplicate BOOLEAN NOT NULL DEFAULT true,
-      token_prefix VARCHAR(50) NOT NULL DEFAULT 'QRTECH-BOX-',
+      token_prefix VARCHAR(50) NOT NULL DEFAULT 'ScanOps-Box-',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -33,7 +33,7 @@ async function migrate() {
       'MULTIFACTORS · ILIGAN',
       'A4 Bondpaper (2 Placards / Sheet)',
       true,
-      'QRTECH-BOX-'
+      'ScanOps-Box-'
     ) ON CONFLICT (id) DO NOTHING;
   `);
 

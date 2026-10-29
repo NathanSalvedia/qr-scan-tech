@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 /**
  * Radius of Earth in meters
@@ -98,10 +98,10 @@ export function evaluateProximity(
       isVerified: true,
       distanceMeters,
       formattedDistance: formatted,
-      badgeLabel: `🟢 On-Site Verified (${formatted})`,
-      badgeBg: 'bg-emerald-50',
-      badgeBorder: 'border-emerald-200',
-      badgeText: 'text-emerald-700',
+      badgeLabel: `${formatted} away · On-Site`,
+      badgeBg: 'bg-[#4d6029]/10',
+      badgeBorder: 'border-[#4d6029]/20',
+      badgeText: 'text-[#4d6029]',
       alertTitle: 'Physical On-Site Verified',
       alertDescription: `Device was within ${formatted} of the registered pole when scanned.`,
     };
@@ -113,7 +113,7 @@ export function evaluateProximity(
       isVerified: true,
       distanceMeters,
       formattedDistance: formatted,
-      badgeLabel: `🟡 Nearby (${formatted} from pole)`,
+      badgeLabel: `🟡 ${formatted} away · Nearby`,
       badgeBg: 'bg-amber-50',
       badgeBorder: 'border-amber-200',
       badgeText: 'text-amber-800',
@@ -127,7 +127,7 @@ export function evaluateProximity(
     isVerified: false,
     distanceMeters,
     formattedDistance: formatted,
-    badgeLabel: `⚠️ Scan Location Mismatch (${formatted} away)`,
+    badgeLabel: `⚠️ ${formatted} away · Mismatch`,
     badgeBg: 'bg-rose-50',
     badgeBorder: 'border-rose-300',
     badgeText: 'text-rose-700',
@@ -173,8 +173,18 @@ export async function getCurrentLocationAsync(
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
+      const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+      if (lastKnown && 'coords' in lastKnown) {
+        return {
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+        };
+      }
       return null;
     }
+
+    // Fast path: try cached last-known position immediately
+    const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
 
     const locationPromise = Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
@@ -191,9 +201,58 @@ export async function getCurrentLocationAsync(
         longitude: result.coords.longitude,
       };
     }
+
+    // Fallback if current fix took longer than timeout
+    if (lastKnown && 'coords' in lastKnown) {
+      return {
+        latitude: lastKnown.coords.latitude,
+        longitude: lastKnown.coords.longitude,
+      };
+    }
   } catch (error) {
     console.warn('GPS coordinates fetch error:', error);
   }
 
   return null;
 }
+
+/**
+ * Opens Google Maps turn-by-turn navigation directly to the given destination coordinates.
+ * Compatible with Android, iOS, and Web.
+ */
+export async function openGoogleMapsNavigation(
+  latitude: number | string | undefined | null,
+  longitude: number | string | undefined | null,
+  siteName?: string
+): Promise<boolean> {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+
+  if (!lat || !lon || Number.isNaN(lat) || Number.isNaN(lon)) {
+    return false;
+  }
+
+  // Official universal Google Maps Directions URL
+  const destination = `${lat},${lon}`;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
+
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+      return true;
+    } else {
+      await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`);
+      return true;
+    }
+  } catch (error) {
+    console.warn('Failed to open Google Maps navigation:', error);
+    try {
+      await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+

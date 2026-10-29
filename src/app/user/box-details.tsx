@@ -1,9 +1,14 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router, useGlobalSearchParams, useLocalSearchParams } from "expo-router";
+import {
+  router,
+  useGlobalSearchParams,
+  useLocalSearchParams,
+} from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -13,14 +18,18 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 
 import { boxService } from "@/services/boxes";
 import { logsService } from "@/services/logs";
+import { settingsService } from "@/services/settings";
 import { SubscriberRecord, subscriberService } from "@/services/subscribers";
 import {
   calculateDistanceInMeters,
   evaluateProximity,
   getCurrentLocationAsync,
+  openGoogleMapsNavigation,
 } from "@/utils/geo";
 
 const FALLBACK_PENDING_WORK_ORDERS: SubscriberRecord[] = [
@@ -119,6 +128,103 @@ export interface ClientConnectionItem {
   signalDbm?: string | null;
 }
 
+export type SignalGrade = "OPTIMAL" | "MARGINAL" | "CRITICAL" | "UNKNOWN";
+
+export interface SignalQualityInfo {
+  grade: SignalGrade;
+  label: string;
+  badgeBg: string;
+  badgeBorder: string;
+  badgeText: string;
+  description: string;
+  icon: "flash" | "warning" | "alert-circle" | "help-circle";
+}
+
+export function evaluateSignalDbm(signalDbm?: string | null): SignalQualityInfo {
+  if (!signalDbm || !signalDbm.trim()) {
+    return {
+      grade: "UNKNOWN",
+      label: "Unmeasured",
+      badgeBg: "bg-slate-100",
+      badgeBorder: "border-slate-200",
+      badgeText: "text-slate-600",
+      description: "No optical power reading recorded",
+      icon: "help-circle",
+    };
+  }
+
+  const raw = signalDbm.replace(/[^0-9.-]/g, "");
+  const num = parseFloat(raw);
+
+  if (isNaN(num) || num === 0) {
+    if (signalDbm.toUpperCase().includes("LOS")) {
+      return {
+        grade: "CRITICAL",
+        label: "Loss of Signal (LOS)",
+        badgeBg: "bg-rose-50",
+        badgeBorder: "border-rose-200",
+        badgeText: "text-rose-700",
+        description: "Complete light cutoff · Splice/Feeder fault",
+        icon: "alert-circle",
+      };
+    }
+    return {
+      grade: "UNKNOWN",
+      label: "Zero · Unmeasured",
+      badgeBg: "bg-slate-100",
+      badgeBorder: "border-slate-200",
+      badgeText: "text-slate-600",
+      description: "No optical reading selected (0.0 dBm)",
+      icon: "help-circle",
+    };
+  }
+
+  // Normalize positive input e.g. "18.5" to -18.5
+  const val = num > 0 ? -num : num;
+
+  if (val >= -23.9 && val <= -15.0) {
+    return {
+      grade: "OPTIMAL",
+      label: "Optimal Signal",
+      badgeBg: "bg-[#4d6029]/10",
+      badgeBorder: "border-[#4d6029]/25",
+      badgeText: "text-[#4d6029]",
+      description: "Strong light level · Ready for activation",
+      icon: "flash",
+    };
+  } else if (val >= -26.9 && val < -23.9) {
+    return {
+      grade: "MARGINAL",
+      label: "Marginal Signal",
+      badgeBg: "bg-amber-50",
+      badgeBorder: "border-amber-200",
+      badgeText: "text-amber-700",
+      description: "High attenuation · Inspect ferrule/bends",
+      icon: "warning",
+    };
+  } else if (val < -26.9) {
+    return {
+      grade: "CRITICAL",
+      label: "Critical Signal",
+      badgeBg: "bg-rose-50",
+      badgeBorder: "border-rose-200",
+      badgeText: "text-rose-700",
+      description: "Severe optical loss · Splice repair needed",
+      icon: "alert-circle",
+    };
+  } else {
+    return {
+      grade: "MARGINAL",
+      label: "High Power",
+      badgeBg: "bg-amber-50",
+      badgeBorder: "border-amber-200",
+      badgeText: "text-amber-700",
+      description: "Power exceeds standard receiver range",
+      icon: "warning",
+    };
+  }
+}
+
 export interface BoxDetailData {
   id: string;
   code: string;
@@ -177,7 +283,10 @@ export default function BoxDetailsScreen() {
     locationVerified?: string;
     proximityStatus?: string;
   }>();
-  const params = (localParams && (localParams.id || localParams.code)) ? localParams : globalParams;
+  const params =
+    localParams && (localParams.id || localParams.code)
+      ? localParams
+      : globalParams;
   const boxIdentifier = (params.id || params.code || "DB-MN-01").trim();
 
   // Dynamic box state
@@ -192,7 +301,10 @@ export default function BoxDetailsScreen() {
       const num = Number(params.distanceMeters);
       return Number.isNaN(num) ? null : num;
     }
-    if (box?.latestScanDistanceMeters !== undefined && box?.latestScanDistanceMeters !== null) {
+    if (
+      box?.latestScanDistanceMeters !== undefined &&
+      box?.latestScanDistanceMeters !== null
+    ) {
       const num = Number(box.latestScanDistanceMeters);
       return Number.isNaN(num) ? null : num;
     }
@@ -201,7 +313,7 @@ export default function BoxDetailsScreen() {
 
   const proximityInfo = useMemo(
     () => evaluateProximity(resolvedDistanceMeters),
-    [resolvedDistanceMeters]
+    [resolvedDistanceMeters],
   );
 
   // Field audit modal state
@@ -212,12 +324,15 @@ export default function BoxDetailsScreen() {
   const [padlockVerified, setPadlockVerified] = useState(true);
   const [auditStatus, setAuditStatus] = useState<string>("ACTIVE");
   const [selectedIssueType, setSelectedIssueType] = useState<string>(
-    "Defective Port / Splitter"
+    "Defective Port / Splitter",
   );
+  const [customIssueType, setCustomIssueType] = useState<string>("");
+  const [evidencePhoto, setEvidencePhoto] = useState<string | null>(null);
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
 
   // Interactive Port Assignment & Drop Cable Activation state
   const [selectedPortNumber, setSelectedPortNumber] = useState<number | null>(
-    null
+    null,
   );
   const [isAssignPortModalOpen, setIsAssignPortModalOpen] = useState(false);
   const [selectedPortClient, setSelectedPortClient] =
@@ -242,8 +357,39 @@ export default function BoxDetailsScreen() {
     "Residential" | "Commercial"
   >("Residential");
   const [assignServicePlan, setAssignServicePlan] = useState<string>(
-    "100 Mbps Fiber Plan"
+    "100 Mbps Fiber Plan",
   );
+  // Optical Power Level (OPM) logging state
+  const [assignSignalDbm, setAssignSignalDbm] = useState("0.0 dBm");
+  const [inspectorSignalDbm, setInspectorSignalDbm] = useState("");
+  const [isEditingInspectorSignal, setIsEditingInspectorSignal] = useState(false);
+  const [isSavingSignal, setIsSavingSignal] = useState(false);
+
+  // In-enclosure worksite ergonomics: hardware torch
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [isTorchOn, setIsTorchOn] = useState(false);
+
+  const toggleTorch = async () => {
+    try {
+      if (!isTorchOn) {
+        if (!cameraPermission?.granted) {
+          const res = await requestCameraPermission();
+          if (!res.granted) {
+            showToast("Camera permission required to activate flashlight.");
+            return;
+          }
+        }
+        setIsTorchOn(true);
+        showToast("Cabinet flashlight turned ON");
+      } else {
+        setIsTorchOn(false);
+        showToast("Cabinet flashlight turned OFF");
+      }
+    } catch (err: any) {
+      console.error("Failed to toggle torch:", err);
+      showToast("Unable to toggle flashlight.", "error");
+    }
+  };
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -264,14 +410,14 @@ export default function BoxDetailsScreen() {
         setLoadingWorkOrders(true);
         const res = await subscriberService.getAllSubscribers();
         const connectedAccounts = new Set(
-          currentClients.map((c) => String(c.accountNumber).trim())
+          currentClients.map((c) => String(c.accountNumber).trim()),
         );
 
         if (res.success && Array.isArray(res.subscribers)) {
           const pendingOnly = res.subscribers.filter(
             (s) =>
               !connectedAccounts.has(String(s.accountNumber).trim()) &&
-              (s.status === "PENDING_PROVISIONING" || !s.assignedBoxId)
+              (s.status === "PENDING_PROVISIONING" || !s.assignedBoxId),
           );
           setPendingWorkOrders(pendingOnly);
           return;
@@ -279,8 +425,8 @@ export default function BoxDetailsScreen() {
         // Fallback to local pending work orders not already on this box
         setPendingWorkOrders(
           FALLBACK_PENDING_WORK_ORDERS.filter(
-            (s) => !connectedAccounts.has(String(s.accountNumber).trim())
-          )
+            (s) => !connectedAccounts.has(String(s.accountNumber).trim()),
+          ),
         );
       } catch {
         setPendingWorkOrders(FALLBACK_PENDING_WORK_ORDERS);
@@ -288,16 +434,18 @@ export default function BoxDetailsScreen() {
         setLoadingWorkOrders(false);
       }
     },
-    []
+    [],
   );
 
   const handleTapPortTile = (
     portNum: number,
-    occupant: ClientConnectionItem | null
+    occupant: ClientConnectionItem | null,
   ) => {
     setSelectedPortNumber(portNum);
     if (occupant) {
       setSelectedPortClient(occupant);
+      setInspectorSignalDbm(occupant.signalDbm || "-18.5 dBm");
+      setIsEditingInspectorSignal(false);
       setShowConfirmReleasePort(false);
       setIsPortInspectorModalOpen(true);
     } else {
@@ -307,6 +455,7 @@ export default function BoxDetailsScreen() {
       setAssignSubscriberName("");
       setAssignSubscriberType("Residential");
       setAssignServicePlan("100 Mbps Fiber Plan");
+      setAssignSignalDbm("0.0 dBm");
       setIsAssignPortModalOpen(true);
       loadPendingWorkOrders(box?.clients || []);
     }
@@ -325,9 +474,13 @@ export default function BoxDetailsScreen() {
     setSelectedWorkOrderAcc(cleanAcc);
     setAssignAccountNumber(cleanAcc);
     setAssignSubscriberName(order.customerName || order.name || "");
-    const rawType = (order.subscriberType || order.category || "").toUpperCase();
+    const rawType = (
+      order.subscriberType ||
+      order.category ||
+      ""
+    ).toUpperCase();
     setAssignSubscriberType(
-      rawType.includes("COMMERCIAL") ? "Commercial" : "Residential"
+      rawType.includes("COMMERCIAL") ? "Commercial" : "Residential",
     );
     const selectedPlan =
       order.servicePlan || order.plan || "100 Mbps Fiber Plan";
@@ -342,26 +495,52 @@ export default function BoxDetailsScreen() {
     if (!selectedWorkOrderAcc || !cleanName || !cleanAcc) {
       showToast(
         "Please select a pending installation work order from the list.",
-        "error"
+        "error",
       );
       return;
     }
 
     try {
       setIsSubmittingPortAction(true);
-      const res = await boxService.assignClient(box.id, {
-        port: `Port ${selectedPortNumber}`,
-        accountNumber: cleanAcc,
-        name: cleanName,
-        clientType: assignSubscriberType,
-        plan: assignServicePlan,
-        preventOverwrite: true,
-      });
+      const cleanSignal = assignSignalDbm.trim();
+      let res: any = null;
+      let isOfflineSaved = false;
 
-      if (!res.success) {
+      try {
+        res = await boxService.assignClient(box.id, {
+          port: `Port ${selectedPortNumber}`,
+          accountNumber: cleanAcc,
+          name: cleanName,
+          clientType: assignSubscriberType,
+          plan: assignServicePlan,
+          signalDbm: cleanSignal || "-18.5 dBm",
+          preventOverwrite: true,
+        });
+      } catch (netErr: any) {
+        console.warn("Network error assigning drop wire, saving to Outbox:", netErr);
+        await settingsService.addOutboxItem({
+          type: "PORT_PROVISION",
+          title: `Drop Wire: Port ${selectedPortNumber} -> ${cleanName}`,
+          payload: {
+            boxId: box.id,
+            clientData: {
+              port: `Port ${selectedPortNumber}`,
+              accountNumber: cleanAcc,
+              name: cleanName,
+              clientType: assignSubscriberType,
+              plan: assignServicePlan,
+              signalDbm: cleanSignal || "-18.5 dBm",
+              preventOverwrite: true,
+            },
+          },
+        });
+        isOfflineSaved = true;
+      }
+
+      if (!res?.success && !isOfflineSaved) {
         showToast(
-          res.message || `Port P${selectedPortNumber} could not be assigned.`,
-          "error"
+          res?.message || `Port P${selectedPortNumber} could not be assigned.`,
+          "error",
         );
         fetchBoxDetails(true);
         return;
@@ -369,13 +548,14 @@ export default function BoxDetailsScreen() {
 
       // Optimistically update local box state immediately so P{portNum} locks in green
       const newClientItem: ClientConnectionItem = {
-        id: res.client?.id || `port-${selectedPortNumber}-${cleanAcc}`,
+        id: res?.client?.id || `port-${selectedPortNumber}-${cleanAcc}`,
         port: `Port ${selectedPortNumber}`,
         portNumber: selectedPortNumber,
         accountNumber: cleanAcc,
         name: cleanName,
         clientType: assignSubscriberType,
         plan: assignServicePlan,
+        signalDbm: cleanSignal || "-18.5 dBm",
         status: "CONNECTED",
       };
 
@@ -386,7 +566,7 @@ export default function BoxDetailsScreen() {
             c.portNumber !== selectedPortNumber &&
             c.port !== `Port ${selectedPortNumber}` &&
             parseInt(String(c.port || "").replace(/\D/g, ""), 10) !==
-              selectedPortNumber
+              selectedPortNumber,
         );
         const nextClients = [...filtered, newClientItem].sort((a, b) => {
           const pA =
@@ -400,7 +580,7 @@ export default function BoxDetailsScreen() {
           return pA - pB;
         });
         const nextActive = nextClients.filter(
-          (c) => c.status === "CONNECTED" || c.status === "ACTIVE"
+          (c) => c.status === "CONNECTED" || c.status === "ACTIVE",
         ).length;
         return {
           ...prev,
@@ -412,10 +592,16 @@ export default function BoxDetailsScreen() {
       });
 
       setIsAssignPortModalOpen(false);
-      showToast(
-        `Drop wire activated on Port P${selectedPortNumber} for ${cleanName}!`
-      );
-      fetchBoxDetails(true);
+      if (isOfflineSaved) {
+        showToast(
+          `📡 Offline: Drop wire for ${cleanName} saved to Outbox! Will auto-sync when connected.`
+        );
+      } else {
+        showToast(
+          `Drop wire activated on Port P${selectedPortNumber} for ${cleanName}!`,
+        );
+        fetchBoxDetails(true);
+      }
     } catch (err: any) {
       showToast(err.message || "Failed to activate drop wire.", "error");
     } finally {
@@ -429,7 +615,7 @@ export default function BoxDetailsScreen() {
       setIsSubmittingPortAction(true);
       const res = await boxService.toggleClientStatus(
         box.id,
-        String(selectedPortNumber)
+        String(selectedPortNumber),
       );
       if (res.success) {
         const nextStatus =
@@ -437,9 +623,7 @@ export default function BoxDetailsScreen() {
             ? "DISCONNECTED"
             : "CONNECTED";
         setSelectedPortClient({ ...selectedPortClient, status: nextStatus });
-        showToast(
-          `Port P${selectedPortNumber} marked as ${nextStatus}.`
-        );
+        showToast(`Port P${selectedPortNumber} marked as ${nextStatus}.`);
         fetchBoxDetails(true);
       } else {
         showToast(res.message || "Failed to update port status.", "error");
@@ -451,19 +635,78 @@ export default function BoxDetailsScreen() {
     }
   };
 
+  const handleSaveInspectorSignal = async () => {
+    if (!box || selectedPortNumber === null || !selectedPortClient) return;
+    const cleanSignal = inspectorSignalDbm.trim();
+    if (!cleanSignal) {
+      showToast("Please enter an optical signal reading (e.g. -18.5 dBm).", "error");
+      return;
+    }
+    try {
+      setIsSavingSignal(true);
+      let res: any = null;
+      let isOfflineSaved = false;
+
+      try {
+        res = await boxService.updateClientSignal(
+          box.id,
+          String(selectedPortNumber),
+          cleanSignal,
+        );
+      } catch (netErr: any) {
+        console.warn("Network error updating signal, saving to Outbox:", netErr);
+        await settingsService.addOutboxItem({
+          type: "SIGNAL_UPDATE",
+          title: `OPM Signal: Port ${selectedPortNumber} (${cleanSignal})`,
+          payload: {
+            boxId: box.id,
+            portNumber: String(selectedPortNumber),
+            signalDbm: cleanSignal,
+          },
+        });
+        isOfflineSaved = true;
+      }
+
+      if (res?.success || isOfflineSaved) {
+        showToast(
+          isOfflineSaved
+            ? `📡 Offline: Signal for Port P${selectedPortNumber} saved to Outbox!`
+            : `Optical signal for Port P${selectedPortNumber} updated to ${cleanSignal}!`,
+        );
+        setSelectedPortClient((prev) => (prev ? { ...prev, signalDbm: cleanSignal } : prev));
+        setBox((prev) => {
+          if (!prev) return prev;
+          const nextClients = (prev.clients || []).map((c) =>
+            (c.portNumber === selectedPortNumber || c.port === `Port ${selectedPortNumber}`)
+              ? { ...c, signalDbm: cleanSignal }
+              : c,
+          );
+          return { ...prev, clients: nextClients };
+        });
+        setIsEditingInspectorSignal(false);
+      } else {
+        showToast(res?.message || "Failed to update optical signal.", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to update optical signal.", "error");
+    } finally {
+      setIsSavingSignal(false);
+    }
+  };
+
   const handleReleasePort = async () => {
     if (!box || !selectedPortNumber) return;
     try {
       setIsSubmittingPortAction(true);
       const res = await boxService.removeClient(
         box.id,
-        String(selectedPortNumber)
+        String(selectedPortNumber),
       );
       if (res.success) {
         setShowConfirmReleasePort(false);
         setIsPortInspectorModalOpen(false);
         showToast(
-          `Port P${selectedPortNumber} disconnected and released for field allocation.`
+          `Port P${selectedPortNumber} disconnected and released for field allocation.`,
         );
         fetchBoxDetails(true);
       } else {
@@ -582,13 +825,32 @@ export default function BoxDetailsScreen() {
 
     // If box currently has an issue, preselect its existing problem type if recorded
     let initialIssueType = "Defective Port / Splitter";
+    let initialCustomIssue = "";
     if (initialStatus === "ISSUE" && box.latestIssue?.notes) {
       const match = box.latestIssue.notes.match(/^\[(.*?)\]/);
       if (match && match[1]) {
-        initialIssueType = match[1];
+        const rawType = match[1].trim();
+        if (rawType.startsWith("Other:")) {
+          initialIssueType = "Others";
+          initialCustomIssue = rawType.replace(/^Other:\s*/i, "").trim();
+        } else if (
+          [
+            "Cable Damage / Cut",
+            "Defective Port / Splitter",
+            "Broken Lock / Door",
+            "Water / Weather Damage",
+          ].includes(rawType)
+        ) {
+          initialIssueType = rawType;
+          initialCustomIssue = "";
+        } else {
+          initialIssueType = "Others";
+          initialCustomIssue = rawType;
+        }
       }
     }
     setSelectedIssueType(initialIssueType);
+    setCustomIssueType(initialCustomIssue);
 
     // Sync padlock verification: if Broken Lock, padlockVerified is false
     if (
@@ -602,6 +864,7 @@ export default function BoxDetailsScreen() {
     }
 
     setAuditNotes("");
+    setEvidencePhoto(null);
     setShowConfirmSubmitModal(false);
     setIsAuditModalOpen(true);
   };
@@ -641,21 +904,103 @@ export default function BoxDetailsScreen() {
     }
   };
 
+  const handleTakePhoto = async () => {
+    try {
+      setIsCapturingPhoto(true);
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        showToast("Camera access is needed to capture damage proof.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.5,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const uri = asset.base64
+          ? `data:image/jpeg;base64,${asset.base64}`
+          : asset.uri;
+        setEvidencePhoto(uri);
+        showToast("Photo evidence attached!");
+      }
+    } catch (err: any) {
+      console.warn("Camera capture error:", err);
+      showToast("Unable to capture photo: " + (err.message || "Unknown error"));
+    } finally {
+      setIsCapturingPhoto(false);
+    }
+  };
+
+  const handlePickFromGallery = async () => {
+    try {
+      setIsCapturingPhoto(true);
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        showToast("Photo library access is needed to attach evidence.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.5,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const uri = asset.base64
+          ? `data:image/jpeg;base64,${asset.base64}`
+          : asset.uri;
+        setEvidencePhoto(uri);
+        showToast("Photo evidence attached!");
+      }
+    } catch (err: any) {
+      console.warn("Gallery selection error:", err);
+      showToast("Unable to select photo: " + (err.message || "Unknown error"));
+    } finally {
+      setIsCapturingPhoto(false);
+    }
+  };
+
   const handleSubmitAudit = async () => {
     if (!box) return;
     try {
       setIsSubmittingAudit(true);
       let fullNotes = auditNotes.trim();
+      const isResolvingPriorIssue =
+        box.status === "ISSUE" && auditStatus === "ACTIVE";
+
       if (auditStatus === "ISSUE") {
+        const effectiveProblemType =
+          selectedIssueType === "Others"
+            ? customIssueType.trim()
+              ? `Other: ${customIssueType.trim()}`
+              : "Other Issue"
+            : selectedIssueType;
+
         fullNotes = fullNotes
-          ? `[${selectedIssueType}] ${fullNotes}`
-          : `[${selectedIssueType}] Hardware problem reported during field inspection`;
+          ? `[${effectiveProblemType}] ${fullNotes}`
+          : `[${effectiveProblemType}] Hardware problem reported during field inspection`;
+      } else if (isResolvingPriorIssue) {
+        fullNotes = fullNotes
+          ? `[Hardware Maintenance Resolved] ${fullNotes}`
+          : `[Hardware Maintenance Resolved] Corrective maintenance completed. Enclosure and components restored to operational condition.`;
       } else if (!fullNotes) {
         fullNotes =
           auditStatus === "ACTIVE"
             ? "Field inspection passed. Enclosure & hardware operational."
             : "Field inspection complete. Pending QR placard affixing.";
       }
+
+      const scanType =
+        auditStatus === "ISSUE" || isResolvingPriorIssue
+          ? "MAINTENANCE"
+          : "ROUTINE_AUDIT";
 
       let scanLat: number | null = null;
       let scanLon: number | null = null;
@@ -671,40 +1016,81 @@ export default function BoxDetailsScreen() {
           const bLat = Number(box.latitude);
           const bLon = Number(box.longitude);
           if (!Number.isNaN(bLat) && !Number.isNaN(bLon)) {
-            distanceMeters = calculateDistanceInMeters(bLat, bLon, scanLat, scanLon);
+            distanceMeters = calculateDistanceInMeters(
+              bLat,
+              bLon,
+              scanLat,
+              scanLon,
+            );
             const evaluation = evaluateProximity(distanceMeters);
             locationVerified = evaluation.isVerified;
           }
         }
       }
 
-      const res = await logsService.recordScan({
-        boxId: box.id,
-        boxCode: box.code,
-        scanType: "ROUTINE_AUDIT",
-        padlockVerified,
-        auditNotes: fullNotes,
-        boxStatusAtScan: auditStatus,
-        scanLatitude: scanLat ?? undefined,
-        scanLongitude: scanLon ?? undefined,
-        distanceMeters,
-        locationVerified,
-      });
+      let res: any = null;
+      let isOfflineSaved = false;
 
-      if (res.success) {
+      try {
+        res = await logsService.recordScan({
+          boxId: box.id,
+          boxCode: box.code,
+          scanType,
+          padlockVerified,
+          auditNotes: fullNotes,
+          evidencePhoto: evidencePhoto || undefined,
+          boxStatusAtScan: auditStatus,
+          scanLatitude: scanLat ?? undefined,
+          scanLongitude: scanLon ?? undefined,
+          distanceMeters,
+          locationVerified,
+        });
+      } catch (networkErr: any) {
+        console.warn("Network unreachable, saving audit to Outbox queue:", networkErr);
+        await settingsService.addOutboxItem({
+          type: "AUDIT",
+          title: `Field Audit for ${box.code} (${auditStatus})`,
+          payload: {
+            boxId: box.id,
+            boxCode: box.code,
+            scanType,
+            padlockVerified,
+            auditNotes: fullNotes,
+            evidencePhoto: evidencePhoto || undefined,
+            boxStatusAtScan: auditStatus,
+            scanLatitude: scanLat ?? undefined,
+            scanLongitude: scanLon ?? undefined,
+            distanceMeters,
+            locationVerified,
+          },
+        });
+        isOfflineSaved = true;
+      }
+
+      if (res?.success || isOfflineSaved) {
         if (auditStatus !== box.status) {
-          await boxService.update(box.id, { status: auditStatus });
+          boxService.update(box.id, { status: auditStatus }).catch(() => {});
+          setBox((prev) => (prev ? { ...prev, status: auditStatus as any } : prev));
         }
         setShowConfirmSubmitModal(false);
         setIsAuditModalOpen(false);
-        showToast(
-          auditStatus === "ISSUE"
-            ? `Hardware issue logged for ${box.code}`
-            : `Inspection for ${box.code} recorded successfully!`
-        );
-        fetchBoxDetails(true);
+
+        if (isOfflineSaved) {
+          showToast(
+            `📡 Offline: Audit for ${box.code} saved to Outbox! Will auto-sync when cellular signal returns.`
+          );
+        } else {
+          showToast(
+            auditStatus === "ISSUE"
+              ? `Hardware issue logged for ${box.code}`
+              : isResolvingPriorIssue
+                ? `Hardware maintenance resolved for ${box.code}!`
+                : `Inspection for ${box.code} recorded successfully!`
+          );
+          fetchBoxDetails(true);
+        }
       } else {
-        throw new Error(res.message || "Failed to record inspection");
+        throw new Error(res?.message || "Failed to record inspection");
       }
     } catch (err: any) {
       console.error("Error submitting inspection:", err);
@@ -881,7 +1267,9 @@ export default function BoxDetailsScreen() {
           </Text>
         </View>
         <Text className="text-xs font-poppins text-[#64748b] text-center mb-6 max-w-xs leading-relaxed">
-          This distribution box has not been affixed with a physical QR placard on-site. Specifications, port configurations, and hardware telemetry cannot be viewed until the box is physically tagged.
+          This distribution box has not been affixed with a physical QR placard
+          on-site. Specifications, port configurations, and hardware telemetry
+          cannot be viewed until the box is physically tagged.
         </Text>
         <View className="flex-row gap-3">
           <TouchableOpacity
@@ -926,12 +1314,21 @@ export default function BoxDetailsScreen() {
       Array.from({ length: portColumns }, (__, colIdx) => {
         const portNum = rowIdx * portColumns + colIdx + 1;
         return portNum <= totalPortsCount ? portNum : null;
-      })
+      }),
   );
 
   return (
     <View className="flex-1 bg-[#f8fafc]">
       <StatusBar style="light" />
+
+      {/* Hidden CameraView for Hardware Flashlight / Torch */}
+      {isTorchOn && (
+        <CameraView
+          style={{ width: 1, height: 1, opacity: 0, position: "absolute" }}
+          facing="back"
+          enableTorch={isTorchOn}
+        />
+      )}
 
       {/* Top Safe Area & Main Header Banner */}
       <SafeAreaView edges={["top"]} className="bg-[#4d6029] shadow-md z-20">
@@ -972,16 +1369,36 @@ export default function BoxDetailsScreen() {
             </View>
           </View>
 
-          {/* Header Action Buttons */}
-          <TouchableOpacity
-            onPress={handleOpenAuditModal}
-            className="bg-white/25 border border-white/30 px-3 py-1.5 rounded-xl flex-row items-center shrink-0 active:bg-white/35"
-          >
-            <Ionicons name="shield-checkmark" size={14} color="#ffffff" />
-            <Text className="text-[11px] font-poppins-bold text-white ml-1.5">
-              Inspect
-            </Text>
-          </TouchableOpacity>
+          {/* Header Action Buttons: Torch, Inspect */}
+          <View className="flex-row items-center gap-1.5 shrink-0">
+            {/* Flashlight / Torch Toggle Button */}
+            <TouchableOpacity
+              onPress={toggleTorch}
+              className={`w-8 h-8 rounded-xl items-center justify-center border active:opacity-80 ${
+                isTorchOn
+                  ? "bg-amber-400 border-amber-300 shadow-sm"
+                  : "bg-white/20 border-white/30"
+              }`}
+              accessibilityLabel="Toggle cabinet flashlight"
+            >
+              <Ionicons
+                name={isTorchOn ? "flashlight" : "flashlight-outline"}
+                size={16}
+                color={isTorchOn ? "#78350f" : "#ffffff"}
+              />
+            </TouchableOpacity>
+
+            {/* Field Audit / Inspect Button */}
+            <TouchableOpacity
+              onPress={handleOpenAuditModal}
+              className="bg-white/25 border border-white/30 px-2.5 py-1.5 rounded-xl flex-row items-center active:bg-white/35"
+            >
+              <Ionicons name="shield-checkmark" size={13} color="#ffffff" />
+              <Text className="text-[11px] font-poppins-bold text-white ml-1">
+                Inspect
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -1030,7 +1447,11 @@ export default function BoxDetailsScreen() {
               <View className="flex-row items-center justify-between mb-1.5">
                 <View className="flex-row items-center flex-1 mr-2">
                   <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mr-2.5 shrink-0">
-                    <Ionicons name="location-outline" size={18} color="#dc2626" />
+                    <Ionicons
+                      name="location-outline"
+                      size={18}
+                      color="#dc2626"
+                    />
                   </View>
                   <View className="flex-1">
                     <Text className="text-xs font-poppins-bold text-rose-900">
@@ -1048,11 +1469,15 @@ export default function BoxDetailsScreen() {
                 </View>
               </View>
               <Text className="text-xs font-poppins text-rose-800">
-                You scanned this box <Text className="font-poppins-bold">{proximityInfo.formattedDistance}</Text> away from its registered pole coordinates. This physical audit scan has been flagged in central security logs for review.
+                You scanned this box{" "}
+                <Text className="font-poppins-bold">
+                  {proximityInfo.formattedDistance}
+                </Text>{" "}
+                away from its registered pole coordinates. This physical audit
+                scan has been flagged in central security logs for review.
               </Text>
             </View>
           )}
-
 
           {/* GPS Proximity Guard: Nearby Tolerance Banner */}
           {proximityInfo.status === "NEARBY" && (
@@ -1101,7 +1526,8 @@ export default function BoxDetailsScreen() {
               </Text>
               {box.latestIssue?.reportedBy && (
                 <Text className="text-[10px] font-poppins text-rose-500 mt-1">
-                  Reported by {box.latestIssue.reportedBy} · {box.latestIssue.reportedAt}
+                  Reported by {box.latestIssue.reportedBy} ·{" "}
+                  {box.latestIssue.reportedAt}
                 </Text>
               )}
             </View>
@@ -1207,16 +1633,18 @@ export default function BoxDetailsScreen() {
             <View className="flex-row items-center justify-between flex-wrap gap-1.5 mt-3 pt-2.5 border-t border-slate-100">
               <View className="flex-row items-center">
                 <Ionicons
-                  name={proximityInfo.isVerified ? "shield-checkmark" : "warning"}
+                  name={
+                    proximityInfo.isVerified ? "shield-checkmark" : "warning"
+                  }
                   size={13}
-                  color={proximityInfo.isVerified ? "#059669" : "#dc2626"}
+                  color={proximityInfo.isVerified ? "#4d6029" : "#dc2626"}
                 />
                 <Text className="text-[10px] font-poppins-semibold text-slate-500 ml-1.5">
                   Proximity Guard:
                 </Text>
               </View>
               <View
-                className={`px-2 py-0.5 rounded-md border shrink-0 ${proximityInfo.badgeBg} ${proximityInfo.badgeBorder}`}
+                className={`px-2.5 py-0.5 rounded-full border shrink-0 ${proximityInfo.badgeBg} ${proximityInfo.badgeBorder}`}
               >
                 <Text
                   className={`text-[10px] font-poppins-bold ${proximityInfo.badgeText}`}
@@ -1225,6 +1653,33 @@ export default function BoxDetailsScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* Google Maps Turn-by-Turn Navigation */}
+            <TouchableOpacity
+              onPress={() =>
+                openGoogleMapsNavigation(
+                  box.latitude,
+                  box.longitude,
+                  box.siteName
+                )
+              }
+              className="mt-3 py-2 px-3 bg-[#4d6029]/10 border border-[#4d6029]/25 rounded-2xl flex-row items-center justify-center active:bg-[#4d6029]/20"
+              activeOpacity={0.8}
+            >
+              <Ionicons name="navigate" size={15} color="#4d6029" />
+              <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1.5">
+                Navigate to Box
+              </Text>
+              <Text className="text-[10px] font-poppins text-[#4d6029]/80 ml-1">
+                (Google Maps)
+              </Text>
+              <Ionicons
+                name="open-outline"
+                size={13}
+                color="#4d6029"
+                style={{ marginLeft: 5, opacity: 0.7 }}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* 3. Hardware Equipment Card */}
@@ -1370,16 +1825,15 @@ export default function BoxDetailsScreen() {
                         c.port === `Port 0${portNum}` ||
                         parseInt(
                           String(c.port || "").replace(/\D/g, ""),
-                          10
-                        ) === portNum
+                          10,
+                        ) === portNum,
                     );
                     const hasExplicitClients =
                       Array.isArray(box.clients) && box.clients.length > 0;
                     const isOccupied = hasExplicitClients
                       ? Boolean(clientOnPort)
                       : portNum <= portsOccupied;
-                    const isSuspended =
-                      clientOnPort?.status === "DISCONNECTED";
+                    const isSuspended = clientOnPort?.status === "DISCONNECTED";
 
                     return (
                       <TouchableOpacity
@@ -1392,14 +1846,14 @@ export default function BoxDetailsScreen() {
                                   port: `Port ${portNum}`,
                                   portNumber: portNum,
                                   accountNumber: `26080000${String(
-                                    portNum
+                                    portNum,
                                   ).padStart(2, "0")}`,
                                   name: `Assigned Subscriber (P${portNum})`,
                                   clientType: "Residential",
                                   plan: "100 Mbps Fiber Plan",
                                   status: "CONNECTED",
                                 }
-                              : null
+                              : null,
                           )
                         }
                         activeOpacity={0.75}
@@ -1468,7 +1922,10 @@ export default function BoxDetailsScreen() {
                 {box.clients.map((sub, idx) => {
                   const resolvedPortNum =
                     sub.portNumber ||
-                    parseInt(String(sub.port || "").replace(/[^0-9]/g, ""), 10) ||
+                    parseInt(
+                      String(sub.port || "").replace(/[^0-9]/g, ""),
+                      10,
+                    ) ||
                     idx + 1;
                   const isSubDisconnected = sub.status === "DISCONNECTED";
                   return (
@@ -1530,6 +1987,18 @@ export default function BoxDetailsScreen() {
                           >
                             {sub.accountNumber} · {sub.plan || "Standard Fiber"}
                           </Text>
+                          {Boolean(sub.signalDbm) && (
+                            <View className="flex-row items-center mt-0.5">
+                              <Ionicons
+                                name="speedometer-outline"
+                                size={10}
+                                color="#4d6029"
+                              />
+                              <Text className="text-[10px] font-mono font-bold text-[#4d6029] ml-1">
+                                {sub.signalDbm}
+                              </Text>
+                            </View>
+                          )}
                         </View>
                       </View>
 
@@ -1547,7 +2016,9 @@ export default function BoxDetailsScreen() {
                         />
                         <Text
                           className={`text-[9px] font-poppins-bold ${
-                            isSubDisconnected ? "text-amber-800" : "text-[#2d3416]"
+                            isSubDisconnected
+                              ? "text-amber-800"
+                              : "text-[#2d3416]"
                           }`}
                         >
                           {sub.status || "CONNECTED"}
@@ -1623,17 +2094,36 @@ export default function BoxDetailsScreen() {
                   }}
                   activeOpacity={0.8}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      flex: 1,
+                      marginRight: 8,
+                    }}
+                  >
                     <Ionicons
                       name={padlockVerified ? "lock-closed" : "lock-open"}
                       size={18}
                       color={padlockVerified ? "#4d6029" : "#dc2626"}
                     />
                     <View style={{ marginLeft: 10, flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontFamily: "Poppins_700Bold", color: "#0f172a" }}>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Poppins_700Bold",
+                          color: "#0f172a",
+                        }}
+                      >
                         Cabinet Padlock & Seal
                       </Text>
-                      <Text style={{ fontSize: 10, fontFamily: "Poppins_400Regular", color: "#64748b" }}>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontFamily: "Poppins_400Regular",
+                          color: "#64748b",
+                        }}
+                      >
                         {padlockVerified
                           ? "Physical lock latched and intact"
                           : "Lock unlatched or seal broken"}
@@ -1777,6 +2267,11 @@ export default function BoxDetailsScreen() {
                           icon: "rainy-outline",
                           label: "Water / Weather Damage",
                         },
+                        {
+                          id: "Others",
+                          icon: "alert-circle-outline",
+                          label: "Others (Please Specify)",
+                        },
                       ].map((issue) => {
                         const isSelected = selectedIssueType === issue.id;
                         return (
@@ -1785,7 +2280,7 @@ export default function BoxDetailsScreen() {
                             onPress={() => handleSelectIssueType(issue.id)}
                             activeOpacity={0.8}
                             style={{
-                              width: "48.5%",
+                              width: issue.id === "Others" ? "100%" : "48.5%",
                               marginBottom: 8,
                               paddingVertical: 8,
                               paddingHorizontal: 10,
@@ -1794,7 +2289,9 @@ export default function BoxDetailsScreen() {
                               flexDirection: "row",
                               alignItems: "center",
                               minHeight: 44,
-                              backgroundColor: isSelected ? "#dc2626" : "#ffffff",
+                              backgroundColor: isSelected
+                                ? "#dc2626"
+                                : "#ffffff",
                               borderColor: isSelected ? "#b91c1c" : "#fecdd3",
                             }}
                           >
@@ -1820,6 +2317,39 @@ export default function BoxDetailsScreen() {
                         );
                       })}
                     </View>
+
+                    {/* Dedicated input when Others is selected */}
+                    {selectedIssueType === "Others" && (
+                      <View style={{ marginTop: 2, marginBottom: 2 }}>
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontFamily: "Poppins_700Bold",
+                            color: "#881337",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Please Specify Problem Type:
+                        </Text>
+                        <TextInput
+                          placeholder=""
+                          placeholderTextColor="#fda4af"
+                          value={customIssueType}
+                          onChangeText={setCustomIssueType}
+                          style={{
+                            backgroundColor: "#ffffff",
+                            borderWidth: 1.5,
+                            borderColor: "#f43f5e",
+                            borderRadius: 12,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            fontSize: 11,
+                            fontFamily: "Poppins_500Medium",
+                            color: "#881337",
+                          }}
+                        />
+                      </View>
+                    )}
                   </View>
                 ) : (
                   <View
@@ -1848,7 +2378,9 @@ export default function BoxDetailsScreen() {
                         flex: 1,
                       }}
                     >
-                      All optical ports, enclosure, and hardware verified operational on-site.
+                      {box.status === "ISSUE" && auditStatus === "ACTIVE"
+                        ? "Hardware maintenance completed. Enclosure & optical ports restored to nominal state."
+                        : "All optical ports, enclosure, and hardware verified operational on-site."}
                     </Text>
                   </View>
                 )}
@@ -1869,7 +2401,9 @@ export default function BoxDetailsScreen() {
                     placeholder={
                       auditStatus === "ISSUE"
                         ? "Describe specific damage (e.g. Port 4 connector cracked)..."
-                        : "Optional notes on cabinet condition, maintenance performed..."
+                        : box.status === "ISSUE" && auditStatus === "ACTIVE"
+                          ? "Describe corrective maintenance performed (e.g. Replaced defective splitter)..."
+                          : "Optional notes on cabinet condition, maintenance performed..."
                     }
                     placeholderTextColor="#94a3b8"
                     value={auditNotes}
@@ -1890,6 +2424,108 @@ export default function BoxDetailsScreen() {
                     }}
                   />
                 </View>
+
+                {/* 4. Photo Evidence Attachment Section */}
+                <View className="mt-3.5">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: "Poppins_600SemiBold",
+                        color: "#475569",
+                      }}
+                    >
+                      Photo Evidence {auditStatus === "ISSUE" ? "(Damage Proof)" : "(Optional)"}:
+                    </Text>
+                    {evidencePhoto && (
+                      <TouchableOpacity
+                        onPress={() => setEvidencePhoto(null)}
+                        className="flex-row items-center py-0.5 px-2 rounded-md bg-rose-50"
+                      >
+                        <Ionicons name="trash-outline" size={12} color="#dc2626" />
+                        <Text className="text-[10px] font-poppins-semibold text-rose-600 ml-1">
+                          Remove
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {evidencePhoto ? (
+                    <View className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5">
+                      <View className="relative rounded-xl overflow-hidden mb-2 bg-slate-900 border border-slate-200">
+                        <Image
+                          source={{ uri: evidencePhoto }}
+                          style={{ width: "100%", height: 160 }}
+                          resizeMode="cover"
+                        />
+                        <View className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded-full flex-row items-center">
+                          <Ionicons name="checkmark-circle" size={12} color="#84cc16" />
+                          <Text className="text-[10px] font-poppins-bold text-white ml-1">
+                            Proof Attached
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="flex-row gap-2">
+                        <TouchableOpacity
+                          onPress={handleTakePhoto}
+                          disabled={isCapturingPhoto}
+                          className="flex-1 py-2 px-3 bg-white border border-slate-200 rounded-xl flex-row items-center justify-center active:bg-slate-50 shadow-xs"
+                        >
+                          <Ionicons name="camera" size={14} color="#4d6029" />
+                          <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1.5">
+                            Retake Photo
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={handlePickFromGallery}
+                          disabled={isCapturingPhoto}
+                          className="flex-1 py-2 px-3 bg-white border border-slate-200 rounded-xl flex-row items-center justify-center active:bg-slate-50 shadow-xs"
+                        >
+                          <Ionicons name="images-outline" size={14} color="#64748b" />
+                          <Text className="text-xs font-poppins-bold text-slate-700 ml-1.5">
+                            Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View className="border border-dashed border-slate-300 rounded-2xl p-3 bg-slate-50/70">
+                      <Text className="text-[11px] font-poppins text-slate-500 mb-2.5 text-center">
+                        Attach visual proof of physical defect, broken hardware, or maintenance work.
+                      </Text>
+                      <View className="flex-row gap-2">
+                        <TouchableOpacity
+                          onPress={handleTakePhoto}
+                          disabled={isCapturingPhoto}
+                          className="flex-1 py-2.5 bg-[#4d6029]/10 border border-[#4d6029]/25 rounded-xl flex-row items-center justify-center active:bg-[#4d6029]/20"
+                          activeOpacity={0.8}
+                        >
+                          {isCapturingPhoto ? (
+                            <ActivityIndicator size="small" color="#4d6029" />
+                          ) : (
+                            <>
+                              <Ionicons name="camera" size={16} color="#4d6029" />
+                              <Text className="text-xs font-poppins-bold text-[#4d6029] ml-1.5">
+                                Take Photo
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={handlePickFromGallery}
+                          disabled={isCapturingPhoto}
+                          className="flex-1 py-2.5 bg-white border border-slate-200 rounded-xl flex-row items-center justify-center active:bg-slate-100"
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="images-outline" size={16} color="#475569" />
+                          <Text className="text-xs font-poppins-bold text-slate-700 ml-1.5">
+                            Upload Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
               </View>
 
               {/* Submit / Cancel Buttons */}
@@ -1899,11 +2535,7 @@ export default function BoxDetailsScreen() {
                   disabled={isSubmittingAudit}
                   className="flex-1 bg-[#4d6029] py-3 rounded-xl items-center justify-center flex-row shadow-xs active:opacity-85"
                 >
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={16}
-                    color="#ffffff"
-                  />
+                  <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
                   <Text className="text-white text-xs font-poppins-bold ml-1.5">
                     Submit Inspection Report
                   </Text>
@@ -2013,7 +2645,10 @@ export default function BoxDetailsScreen() {
                           className="text-[11px] font-poppins-bold text-rose-700 max-w-[55%] text-right"
                           numberOfLines={1}
                         >
-                          {selectedIssueType}
+                          {selectedIssueType === "Others" &&
+                          customIssueType.trim()
+                            ? customIssueType.trim()
+                            : selectedIssueType}
                         </Text>
                       </View>
                     )}
@@ -2025,7 +2660,11 @@ export default function BoxDetailsScreen() {
                       </Text>
                       <View className="flex-row items-center">
                         <Ionicons
-                          name={padlockVerified ? "checkmark-circle" : "close-circle"}
+                          name={
+                            padlockVerified
+                              ? "checkmark-circle"
+                              : "close-circle"
+                          }
                           size={13}
                           color={padlockVerified ? "#4d6029" : "#dc2626"}
                           style={{ marginRight: 3 }}
@@ -2035,7 +2674,9 @@ export default function BoxDetailsScreen() {
                             padlockVerified ? "text-[#4d6029]" : "text-rose-700"
                           }`}
                         >
-                          {padlockVerified ? "Verified Intact" : "Unlatched / Broken"}
+                          {padlockVerified
+                            ? "Verified Intact"
+                            : "Unlatched / Broken"}
                         </Text>
                       </View>
                     </View>
@@ -2052,6 +2693,23 @@ export default function BoxDetailsScreen() {
                         >
                           &ldquo;{auditNotes.trim()}&rdquo;
                         </Text>
+                      </View>
+                    )}
+
+                    {/* Photo Evidence Preview in Confirmation */}
+                    {evidencePhoto && (
+                      <View className="pt-2 border-t border-slate-200/60 flex-row items-center justify-between">
+                        <View className="flex-row items-center">
+                          <Ionicons name="camera" size={14} color="#4d6029" />
+                          <Text className="text-[10px] font-poppins-semibold text-slate-600 ml-1.5">
+                            Photo Evidence:
+                          </Text>
+                        </View>
+                        <Image
+                          source={{ uri: evidencePhoto }}
+                          style={{ width: 36, height: 36, borderRadius: 8 }}
+                          resizeMode="cover"
+                        />
                       </View>
                     )}
                   </View>
@@ -2303,6 +2961,110 @@ export default function BoxDetailsScreen() {
                     </View>
                   )}
                 </View>
+
+                {/* Step 2: Optical Power Meter (OPM) Reading */}
+                {(() => {
+                  const signalQuality = evaluateSignalDbm(assignSignalDbm);
+                  return (
+                    <View className="mb-3.5 pt-3 border-t border-slate-100">
+                      <View className="flex-row items-center justify-between mb-1.5">
+                        <View className="flex-row items-center">
+                          <Ionicons
+                            name="speedometer-outline"
+                            size={14}
+                            color="#4d6029"
+                          />
+                          <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                            Optical Power Level (OPM)
+                          </Text>
+                        </View>
+                        <View
+                          className={`px-2 py-0.5 rounded-full border ${signalQuality.badgeBg} ${signalQuality.badgeBorder}`}
+                        >
+                          <Text
+                            className={`text-[10px] font-poppins-bold ${signalQuality.badgeText}`}
+                          >
+                            {signalQuality.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text className="text-[10px] font-poppins text-slate-500 mb-2">
+                        Measure optical power from splitter port using an Optical
+                        Power Meter (OPM) before patching drop wire.
+                      </Text>
+
+                      {/* Power Input Field */}
+                      <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 mb-2">
+                        <Ionicons
+                          name="flash-outline"
+                          size={15}
+                          color="#4d6029"
+                        />
+                        <TextInput
+                          value={assignSignalDbm}
+                          onChangeText={setAssignSignalDbm}
+                          placeholder="0.0 dBm"
+                          placeholderTextColor="#94a3b8"
+                          className="flex-1 ml-2 text-xs font-mono font-bold text-[#0f172a]"
+                        />
+                        <Text className="text-[11px] font-mono font-bold text-slate-400">
+                          dBm
+                        </Text>
+                      </View>
+
+                      {/* Quick Preset Chips */}
+                      <View className="flex-row flex-wrap items-center gap-1.5 mb-1.5">
+                        <Text className="text-[10px] font-poppins text-slate-400 mr-1">
+                          Presets:
+                        </Text>
+                        {[
+                          "0.0 dBm",
+                          "-16.0 dBm",
+                          "-18.5 dBm",
+                          "-21.0 dBm",
+                          "-24.5 dBm",
+                          "LOS",
+                        ].map((preset) => {
+                          const isSelected = assignSignalDbm === preset;
+                          return (
+                            <TouchableOpacity
+                              key={preset}
+                              onPress={() => {
+                                setAssignSignalDbm((prev) =>
+                                  prev === preset ? "0.0 dBm" : preset,
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded-lg border ${
+                                isSelected
+                                  ? preset === "0.0 dBm"
+                                    ? "bg-slate-200 border-slate-400"
+                                    : "bg-[#4d6029]/15 border-[#4d6029]"
+                                  : "bg-white border-slate-200"
+                              }`}
+                            >
+                              <Text
+                                className={`text-[10px] font-mono ${
+                                  isSelected
+                                    ? preset === "0.0 dBm"
+                                      ? "text-slate-800 font-bold"
+                                      : "text-[#4d6029] font-bold"
+                                    : "text-slate-600"
+                                }`}
+                              >
+                                {preset}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      <Text className="text-[10px] font-poppins text-[#64748b] italic">
+                        {signalQuality.description}
+                      </Text>
+                    </View>
+                  );
+                })()}
               </ScrollView>
 
               {/* Modal Footer Buttons */}
@@ -2472,6 +3234,149 @@ export default function BoxDetailsScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* Optical Signal Level (OPM) Card */}
+                {(() => {
+                  const currentSignal =
+                    selectedPortClient.signalDbm || "-18.5 dBm";
+                  const signalQuality = evaluateSignalDbm(
+                    isEditingInspectorSignal
+                      ? inspectorSignalDbm
+                      : currentSignal,
+                  );
+                  return (
+                    <View className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 mb-3.5">
+                      <View className="flex-row items-center justify-between mb-1.5">
+                        <View className="flex-row items-center">
+                          <Ionicons
+                            name="speedometer-outline"
+                            size={14}
+                            color="#4d6029"
+                          />
+                          <Text className="text-xs font-poppins-bold text-[#0f172a] ml-1.5">
+                            Optical Power Level (OPM)
+                          </Text>
+                        </View>
+                        <View
+                          className={`px-2 py-0.5 rounded-full border ${signalQuality.badgeBg} ${signalQuality.badgeBorder}`}
+                        >
+                          <Text
+                            className={`text-[10px] font-poppins-bold ${signalQuality.badgeText}`}
+                          >
+                            {signalQuality.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {!isEditingInspectorSignal ? (
+                        <View className="flex-row items-center justify-between mt-1">
+                          <View className="flex-1 mr-2">
+                            <Text className="text-base font-mono font-bold text-[#0f172a]">
+                              {currentSignal}
+                            </Text>
+                            <Text className="text-[10px] font-poppins text-[#64748b]">
+                              {signalQuality.description}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setInspectorSignalDbm(currentSignal);
+                              setIsEditingInspectorSignal(true);
+                            }}
+                            className="py-1.5 px-3 bg-[#4d6029]/10 border border-[#4d6029]/25 rounded-xl flex-row items-center active:bg-[#4d6029]/20"
+                          >
+                            <Ionicons
+                              name="create-outline"
+                              size={13}
+                              color="#4d6029"
+                            />
+                            <Text className="text-[11px] font-poppins-bold text-[#4d6029] ml-1">
+                              Re-Test
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <View className="mt-2 pt-2 border-t border-slate-200/60">
+                          <Text className="text-[11px] font-poppins text-slate-500 mb-1">
+                            Enter newly measured optical power (dBm):
+                          </Text>
+                          <View className="flex-row items-center gap-2 mb-2">
+                            <TextInput
+                              value={inspectorSignalDbm}
+                              onChangeText={setInspectorSignalDbm}
+                              placeholder="-18.5 dBm"
+                              placeholderTextColor="#94a3b8"
+                              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-[#0f172a]"
+                            />
+                            <TouchableOpacity
+                              onPress={handleSaveInspectorSignal}
+                              disabled={isSavingSignal}
+                              className="px-3 py-2 bg-[#4d6029] rounded-xl flex-row items-center justify-center active:opacity-90"
+                            >
+                              {isSavingSignal ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color="#ffffff"
+                                />
+                              ) : (
+                                <Text className="text-xs font-poppins-bold text-white">
+                                  Save
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => setIsEditingInspectorSignal(false)}
+                              disabled={isSavingSignal}
+                              className="px-3 py-2 bg-slate-200 rounded-xl items-center justify-center"
+                            >
+                              <Text className="text-xs font-poppins-semibold text-slate-700">
+                                Cancel
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                          {/* Presets */}
+                          <View className="flex-row flex-wrap gap-1.5">
+                            {[
+                              "0.0 dBm",
+                              "-16.0 dBm",
+                              "-18.5 dBm",
+                              "-21.0 dBm",
+                              "-24.5 dBm",
+                              "LOS",
+                            ].map((chip) => {
+                              const isSelected = inspectorSignalDbm === chip;
+                              return (
+                                <TouchableOpacity
+                                  key={chip}
+                                  onPress={() => setInspectorSignalDbm(chip)}
+                                  className={`px-2.5 py-1 rounded-lg border ${
+                                    isSelected
+                                      ? chip === "0.0 dBm"
+                                        ? "bg-slate-200 border-slate-400"
+                                        : "bg-[#4d6029]/15 border-[#4d6029]"
+                                      : "bg-white border-slate-200"
+                                  }`}
+                                >
+                                  <Text
+                                    className={`text-[10px] font-mono ${
+                                      isSelected
+                                        ? chip === "0.0 dBm"
+                                          ? "text-slate-800 font-bold"
+                                          : "text-[#4d6029] font-bold"
+                                        : "text-slate-600"
+                                    }`}
+                                  >
+                                    {chip}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
 
                 {/* Port Lock Notice */}
                 <View className="bg-[#AEAC78]/20 border border-[#AEAC78]/60 rounded-2xl p-3 mb-4 flex-row items-center">

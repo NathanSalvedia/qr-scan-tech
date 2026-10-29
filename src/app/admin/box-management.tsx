@@ -174,7 +174,7 @@ export default function BoxManagementScreen() {
                 status: "OPERATIONAL",
               })),
           clients: Array.isArray(b.clients) ? b.clients : [],
-          qrToken: b.qrToken || b.qr_token || `QRTECH-BOX-${b.code}`,
+          qrToken: b.qrToken || b.qr_token || `ScanOps-Box-${b.code}`,
           lastScanned: b.lastScanned || b.last_scanned_at || "Never",
           notes: b.notes || "",
         }));
@@ -226,7 +226,7 @@ export default function BoxManagementScreen() {
                   status: "OPERATIONAL",
                 })),
             clients: Array.isArray(b.clients) ? b.clients : [],
-            qrToken: b.qrToken || b.qr_token || `QRTECH-BOX-${b.code}`,
+            qrToken: b.qrToken || b.qr_token || `ScanOps-Box-${b.code}`,
             lastScanned: b.lastScanned || b.last_scanned_at || "Never",
             notes: b.notes || "",
           }));
@@ -1511,7 +1511,7 @@ export default function BoxManagementScreen() {
           equipment: constructedEquipment,
           clients: [],
           qrToken:
-            res.box.qrToken || res.box.qr_token || `QRTECH-BOX-${res.box.code}`,
+            res.box.qrToken || res.box.qr_token || `ScanOps-Box-${res.box.code}`,
           lastScanned: "Never (New Registration)",
           notes: res.box.notes || "",
         };

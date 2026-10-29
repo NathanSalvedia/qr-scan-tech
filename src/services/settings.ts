@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DistributionBox } from './boxes';
+import { boxService, DistributionBox } from './boxes';
+import { logsService } from './logs';
 import { authState, AuthUser } from './auth-state';
 import { API_BASE_URL as API_URL, apiFetch } from './api-config';
 
@@ -50,11 +51,31 @@ export interface ProfileUpdateResponse {
   error?: string;
 }
 
+export type OutboxItemType = 'SCAN' | 'AUDIT' | 'PORT_PROVISION' | 'SIGNAL_UPDATE';
+
+export interface OutboxItem {
+  id: string;
+  type: OutboxItemType;
+  title: string;
+  timestamp: string;
+  payload: any;
+  retryCount?: number;
+}
+
+export interface SyncOutboxResult {
+  success: boolean;
+  syncedCount: number;
+  failedCount: number;
+  remainingCount: number;
+  errors: string[];
+}
+
 const STORAGE_KEYS = {
   SCANNER_PREFERENCES: '@qr_scanner_preferences',
   OFFLINE_BOXES: '@offline_boxes_cache',
   OFFLINE_LAST_SYNC: '@offline_last_sync_timestamp',
   SYSTEM_SETTINGS: '@qr_system_settings_cache',
+  OFFLINE_OUTBOX: '@offline_outbox_queue',
 };
 
 const DEFAULT_PREFERENCES: ScannerPreferences = {
@@ -73,7 +94,7 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   placardHeader: 'MULTIFACTORS · ILIGAN',
   paperFormat: 'A4 Bondpaper (2 Placards / Sheet)',
   autoFillDuplicate: true,
-  tokenPrefix: 'QRTECH-BOX-',
+  tokenPrefix: 'ScanOps-Box-',
 };
 
 export const settingsService = {
@@ -169,6 +190,148 @@ export const settingsService = {
     } catch {
       return 'Never synced';
     }
+  },
+
+  // 3. Outbox Queue for Low-Connectivity / Offline Sync
+  getOutboxItems: async (): Promise<OutboxItem[]> => {
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.OFFLINE_OUTBOX);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load outbox items:', e);
+    }
+    return [];
+  },
+
+  getOutboxCount: async (): Promise<number> => {
+    try {
+      const items = await settingsService.getOutboxItems();
+      return items.length;
+    } catch {
+      return 0;
+    }
+  },
+
+  addOutboxItem: async (item: Omit<OutboxItem, 'id' | 'timestamp'>): Promise<OutboxItem> => {
+    try {
+      const current = await settingsService.getOutboxItems();
+      const newItem: OutboxItem = {
+        ...item,
+        id: `outbox_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: new Date().toISOString(),
+      };
+      const updated = [newItem, ...current];
+      await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_OUTBOX, JSON.stringify(updated));
+      return newItem;
+    } catch (e) {
+      console.warn('Failed to add outbox item:', e);
+      return {
+        ...item,
+        id: `outbox_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  },
+
+  removeOutboxItem: async (id: string): Promise<void> => {
+    try {
+      const current = await settingsService.getOutboxItems();
+      const filtered = current.filter((i) => i.id !== id);
+      await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_OUTBOX, JSON.stringify(filtered));
+    } catch (e) {
+      console.warn('Failed to remove outbox item:', e);
+    }
+  },
+
+  clearOutbox: async (): Promise<void> => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.OFFLINE_OUTBOX);
+    } catch (e) {
+      console.warn('Failed to clear outbox queue:', e);
+    }
+  },
+
+  /**
+   * Drains the offline outbox queue in FIFO order (oldest first).
+   * Automatically replays audits, port activations, and signal updates to the server.
+   */
+  syncOutboxQueue: async (): Promise<SyncOutboxResult> => {
+    const items = await settingsService.getOutboxItems();
+    if (items.length === 0) {
+      return {
+        success: true,
+        syncedCount: 0,
+        failedCount: 0,
+        remainingCount: 0,
+        errors: [],
+      };
+    }
+
+    // Process in FIFO order (oldest first)
+    const queue = [...items].reverse();
+    let syncedCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
+
+    for (const item of queue) {
+      try {
+        let opSuccess = false;
+        if (item.type === 'AUDIT' || item.type === 'SCAN') {
+          const res = await logsService.recordScan(item.payload);
+          if (res.success) {
+            opSuccess = true;
+            // If the audit updated the box status, also sync box status
+            if (item.payload.boxId && item.payload.boxStatusAtScan) {
+              await boxService
+                .update(item.payload.boxId, { status: item.payload.boxStatusAtScan })
+                .catch(() => {});
+            }
+          } else {
+            throw new Error(res.message || 'Audit sync rejected');
+          }
+        } else if (item.type === 'PORT_PROVISION') {
+          const res = await boxService.assignClient(item.payload.boxId, item.payload.clientData);
+          if (res.success) {
+            opSuccess = true;
+          } else {
+            throw new Error(res.message || 'Port provisioning sync rejected');
+          }
+        } else if (item.type === 'SIGNAL_UPDATE') {
+          const res = await boxService.updateClientSignal(
+            item.payload.boxId,
+            item.payload.portNumber,
+            item.payload.signalDbm
+          );
+          if (res.success) {
+            opSuccess = true;
+          } else {
+            throw new Error(res.message || 'Signal update sync rejected');
+          }
+        }
+
+        if (opSuccess) {
+          await settingsService.removeOutboxItem(item.id);
+          syncedCount++;
+        }
+      } catch (err: any) {
+        failedCount++;
+        errors.push(`${item.title}: ${err.message || 'Network error'}`);
+        // If an item fails due to a network error, stop draining to preserve FIFO order
+        break;
+      }
+    }
+
+    const remaining = await settingsService.getOutboxCount();
+    return {
+      success: failedCount === 0,
+      syncedCount,
+      failedCount,
+      remainingCount: remaining,
+      errors,
+    };
   },
 
   // 4. System Settings (Backend + AsyncStorage Cache)

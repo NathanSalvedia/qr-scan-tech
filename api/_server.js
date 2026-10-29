@@ -74915,7 +74915,7 @@ var systemSettings = pgTable("system_settings", {
   placardHeader: varchar("placard_header", { length: 150 }).default("MULTIFACTORS \xB7 ILIGAN").notNull(),
   paperFormat: varchar("paper_format", { length: 100 }).default("A4 Bondpaper (2 Placards / Sheet)").notNull(),
   autoFillDuplicate: boolean("auto_fill_duplicate").default(true).notNull(),
-  tokenPrefix: varchar("token_prefix", { length: 50 }).default("QRTECH-BOX-").notNull(),
+  tokenPrefix: varchar("token_prefix", { length: 50 }).default("ScanOps-Box-").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
 var subscribers = pgTable("subscribers", {
@@ -89701,7 +89701,12 @@ router3.post("/", requireAuth, async (req, res) => {
         resolvedParentBoxId = parentBox.id;
       }
     }
-    const qrToken = `QRTECH-BOX-${cleanCode}-${Math.floor(1e3 + Math.random() * 9e3)}`;
+    let tokenPrefix = "ScanOps-Box-";
+    try {
+      const [st] = await db.select({ tokenPrefix: systemSettings.tokenPrefix }).from(systemSettings).limit(1);
+      if (st?.tokenPrefix) tokenPrefix = st.tokenPrefix;
+    } catch {}
+    const qrToken = `${tokenPrefix}${cleanCode}-${Math.floor(1e3 + Math.random() * 9e3)}`;
     const [newBox] = await db.insert(distributionBoxes).values({
       code: cleanCode,
       category: category || "SUB_BOX",
@@ -90749,7 +90754,7 @@ var DEFAULT_SYSTEM_SETTINGS = {
   placardHeader: "MULTIFACTORS \xB7 ILIGAN",
   paperFormat: "A4 Bondpaper (2 Placards / Sheet)",
   autoFillDuplicate: true,
-  tokenPrefix: "QRTECH-BOX-"
+  tokenPrefix: "ScanOps-Box-"
 };
 router6.get("/", async (req, res) => {
   try {

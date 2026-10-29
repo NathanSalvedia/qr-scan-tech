@@ -265,8 +265,8 @@ export default function UserScannerScreen() {
       // Continue to token and regex patterns
     }
 
-    // 2. Cryptographic token format: QRTECH-BOX-DB-MN-01-xxxx or QRTECH-BOX-DB-MN-01
-    const tokenMatch = trimmed.match(/QRTECH-BOX-([A-Z0-9-]+)/i);
+    // 2. Cryptographic token format: ScanOps-Box-DB-MN-01-xxxx or legacy QRTECH-BOX-DB-MN-01-xxxx
+    const tokenMatch = trimmed.match(/(?:ScanOps-Box|QRTECH-BOX)-([A-Z0-9-]+)/i);
     if (tokenMatch) {
       return trimmed;
     }

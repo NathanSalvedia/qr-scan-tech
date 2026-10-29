@@ -120,6 +120,7 @@ export const scanAuditLogs = pgTable('scan_audit_logs', {
   scanType: varchar('scan_type', { length: 50 }).default('CAMERA_QR').notNull(),
   padlockVerified: boolean('padlock_verified').default(true).notNull(),
   auditNotes: text('audit_notes'),
+  evidencePhoto: text('evidence_photo'),
   boxStatusAtScan: varchar('box_status_at_scan', { length: 50 }).notNull(),
   scanLatitude: numeric('scan_latitude'),
   scanLongitude: numeric('scan_longitude'),
@@ -139,7 +140,7 @@ export const systemSettings = pgTable('system_settings', {
   placardHeader: varchar('placard_header', { length: 150 }).default('MULTIFACTORS · ILIGAN').notNull(),
   paperFormat: varchar('paper_format', { length: 100 }).default('A4 Bondpaper (2 Placards / Sheet)').notNull(),
   autoFillDuplicate: boolean('auto_fill_duplicate').default(true).notNull(),
-  tokenPrefix: varchar('token_prefix', { length: 50 }).default('QRTECH-BOX-').notNull(),
+  tokenPrefix: varchar('token_prefix', { length: 50 }).default('ScanOps-Box-').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

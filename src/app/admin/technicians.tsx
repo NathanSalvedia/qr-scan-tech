@@ -983,6 +983,28 @@ export default function TechniciansScreen() {
                       </View>
                     ) : (
                       <View className="space-y-2.5">
+                        <View className="flex-row items-center justify-between pb-1 px-1 mb-1">
+                          <Text className="text-[11px] font-poppins-medium text-[#64748b]">
+                            Servicing & Corrective History ({selectedTechForDetails.maintenanceActions.length})
+                          </Text>
+                          <View className="flex-row items-center gap-1.5">
+                            {selectedTechForDetails.maintenanceActions.filter((a) => a.status === "PENDING").length > 0 && (
+                              <View className="bg-rose-100 px-2 py-0.5 rounded-full">
+                                <Text className="text-[10px] font-poppins-bold text-rose-700">
+                                  {selectedTechForDetails.maintenanceActions.filter((a) => a.status === "PENDING").length} Pending
+                                </Text>
+                              </View>
+                            )}
+                            {selectedTechForDetails.maintenanceActions.filter((a) => a.status === "RESOLVED").length > 0 && (
+                              <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
+                                <Text className="text-[10px] font-poppins-bold text-emerald-700">
+                                  {selectedTechForDetails.maintenanceActions.filter((a) => a.status === "RESOLVED").length} Resolved
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+
                         {selectedTechForDetails.maintenanceActions.map(
                           (action) => (
                             <View

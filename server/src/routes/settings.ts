@@ -16,7 +16,7 @@ export const DEFAULT_SYSTEM_SETTINGS = {
   placardHeader: 'MULTIFACTORS · ILIGAN',
   paperFormat: 'A4 Bondpaper (2 Placards / Sheet)',
   autoFillDuplicate: true,
-  tokenPrefix: 'QRTECH-BOX-',
+  tokenPrefix: 'ScanOps-Box-',
 };
 
 // =================================================================

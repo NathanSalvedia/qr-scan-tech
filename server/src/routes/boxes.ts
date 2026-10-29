@@ -11,6 +11,7 @@ import {
   zones,
   scanAuditLogs,
   subscribers,
+  systemSettings,
 } from '../db/schema.js';
 import { eq, and, desc, or, sql } from 'drizzle-orm';
 
@@ -21,23 +22,21 @@ const router = Router();
 // =========================================================================
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows } =
+    const { rawBoxes, rawClients, rawEquipment, catalogRows, scanRows, userRows } =
       await withDbRetry(async () => {
-        const [rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows] =
+        const [rawBoxes, rawClients, rawEquipment, catalogRows, scanRows, userRows] =
           await Promise.all([
             db.select().from(distributionBoxes),
             db.select().from(clientConnections),
             db.select().from(boxEquipment),
             db.select().from(equipmentCatalog),
-            db.select().from(zones),
             db.select().from(scanAuditLogs).orderBy(desc(scanAuditLogs.createdAt)),
             db.select().from(users),
           ]);
-        return { rawBoxes, rawClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows };
+        return { rawBoxes, rawClients, rawEquipment, catalogRows, scanRows, userRows };
       });
 
     const boxCodeMap = new Map(rawBoxes.map((b) => [b.id, b.code]));
-    const zoneMap = new Map(zoneRows.map((z) => [z.id, z.name]));
     const userMap = new Map(userRows.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
 
     const boxes = rawBoxes.map((box) => {
@@ -179,7 +178,7 @@ router.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     const boxId = box.id;
 
-    const [allBoxes, boxClients, rawEquipment, catalogRows, zoneRows, scanRows, userRows] = await Promise.all([
+    const [allBoxes, boxClients, rawEquipment, catalogRows, /* zoneRows */, scanRows, userRows] = await Promise.all([
       db.select().from(distributionBoxes),
       db.select().from(clientConnections).where(eq(clientConnections.boxId, boxId)),
       db.select().from(boxEquipment).where(eq(boxEquipment.boxId, boxId)),
@@ -341,7 +340,18 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
       }
     }
 
-    const qrToken = `QRTECH-BOX-${cleanCode}-${Math.floor(1000 + Math.random() * 9000)}`;
+    let tokenPrefix = 'ScanOps-Box-';
+    try {
+      const [st] = await db
+        .select({ tokenPrefix: systemSettings.tokenPrefix })
+        .from(systemSettings)
+        .limit(1);
+      if (st?.tokenPrefix) tokenPrefix = st.tokenPrefix;
+    } catch {
+      // Fallback to ScanOps-Box-
+    }
+
+    const qrToken = `${tokenPrefix}${cleanCode}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const [newBox] = await db
       .insert(distributionBoxes)
@@ -605,7 +615,7 @@ router.post('/:id/clients', requireAuth, async (req: AuthenticatedRequest, res: 
         customerName: String(name).trim(),
         clientType: clientType || 'RESIDENTIAL',
         servicePlan: plan || '100 Mbps Fiber Plan',
-        signalDbm: req.user?.id || null,
+        signalDbm: req.body.signalDbm ? String(req.body.signalDbm).trim() : null,
         status: 'CONNECTED',
       })
       .returning();
@@ -679,6 +689,43 @@ router.patch('/:id/clients/:port', requireAuth, async (req: AuthenticatedRequest
   } catch (error: any) {
     console.error('Error toggling client status:', error);
     return res.status(500).json({ success: false, message: error.message || 'Failed to toggle client status.' });
+  }
+});
+
+// =========================================================================
+// 6b. UPDATE OPTICAL SIGNAL (dBm) READING
+// =========================================================================
+router.patch('/:id/clients/:port/signal', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, port } = req.params;
+    const { signalDbm } = req.body;
+    const portNum = typeof port === 'number' ? port : parseInt(String(port).replace(/\D/g, ''), 10) || 1;
+
+    const [existing] = await db
+      .select()
+      .from(clientConnections)
+      .where(and(eq(clientConnections.boxId, id), eq(clientConnections.portNumber, portNum)));
+
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Client not found on this port' });
+    }
+
+    const cleanSignal = signalDbm ? String(signalDbm).trim() : null;
+
+    const [updated] = await db
+      .update(clientConnections)
+      .set({ signalDbm: cleanSignal })
+      .where(eq(clientConnections.id, existing.id))
+      .returning();
+
+    return res.json({
+      success: true,
+      message: `Optical signal updated to ${cleanSignal || 'N/A'} for Port ${portNum}.`,
+      client: updated,
+    });
+  } catch (error: any) {
+    console.error('Error updating optical signal:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to update optical signal.' });
   }
 });
 

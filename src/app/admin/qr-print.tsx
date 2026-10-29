@@ -158,7 +158,7 @@ export default function QRPrintScreen() {
             status: b.status || "NEEDS_TAG",
             totalPorts: Number(b.totalPorts || b.total_ports) || 24,
             activePorts: Number(b.activePorts) || 0,
-            qrToken: b.qrToken || b.qr_token || `QRTECH-BOX-${b.code}`,
+            qrToken: b.qrToken || b.qr_token || `ScanOps-Box-${b.code}`,
           }));
           setBoxes(mapped);
           setSelectedBoxIds([]);
