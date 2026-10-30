@@ -32,80 +32,7 @@ import {
   openGoogleMapsNavigation,
 } from "@/utils/geo";
 
-const FALLBACK_PENDING_WORK_ORDERS: SubscriberRecord[] = [
-  {
-    accountNumber: "2608001018",
-    customerName: "Marco Polo Villanueva",
-    name: "Marco Polo Villanueva",
-    subscriberType: "Residential",
-    category: "Residential",
-    servicePlan: "200 Mbps Fiber Plan",
-    plan: "200 Mbps Fiber Plan",
-    contactNumber: "0917-552-8410",
-    address: "Purok 4, Tibanga, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-  {
-    accountNumber: "2608001026",
-    customerName: "Kape Iligan Roastery & Co.",
-    name: "Kape Iligan Roastery & Co.",
-    subscriberType: "Commercial",
-    category: "Commercial",
-    servicePlan: "300 Mbps Fiber Plan",
-    plan: "300 Mbps Fiber Plan",
-    contactNumber: "0918-334-9102",
-    address: "Quezon Ave, Poblacion, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-  {
-    accountNumber: "2608001034",
-    customerName: "Elena Grace Macapagal",
-    name: "Elena Grace Macapagal",
-    subscriberType: "Residential",
-    category: "Residential",
-    servicePlan: "100 Mbps Fiber Plan",
-    plan: "100 Mbps Fiber Plan",
-    contactNumber: "0998-741-2095",
-    address: "Zamora St, San Miguel, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-  {
-    accountNumber: "2608001042",
-    customerName: "Mindanao Tech Hub Solutions",
-    name: "Mindanao Tech Hub Solutions",
-    subscriberType: "Commercial",
-    category: "Commercial",
-    servicePlan: "300 Mbps Fiber Plan",
-    plan: "300 Mbps Fiber Plan",
-    contactNumber: "0917-890-4412",
-    address: "Andres Bonifacio Ave, Saray, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-  {
-    accountNumber: "2608001059",
-    customerName: "Dr. Rafael Mendoza Clinic",
-    name: "Dr. Rafael Mendoza Clinic",
-    subscriberType: "Commercial",
-    category: "Commercial",
-    servicePlan: "200 Mbps Fiber Plan",
-    plan: "200 Mbps Fiber Plan",
-    contactNumber: "0920-614-3381",
-    address: "Roxas Ave, Mahayahay, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-  {
-    accountNumber: "2608001067",
-    customerName: "Hannah Mae Alcantara",
-    name: "Hannah Mae Alcantara",
-    subscriberType: "Residential",
-    category: "Residential",
-    servicePlan: "100 Mbps Fiber Plan",
-    plan: "100 Mbps Fiber Plan",
-    contactNumber: "0915-409-7731",
-    address: "Bro. Jeffrey Rd, Pala-o, Iligan City",
-    status: "PENDING_PROVISIONING",
-  },
-];
+
 
 export interface HardwareEquipmentItem {
   id: string;
@@ -345,7 +272,7 @@ export default function BoxDetailsScreen() {
   // Pending installation work orders & subscriber assignment fields
   const [pendingWorkOrders, setPendingWorkOrders] = useState<
     SubscriberRecord[]
-  >(FALLBACK_PENDING_WORK_ORDERS);
+  >([]);
   const [loadingWorkOrders, setLoadingWorkOrders] = useState(false);
   const [workOrderSearch, setWorkOrderSearch] = useState("");
   const [selectedWorkOrderAcc, setSelectedWorkOrderAcc] = useState<
@@ -422,14 +349,9 @@ export default function BoxDetailsScreen() {
           setPendingWorkOrders(pendingOnly);
           return;
         }
-        // Fallback to local pending work orders not already on this box
-        setPendingWorkOrders(
-          FALLBACK_PENDING_WORK_ORDERS.filter(
-            (s) => !connectedAccounts.has(String(s.accountNumber).trim()),
-          ),
-        );
+        setPendingWorkOrders([]);
       } catch {
-        setPendingWorkOrders(FALLBACK_PENDING_WORK_ORDERS);
+        setPendingWorkOrders([]);
       } finally {
         setLoadingWorkOrders(false);
       }
