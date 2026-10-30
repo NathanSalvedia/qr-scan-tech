@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +37,28 @@ export default function SignInScreen() {
   const [serverUrlInput, setServerUrlInput] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+
+  // Hidden developer easter egg: tap logo 5 times to reveal server settings
+  const logoTapCountRef = useRef(0);
+  const lastLogoTapTimeRef = useRef(0);
+
+  const handleLogoPress = () => {
+    const now = Date.now();
+    if (now - lastLogoTapTimeRef.current > 1500) {
+      logoTapCountRef.current = 1;
+    } else {
+      logoTapCountRef.current += 1;
+    }
+    lastLogoTapTimeRef.current = now;
+
+    if (logoTapCountRef.current >= 5) {
+      logoTapCountRef.current = 0;
+      setServerUrlInput(getActiveApiBaseUrl());
+      setTestStatus("idle");
+      setTestMessage("");
+      setShowServerModal(true);
+    }
+  };
 
   useEffect(() => {
     loadCustomApiUrl().then((custom) => {
@@ -161,25 +183,6 @@ export default function SignInScreen() {
     <SafeAreaView className="flex-1 bg-[#f0f3f6]">
       <StatusBar style="dark" />
 
-      {/* Top Header with Server Settings Button */}
-      <View className="flex-row justify-end px-5 pt-1 pb-1">
-        <TouchableOpacity
-          onPress={() => {
-            setServerUrlInput(getActiveApiBaseUrl());
-            setTestStatus("idle");
-            setTestMessage("");
-            setShowServerModal(true);
-          }}
-          className="flex-row items-center px-3 py-1.5 bg-white border border-slate-200/80 rounded-full shadow-sm"
-          activeOpacity={0.7}
-        >
-          <Ionicons name="server-outline" size={13} color="#475569" />
-          <Text className="text-[11px] text-slate-700 font-poppins-medium ml-1.5">
-            Server Settings
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -202,15 +205,19 @@ export default function SignInScreen() {
                 : "w-full max-w-sm self-center"
             }
           >
-            {/* Top Brand QR Icon */}
+            {/* Top Brand QR Icon (Tap 5 times to reveal hidden Server Settings) */}
             <View className="items-center mb-8">
-              <View className="w-16 h-16 rounded-2xl bg-[#4d6029] items-center justify-center shadow-sm mb-4">
+              <TouchableOpacity
+                onPress={handleLogoPress}
+                activeOpacity={0.85}
+                className="w-16 h-16 rounded-2xl bg-[#4d6029] items-center justify-center shadow-sm mb-4"
+              >
                 <Image
                   source={require("@/assets/images/app-logo-white.png")}
                   style={{ width: 36, height: 36 }}
                   resizeMode="contain"
                 />
-              </View>
+              </TouchableOpacity>
               <Text className="text-3xl font-poppins-bold text-[#0f172a] tracking-tight text-center">
                 Welcome Back!
               </Text>
